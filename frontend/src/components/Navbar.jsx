@@ -36,7 +36,7 @@ export default function Navbar() {
   }, [toastText]);
 
   return (
-    <header className="sticky top-0 z-50 border-b border-neutral-200 bg-white/85 backdrop-blur">
+    <header className="sticky top-0 z-50 border-b border-neutral-200 bg-white/85 backdrop-blur shadow-[0_8px_30px_-20px_rgba(0,0,0,0.25)]">
       <div className="mx-auto flex max-w-6xl items-center justify-between px-4 py-4">
         <Link to="/" className="flex items-center gap-2">
           <div className="h-9 w-9 rounded-xl border border-neutral-200 bg-gradient-to-br from-white to-neutral-100 grid place-items-center shadow-sm">

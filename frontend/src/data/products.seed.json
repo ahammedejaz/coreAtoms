@@ -1,0 +1,98 @@
+[
+  {
+    "id": 1,
+    "name": "Calcitamin Herbal",
+    "category": "Bone & Joint",
+    "price": 1299,
+    "description": "Calcium + D3 + K2 blend designed to support bones, muscles, and joints.",
+    "image": "/products/product-01.jpg"
+  },
+  {
+    "id": 2,
+    "name": "Osteorix Ginger",
+    "category": "Joint Support",
+    "price": 1199,
+    "description": "Ginger-powered joint support formula crafted for comfort and flexibility.",
+    "image": "/products/product-02.jpg"
+  },
+  {
+    "id": 3,
+    "name": "Multivitamin Man",
+    "category": "Men's Multivitamin",
+    "price": 1499,
+    "description": "Daily multivitamin stack for energy, immunity, and performance support.",
+    "image": "/products/product-03.jpg"
+  },
+  {
+    "id": 4,
+    "name": "Multivitamin Woman",
+    "category": "Women's Multivitamin",
+    "price": 1499,
+    "description": "Balanced daily multivitamin blend for energy, immunity, and wellness.",
+    "image": "/products/product-04.jpg"
+  },
+  {
+    "id": 5,
+    "name": "HSN for Man & Woman",
+    "category": "Hair • Skin • Nails",
+    "price": 1599,
+    "description": "Targeted HSN support to help nourish hair, skin radiance, and nails.",
+    "image": "/products/product-05.jpg"
+  },
+  {
+    "id": 6,
+    "name": "Prebiotic & Probiotics Formula Capsules",
+    "category": "Gut Health",
+    "price": 1399,
+    "description": "Prebiotic + probiotic support for gut comfort and better nutrient absorption.",
+    "image": "/products/product-06.jpg"
+  },
+  {
+    "id": 7,
+    "name": "Fish Oil",
+    "category": "Omega-3",
+    "price": 1299,
+    "description": "High-quality omega-3 support for heart, joints, and everyday wellness.",
+    "image": "/products/product-07.jpg"
+  },
+  {
+    "id": 8,
+    "name": "Liver Care (Livatram)",
+    "category": "Liver Support",
+    "price": 1199,
+    "description": "Daily liver-support formula designed to support detox pathways and skin clarity.",
+    "image": "/products/product-08.jpg"
+  },
+  {
+    "id": 9,
+    "name": "Magna Care",
+    "category": "Magnesium Support",
+    "price": 1099,
+    "description": "Magnesium support for muscle function, recovery, and restful sleep.",
+    "image": "/products/product-09.jpg"
+  },
+  {
+    "id": 10,
+    "name": "Glutathione",
+    "category": "Glow & Antioxidant",
+    "price": 999,
+    "description": "Glutathione support for brightening, antioxidant defense, and healthy glow.",
+    "image": "/products/product-10.jpg"
+  },
+  {
+    "id": 11,
+    "name": "Marine Collagen Powder",
+    "category": "Collagen (Marine)",
+    "price": 1799,
+    "description": "Marine collagen powder for skin elasticity, hair strength, and anti-ageing support.",
+    "image": "/products/product-11.jpg"
+  },
+  {
+    "id": 12,
+    "name": "Bovine Collagen Powder",
+    "category": "Collagen (Bovine)",
+    "price": 1699,
+    "description": "Bovine collagen powder for joint comfort, mobility support, and skin health.",
+    "image": "/products/product-12.jpg"
+  }
+]

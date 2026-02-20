@@ -1,0 +1,244 @@
+[
+  {
+    "id": "calcitamin-herbal",
+    "name": "Calcitamin Herbal",
+    "form": "Capsules",
+    "packStyle": "Jar Pack",
+    "packSizes": [
+      "30's Pack",
+      "60's Pack",
+      "90's Pack"
+    ],
+    "highlights": [
+      "Bones",
+      "Muscle",
+      "Joints"
+    ],
+    "image": "/images/generic-capsules.svg",
+    "price": 499,
+    "category": "General Wellness"
+  },
+  {
+    "id": "osteorix-ginger",
+    "name": "Osteorix Ginger",
+    "form": "Tablets",
+    "packStyle": "Jar Pack",
+    "packSizes": [
+      "30's Pack",
+      "60's Pack",
+      "90's Pack"
+    ],
+    "highlights": [
+      "Joint Support",
+      "Promotes Flexibility",
+      "Cartilage Health"
+    ],
+    "image": "/images/generic-tablets.svg",
+    "price": 1099,
+    "category": "General Wellness"
+  },
+  {
+    "id": "multivitamin-man",
+    "name": "Multivitamin Man",
+    "form": "Tablets",
+    "packStyle": "Jar Pack",
+    "packSizes": [
+      "30 Tablets Pack"
+    ],
+    "highlights": [
+      "Boost Energy",
+      "Immunity Support",
+      "Promotes Overall Health"
+    ],
+    "image": "/images/generic-tablets.svg",
+    "price": 1699,
+    "category": "Vitamins"
+  },
+  {
+    "id": "multivitamin-woman",
+    "name": "Multivitamin Woman",
+    "form": "Tablet or Capsule",
+    "packStyle": "Jar Pack",
+    "packSizes": [
+      "30's Pack"
+    ],
+    "highlights": [
+      "Energy",
+      "Immunity",
+      "Vitality"
+    ],
+    "image": "/images/generic-capsules.svg",
+    "price": 699,
+    "category": "Vitamins"
+  },
+  {
+    "id": "hsn-for-man-woman",
+    "name": "HSN for Man & Woman",
+    "form": "Tablets",
+    "packStyle": "Jar Pack",
+    "packSizes": [
+      "30 Tablets Pack"
+    ],
+    "highlights": [
+      "Hair",
+      "Skin",
+      "Nails"
+    ],
+    "image": "/images/generic-tablets.svg",
+    "price": 999,
+    "category": "General Wellness"
+  },
+  {
+    "id": "prebiotic-probiotics-formula-capsules",
+    "name": "Prebiotic & Probiotics Formula Capsules",
+    "form": "Capsules",
+    "packStyle": "Jar Pack",
+    "packSizes": [
+      "30 Tablets Pack"
+    ],
+    "highlights": [
+      "Gut Health",
+      "Digestive Support",
+      "Microbiome Balance"
+    ],
+    "image": "/images/generic-capsules.svg",
+    "price": 1699,
+    "category": "General Wellness"
+  },
+  {
+    "id": "fish-oil",
+    "name": "Fish Oil",
+    "form": "Soft Gel Capsules",
+    "packStyle": "Jar Pack",
+    "packSizes": [
+      "30 Capsules Pack"
+    ],
+    "highlights": [
+      "Heart Health",
+      "Brain Support",
+      "Omega-3"
+    ],
+    "image": "/images/generic-capsules.svg",
+    "price": 1599,
+    "category": "General Wellness"
+  },
+  {
+    "id": "liver-care-livatram",
+    "name": "Liver Care (Livatram)",
+    "form": "Capsules",
+    "packStyle": "Jar Pack",
+    "packSizes": [
+      "30 Capsules Pack"
+    ],
+    "highlights": [
+      "Liver Support",
+      "Detox Support",
+      "Daily Wellness"
+    ],
+    "image": "/images/generic-capsules.svg",
+    "price": 1199,
+    "category": "General Wellness"
+  },
+  {
+    "id": "magna-care",
+    "name": "Magna Care",
+    "form": "Capsules",
+    "packStyle": "Jar Pack",
+    "packSizes": [
+      "30 Capsules Pack"
+    ],
+    "highlights": [
+      "Magnesium Support",
+      "Energy",
+      "Recovery"
+    ],
+    "image": "/images/generic-capsules.svg",
+    "price": 1699,
+    "category": "General Wellness"
+  },
+  {
+    "id": "glutathione",
+    "name": "Glutathione",
+    "form": "Tablets (Effervescent)",
+    "packStyle": "Tube Pack",
+    "packSizes": [
+      "20×1"
+    ],
+    "highlights": [
+      "Antioxidant",
+      "Glow Support",
+      "Daily Wellness"
+    ],
+    "image": "/images/generic-effervescent.svg",
+    "price": 899,
+    "category": "General Wellness"
+  },
+  {
+    "id": "marine-collagen-powder",
+    "name": "Marine Collagen Powder",
+    "form": "Powder",
+    "packStyle": "Jar Pack",
+    "packSizes": [
+      "200 gm Bottle"
+    ],
+    "highlights": [
+      "Skin",
+      "Hair",
+      "Joints"
+    ],
+    "image": "/images/generic-powder.svg",
+    "price": 1699,
+    "category": "Skin & Beauty"
+  },
+  {
+    "id": "bovine-collagen-powder",
+    "name": "Bovine Collagen Powder",
+    "form": "Powder",
+    "packStyle": "Jar Pack",
+    "packSizes": [
+      "200 gm Bottle"
+    ],
+    "highlights": [
+      "Skin",
+      "Bones",
+      "Recovery"
+    ],
+    "image": "/images/generic-powder.svg",
+    "price": 799,
+    "category": "Skin & Beauty"
+  },
+  {
+    "id": "collagen-glutathione-powder",
+    "name": "Collagen & Glutathione Powder",
+    "form": "Powder",
+    "packStyle": "Jar Pack",
+    "packSizes": [
+      "1×30 Sachets"
+    ],
+    "highlights": [
+      "Glow",
+      "Antioxidant",
+      "Skin Support"
+    ],
+    "image": "/images/generic-powder.svg",
+    "price": 899,
+    "category": "Skin & Beauty"
+  },
+  {
+    "id": "vitamin-c-effervescent",
+    "name": "Vitamin C Effervescent",
+    "form": "Tablet",
+    "packStyle": "Tube Pack",
+    "packSizes": [
+      "20×1"
+    ],
+    "highlights": [
+      "Immunity",
+      "Antioxidant",
+      "Daily Support"
+    ],
+    "image": "/images/generic-effervescent.svg",
+    "price": 999,
+    "category": "Vitamins"
+  }
+]

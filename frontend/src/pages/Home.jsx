@@ -273,11 +273,18 @@ export default function Home() {
       </section>
 
       {/* Toast Notification */}
-      {toast.open && (
-        <div className="fixed bottom-6 right-6 z-50 rounded-xl bg-black text-white px-5 py-3 text-sm shadow-lg animate-fade-in">
-          {toast.message}
-        </div>
-      )}
+      <div
+        className={[
+          "fixed bottom-5 right-5 z-50 rounded-2xl border border-neutral-200 bg-white px-4 py-3 shadow-lg",
+          "text-sm text-neutral-900 transition-all duration-300",
+          toast.open
+            ? "opacity-100 translate-y-0"
+            : "opacity-0 translate-y-3 pointer-events-none",
+        ].join(" ")}
+      >
+        <div className="font-semibold">Added to cart ✅</div>
+        <div className="text-xs text-neutral-600">{toast.message}</div>
+      </div>
     </div>
   );
 }

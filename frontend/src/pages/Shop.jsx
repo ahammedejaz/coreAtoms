@@ -146,41 +146,108 @@ export default function Shop() {
           const out = (p.stockQty ?? 0) <= 0;
           const added = justAddedId === p.id;
 
+          const descRaw =
+            p?.shortDescription ||
+            p?.short_description ||
+            p?.subtitle ||
+            p?.tagline ||
+            p?.description ||
+            "";
+
+          const desc = String(descRaw || "").trim();
+          const oneLiner = desc
+            ? desc.replace(/\s+/g, " ").slice(0, 120)
+            : "Premium daily supplement with a clean label and reliable quality.";
+
           return (
-            <div key={p.id} className="rounded-2xl border border-neutral-200 bg-white shadow-sm overflow-hidden">
-              <Link to={`/product/${p.id}`}>
-                <div className="h-52 bg-neutral-50 overflow-hidden">
-                  <img src={p.image} alt={p.name} className="h-full w-full object-cover" loading="lazy" />
+            <div
+              key={p.id}
+              className="group rounded-3xl border border-black/10 bg-white overflow-hidden shadow-[0_20px_60px_-40px_rgba(0,0,0,0.25)] hover:shadow-[0_30px_80px_-45px_rgba(0,0,0,0.35)] transition-shadow"
+            >
+              <Link to={`/product/${p.id}`} className="block">
+                <div className="relative h-56 bg-neutral-50 overflow-hidden">
+                  <img
+                    src={p.image}
+                    alt={p.name}
+                    className="h-full w-full object-cover transition-transform duration-300 group-hover:scale-[1.03]"
+                    loading="lazy"
+                  />
+
+                  {/* Category pill */}
+                  {p.category ? (
+                    <div className="absolute top-4 left-4">
+                      <span className="rounded-full border border-black/10 bg-white/90 px-3 py-1 text-[11px] font-semibold text-neutral-800 shadow-sm">
+                        {p.category}
+                      </span>
+                    </div>
+                  ) : null}
+
+                  {/* Stock badge */}
+                  <div className="absolute top-4 right-4">
+                    <span
+                      className={[
+                        "rounded-full border px-3 py-1 text-[11px] font-semibold shadow-sm",
+                        out
+                          ? "border-red-200 bg-red-50 text-red-700"
+                          : "border-green-200 bg-green-50 text-green-700",
+                      ].join(" ")}
+                    >
+                      <span className="inline-flex items-center gap-1">
+                        <span
+                          className={[
+                            "inline-block h-2.5 w-2.5 rounded-full",
+                            out ? "bg-red-600" : "bg-green-600",
+                          ].join(" ")}
+                        />
+                        {out ? "Out of stock" : "In Stock"}
+                      </span>
+                    </span>
+                  </div>
+
+                  {/* subtle overlay */}
+                  <div className="absolute inset-0 bg-gradient-to-t from-black/10 via-transparent to-transparent pointer-events-none" />
                 </div>
               </Link>
 
-              <div className="p-4">
-                <div className="text-xs text-neutral-500">{p.category}</div>
-                <Link to={`/product/${p.id}`}>
-                  <div className="mt-1 font-semibold text-neutral-950 hover:underline">{p.name}</div>
+              <div className="p-5">
+                <Link to={`/product/${p.id}`} className="block">
+                  <div className="text-base font-semibold text-neutral-950 group-hover:underline">
+                    {p.name}
+                  </div>
                 </Link>
 
-                <div className="mt-2 flex items-center justify-between">
-                  <div className="text-lg font-semibold text-neutral-950">{money(p.price)}</div>
-                  <div
-                    className={[
-                      "text-xs font-semibold",
-                      out ? "text-red-600" : "text-green-600",
-                    ].join(" ")}
-                  >
-                    <span className="inline-flex items-center gap-1">
-                      <span
-                        className={[
-                          "inline-block h-2.5 w-2.5 rounded-full shrink-0",
-                          out ? "bg-red-600" : "bg-green-600",
-                        ].join(" ")}
-                      />
-                      {out ? "Out of stock" : "In Stock"}
-                    </span>
-                  </div>
+                <div className="mt-2 text-sm text-neutral-600 leading-relaxed">
+                  {oneLiner}
                 </div>
 
-                <div className="mt-3">
+                {/* Quick highlights */}
+                <div className="mt-4 flex flex-wrap gap-2">
+                  <span className="rounded-full border border-black/10 bg-white px-3 py-1 text-[11px] text-neutral-700">
+                    Clean label
+                  </span>
+                  <span className="rounded-full border border-black/10 bg-white px-3 py-1 text-[11px] text-neutral-700">
+                    Lab-tested
+                  </span>
+                  <span className="rounded-full border border-black/10 bg-white px-3 py-1 text-[11px] text-neutral-700">
+                    COD available
+                  </span>
+                </div>
+
+                <div className="mt-5 flex items-center justify-between">
+                  <div>
+                    <div className="text-xs text-neutral-500">Price</div>
+                    <div className="text-xl font-semibold text-neutral-950">{money(p.price)}</div>
+                  </div>
+
+                  <Link
+                    to={`/product/${p.id}`}
+                    className="text-sm font-semibold text-neutral-800 hover:text-neutral-950 underline underline-offset-4"
+                  >
+                    View
+                  </Link>
+                </div>
+
+                <div className="mt-4">
                   <button
                     onClick={() => handleAdd(p)}
                     disabled={out}

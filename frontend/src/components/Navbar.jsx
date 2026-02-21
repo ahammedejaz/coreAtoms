@@ -9,6 +9,7 @@ const navLinkClass = ({ isActive }) =>
 export default function Navbar() {
   const { totalItems, lastAction, maxItems } = useCart();
   const { isAuthenticated, user, isAdmin, signOut, profile } = useAuth();
+  const homePath = isAdmin ? "/admin" : "/";
 
   const [bump, setBump] = useState(false);
   const [toast, setToast] = useState(null);
@@ -38,7 +39,7 @@ export default function Navbar() {
   return (
     <header className="sticky top-0 z-50 border-b border-neutral-200 bg-white/85 backdrop-blur shadow-[0_8px_30px_-20px_rgba(0,0,0,0.25)]">
       <div className="mx-auto flex max-w-6xl items-center justify-between px-4 py-4">
-        <Link to="/" className="flex items-center gap-2">
+        <Link to={homePath} className="flex items-center gap-2">
           <div className="h-9 w-9 rounded-xl border border-neutral-200 bg-gradient-to-br from-white to-neutral-100 grid place-items-center shadow-sm">
             <span className="text-xs font-semibold text-neutral-900">CA</span>
           </div>
@@ -49,12 +50,16 @@ export default function Navbar() {
         </Link>
 
         <nav className="flex items-center gap-5">
-          <NavLink to="/" className={navLinkClass}>Home</NavLink>
-          <NavLink to="/shop" className={navLinkClass}>Shop</NavLink>
+          {!isAdmin && (
+            <>
+              <NavLink to="/" className={navLinkClass}>Home</NavLink>
+              <NavLink to="/shop" className={navLinkClass}>Shop</NavLink>
+            </>
+          )}
 
           {isAuthenticated ? (
             <>
-              <NavLink to="/orders" className={navLinkClass}>My Orders</NavLink>
+              {!isAdmin && <NavLink to="/orders" className={navLinkClass}>My Orders</NavLink>}
               {isAdmin && <NavLink to="/admin" className={navLinkClass}>Admin</NavLink>}
               <button
                 onClick={signOut}
@@ -75,18 +80,20 @@ export default function Navbar() {
             <NavLink to="/login" className={navLinkClass}>Login</NavLink>
           )}
 
-          <Link
-            to="/cart"
-            className={`ml-2 inline-flex items-center gap-2 rounded-full border border-neutral-200 bg-white px-3 py-1.5 text-xs text-neutral-900 shadow-sm hover:shadow transition ${
-              bump ? "scale-[1.06]" : "scale-100"
-            }`}
-            title="Cart items"
-          >
-            Cart
-            <span className="grid h-5 min-w-5 place-items-center rounded-full bg-neutral-900 text-white px-1">
-              {totalItems}
-            </span>
-          </Link>
+          {!isAdmin && (
+            <Link
+              to="/cart"
+              className={`ml-2 inline-flex items-center gap-2 rounded-full border border-neutral-200 bg-white px-3 py-1.5 text-xs text-neutral-900 shadow-sm hover:shadow transition ${
+                bump ? "scale-[1.06]" : "scale-100"
+              }`}
+              title="Cart items"
+            >
+              Cart
+              <span className="grid h-5 min-w-5 place-items-center rounded-full bg-neutral-900 text-white px-1">
+                {totalItems}
+              </span>
+            </Link>
+          )}
         </nav>
       </div>
 

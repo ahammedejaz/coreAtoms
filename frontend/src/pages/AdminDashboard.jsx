@@ -50,6 +50,10 @@ export default function AdminDashboard() {
     const [pActive, setPActive] = useState(true);
     const [pImageUrl, setPImageUrl] = useState("");
     const [pFile, setPFile] = useState(null);
+    const [pAboutText, setPAboutText] = useState("");
+    const [pBestFor, setPBestFor] = useState("");
+    const [pPairsWellWith, setPPairsWellWith] = useState("");
+    const [pRecommendedStack, setPRecommendedStack] = useState("");
 
     const [savingProduct, setSavingProduct] = useState(false);
     const [productMsg, setProductMsg] = useState("");
@@ -90,7 +94,11 @@ export default function AdminDashboard() {
         stock_qty,
         image_url,
         is_active,
-        created_at
+        created_at,
+        about_text,
+        best_for,
+        pairs_well_with,
+        recommended_stack
       `
             )
             .order("created_at", { ascending: false });
@@ -136,6 +144,10 @@ export default function AdminDashboard() {
         setPActive(true);
         setPImageUrl("");
         setPFile(null);
+        setPAboutText("");
+        setPBestFor("");
+        setPPairsWellWith("");
+        setPRecommendedStack("");
         setProductMsg("");
         if (fileInputRef.current) fileInputRef.current.value = "";
     };
@@ -156,6 +168,10 @@ export default function AdminDashboard() {
         setPDesc(p.description || "");
         setPActive(p.is_active !== false);
         setPImageUrl(p.image_url || "");
+        setPAboutText(p.about_text || "");
+        setPBestFor(p.best_for || "");
+        setPPairsWellWith(p.pairs_well_with || "");
+        setPRecommendedStack(p.recommended_stack || "");
         setPFile(null);
         setProductMsg("");
         if (fileInputRef.current) fileInputRef.current.value = "";
@@ -211,6 +227,10 @@ export default function AdminDashboard() {
                 stock_qty: stock,
                 image_url: image_url || null,
                 is_active: !!pActive,
+                about_text: String(pAboutText || "").trim() || null,
+                best_for: String(pBestFor || "").trim() || null,
+                pairs_well_with: String(pPairsWellWith || "").trim() || null,
+                recommended_stack: String(pRecommendedStack || "").trim() || null,
                 updated_at: new Date().toISOString(),
             };
 
@@ -675,6 +695,56 @@ export default function AdminDashboard() {
                                                     rows={4}
                                                     className="mt-1 w-full rounded-xl border border-neutral-200 bg-white px-3 py-2 text-sm text-neutral-900 focus:ring-2 focus:ring-neutral-300 outline-none"
                                                 />
+                                            </div>
+
+                                            {/* Rich detail fields */}
+                                            <div className="rounded-xl border border-neutral-200 bg-neutral-50 p-4 space-y-3">
+                                                <div className="text-xs font-semibold text-neutral-700">Product Detail Page — Rich Info</div>
+                                                <div className="text-xs text-neutral-500">These appear in the "About this product" section on the product page.</div>
+
+                                                <div>
+                                                    <div className="text-xs text-neutral-500">About text</div>
+                                                    <textarea
+                                                        value={pAboutText}
+                                                        onChange={(e) => setPAboutText(e.target.value)}
+                                                        rows={3}
+                                                        placeholder="Detailed product description shown on the product page…"
+                                                        className="mt-1 w-full rounded-xl border border-neutral-200 bg-white px-3 py-2 text-sm text-neutral-900 focus:ring-2 focus:ring-neutral-300 outline-none"
+                                                    />
+                                                </div>
+
+                                                <div className="grid gap-3 md:grid-cols-3">
+                                                    <div>
+                                                        <div className="text-xs text-neutral-500">Best for</div>
+                                                        <input
+                                                            type="text"
+                                                            value={pBestFor}
+                                                            onChange={(e) => setPBestFor(e.target.value)}
+                                                            placeholder="e.g. Energy • Performance • Daily wellness"
+                                                            className="mt-1 w-full rounded-xl border border-neutral-200 bg-white px-3 py-2 text-sm text-neutral-900 focus:ring-2 focus:ring-neutral-300 outline-none"
+                                                        />
+                                                    </div>
+                                                    <div>
+                                                        <div className="text-xs text-neutral-500">Pairs well with</div>
+                                                        <input
+                                                            type="text"
+                                                            value={pPairsWellWith}
+                                                            onChange={(e) => setPPairsWellWith(e.target.value)}
+                                                            placeholder="e.g. Protein • Omega-3 • Electrolytes"
+                                                            className="mt-1 w-full rounded-xl border border-neutral-200 bg-white px-3 py-2 text-sm text-neutral-900 focus:ring-2 focus:ring-neutral-300 outline-none"
+                                                        />
+                                                    </div>
+                                                    <div>
+                                                        <div className="text-xs text-neutral-500">Recommended stack</div>
+                                                        <input
+                                                            type="text"
+                                                            value={pRecommendedStack}
+                                                            onChange={(e) => setPRecommendedStack(e.target.value)}
+                                                            placeholder="e.g. AM: Multi • PM: Collagen"
+                                                            className="mt-1 w-full rounded-xl border border-neutral-200 bg-white px-3 py-2 text-sm text-neutral-900 focus:ring-2 focus:ring-neutral-300 outline-none"
+                                                        />
+                                                    </div>
+                                                </div>
                                             </div>
 
                                             <div className="grid gap-3 md:grid-cols-3">

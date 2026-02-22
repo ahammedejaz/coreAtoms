@@ -211,24 +211,32 @@ export default function ProductDetail() {
         <div className="rounded-2xl border border-neutral-200 bg-white p-6 shadow-sm">
           <div className="text-base font-semibold text-neutral-950">About this product</div>
           <div className="mt-2 text-sm text-neutral-700 leading-relaxed">
-            Built for daily consistency — clean support for your routine. Ideal for anyone looking for a simple,
-            premium supplement experience.
+            {product.aboutText ||
+              "Built for daily consistency — clean support for your routine. Ideal for anyone looking for a simple, premium supplement experience."}
           </div>
 
-          <div className="mt-5 grid gap-4 sm:grid-cols-3">
-            <div className="rounded-xl border border-neutral-200 bg-neutral-50 p-4">
-              <div className="text-sm font-semibold text-neutral-950">Best for</div>
-              <div className="mt-1 text-sm text-neutral-700">Energy • Performance • Daily wellness</div>
+          {(product.bestFor || product.pairsWellWith || product.recommendedStack) && (
+            <div className="mt-5 grid gap-4 sm:grid-cols-3">
+              {product.bestFor && (
+                <div className="rounded-xl border border-neutral-200 bg-neutral-50 p-4">
+                  <div className="text-sm font-semibold text-neutral-950">Best for</div>
+                  <div className="mt-1 text-sm text-neutral-700">{product.bestFor}</div>
+                </div>
+              )}
+              {product.pairsWellWith && (
+                <div className="rounded-xl border border-neutral-200 bg-neutral-50 p-4">
+                  <div className="text-sm font-semibold text-neutral-950">Pairs well with</div>
+                  <div className="mt-1 text-sm text-neutral-700">{product.pairsWellWith}</div>
+                </div>
+              )}
+              {product.recommendedStack && (
+                <div className="rounded-xl border border-neutral-200 bg-neutral-50 p-4">
+                  <div className="text-sm font-semibold text-neutral-950">Recommended</div>
+                  <div className="mt-1 text-sm text-neutral-700">{product.recommendedStack}</div>
+                </div>
+              )}
             </div>
-            <div className="rounded-xl border border-neutral-200 bg-neutral-50 p-4">
-              <div className="text-sm font-semibold text-neutral-950">Pairs well with</div>
-              <div className="mt-1 text-sm text-neutral-700">Protein • Electrolytes • Omega-3</div>
-            </div>
-            <div className="rounded-xl border border-neutral-200 bg-neutral-50 p-4">
-              <div className="text-sm font-semibold text-neutral-950">Recommended</div>
-              <div className="mt-1 text-sm text-neutral-700">AM: Multi • PM: Collagen / Recovery</div>
-            </div>
-          </div>
+          )}
         </div>
       </div>
     </div>

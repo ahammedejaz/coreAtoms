@@ -54,6 +54,15 @@ export default function AdminDashboard() {
     const [pBestFor, setPBestFor] = useState("");
     const [pPairsWellWith, setPPairsWellWith] = useState("");
     const [pRecommendedStack, setPRecommendedStack] = useState("");
+    const [pImagePreview, setPImagePreview] = useState(""); // live preview URL
+
+    // Inline stock edit
+    const [inlineStockId, setInlineStockId] = useState(null);
+    const [inlineStockValue, setInlineStockValue] = useState("");
+    const [savingInlineStock, setSavingInlineStock] = useState(false);
+
+    // Product search
+    const [productSearch, setProductSearch] = useState("");
 
     const [savingProduct, setSavingProduct] = useState(false);
     const [productMsg, setProductMsg] = useState("");
@@ -144,6 +153,7 @@ export default function AdminDashboard() {
         setPActive(true);
         setPImageUrl("");
         setPFile(null);
+        setPImagePreview("");
         setPAboutText("");
         setPBestFor("");
         setPPairsWellWith("");
@@ -168,6 +178,7 @@ export default function AdminDashboard() {
         setPDesc(p.description || "");
         setPActive(p.is_active !== false);
         setPImageUrl(p.image_url || "");
+        setPImagePreview(p.image_url || "");
         setPAboutText(p.about_text || "");
         setPBestFor(p.best_for || "");
         setPPairsWellWith(p.pairs_well_with || "");
@@ -448,7 +459,12 @@ export default function AdminDashboard() {
         }
     };
 
-    // Reload orders whenever Orders tab is opened
+    // Reload orders whenever Orders tab is opened; also load on mount for stats
+    useEffect(() => {
+        loadOrders();
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, []);
+
     useEffect(() => {
         if (activeTab === "orders") {
             loadOrders();
@@ -457,7 +473,34 @@ export default function AdminDashboard() {
     }, [activeTab]);
 
     // -------------------- Update order status --------------------
+    const STATUS_OPTIONS = ["placed", "processing", "shipped", "delivered", "cancelled"];
+
+    const STATUS_LABELS = {
+        placed: "Placed",
+        processing: "Processing",
+        shipped: "Shipped",
+        delivered: "Delivered",
+        cancelled: "Cancelled",
+    };
+
+    const STATUS_BADGE = {
+        placed: "bg-green-50 text-green-700",
+        processing: "bg-yellow-50 text-yellow-700",
+        shipped: "bg-blue-50 text-blue-700",
+        delivered: "bg-emerald-50 text-emerald-700",
+        cancelled: "bg-red-50 text-red-700",
+    };
+
     const updateOrderStatus = async (orderId, newStatus) => {
+        const order = orders.find((o) => o.id === orderId);
+        const currentStatus = String(order?.status || "").toLowerCase();
+        if (currentStatus === newStatus) return;
+
+        const ok = window.confirm(
+            `Change order status from "${STATUS_LABELS[currentStatus] || currentStatus}" → "${STATUS_LABELS[newStatus] || newStatus}"?`
+        );
+        if (!ok) return;
+
         const { error } = await supabase
             .from("orders")
             .update({ status: newStatus })
@@ -469,7 +512,47 @@ export default function AdminDashboard() {
         loadOrders();
     };
 
-    // -------------------- Orders Filtering --------------------
+    const LOW_STOCK_THRESHOLD = 5;
+
+    // -------------------- Inline stock update --------------------
+    const saveInlineStock = async (productId) => {
+        const qty = Number(inlineStockValue);
+        if (!Number.isFinite(qty) || qty < 0) return;
+        setSavingInlineStock(true);
+        const { error } = await supabase
+            .from("products")
+            .update({ stock_qty: qty, updated_at: new Date().toISOString() })
+            .eq("id", productId);
+        setSavingInlineStock(false);
+        if (error) { alert(error.message); return; }
+        setInlineStockId(null);
+        setInlineStockValue("");
+        loadProducts();
+    };
+
+    // -------------------- Filtered products --------------------
+    const filteredProducts = useMemo(() => {
+        const q = String(productSearch || "").trim().toLowerCase();
+        if (!q) return products;
+        return products.filter((p) =>
+            String(p.name || "").toLowerCase().includes(q) ||
+            String(p.category || "").toLowerCase().includes(q)
+        );
+    }, [products, productSearch]);
+
+    // -------------------- Derived stats --------------------
+    const stats = useMemo(() => {
+        const totalOrders = orders.length;
+        const totalRevenue = orders.reduce((s, o) => s + Number(o.computed_total_inr || 0), 0);
+        const activeProducts = products.filter((p) => p.is_active).length;
+        const lowStock = products.filter(
+            (p) => p.is_active && Number(p.stock_qty || 0) <= LOW_STOCK_THRESHOLD
+        ).length;
+        const pendingOrders = orders.filter(
+            (o) => ["placed", "processing"].includes(String(o.status || "").toLowerCase())
+        ).length;
+        return { totalOrders, totalRevenue, activeProducts, lowStock, pendingOrders };
+    }, [orders, products]);
     const filteredOrders = useMemo(() => {
         let list = orders || [];
 
@@ -516,6 +599,97 @@ export default function AdminDashboard() {
         return list;
     }, [orders, orderSearch, orderStatusFilter, orderDateFrom, orderDateTo]);
 
+    // -------------------- Bulk selection --------------------
+    const [selectedOrderIds, setSelectedOrderIds] = useState(new Set());
+    const [bulkStatus, setBulkStatus] = useState("");
+    const [applyingBulk, setApplyingBulk] = useState(false);
+
+    const toggleSelectOrder = (id) => {
+        setSelectedOrderIds((prev) => {
+            const next = new Set(prev);
+            if (next.has(id)) next.delete(id);
+            else next.add(id);
+            return next;
+        });
+    };
+
+    const toggleSelectAll = () => {
+        if (selectedOrderIds.size === filteredOrders.length) {
+            setSelectedOrderIds(new Set());
+        } else {
+            setSelectedOrderIds(new Set(filteredOrders.map((o) => o.id)));
+        }
+    };
+
+    const applyBulkStatus = async () => {
+        if (!bulkStatus || selectedOrderIds.size === 0) return;
+        const ok = window.confirm(
+            `Set ${selectedOrderIds.size} order(s) to "${STATUS_LABELS[bulkStatus] || bulkStatus}"?`
+        );
+        if (!ok) return;
+        setApplyingBulk(true);
+        const ids = Array.from(selectedOrderIds);
+        const { error } = await supabase
+            .from("orders")
+            .update({ status: bulkStatus })
+            .in("id", ids);
+        setApplyingBulk(false);
+        if (error) { alert(error.message); return; }
+        setSelectedOrderIds(new Set());
+        setBulkStatus("");
+        loadOrders();
+    };
+
+    // -------------------- CSV Export --------------------
+    const exportOrdersCSV = () => {
+        const rows = filteredOrders;
+        if (rows.length === 0) return;
+
+        const headers = [
+            "Order ID", "Date", "Status", "Customer Name", "Customer Email",
+            "Phone", "Address", "City", "State", "Pincode",
+            "Items", "Total (INR)"
+        ];
+
+        const escape = (val) => {
+            const s = String(val ?? "").replace(/"/g, '""');
+            return `"${s}"`;
+        };
+
+        const csvRows = rows.map((o) => {
+            const itemsSummary = (o.order_items_detailed || [])
+                .map((it) => `${it.product_name} x${it.qty_num}`)
+                .join("; ");
+            const address = [o.shipping_address_1, o.shipping_address_2]
+                .filter(Boolean).join(", ");
+
+            return [
+                o.id,
+                o.created_at ? new Date(o.created_at).toLocaleString() : "",
+                o.status || "",
+                o.shipping_name || o.user_full_name || "",
+                o.user_email || "",
+                o.shipping_phone || "",
+                address,
+                o.shipping_city || "",
+                o.shipping_state || "",
+                o.shipping_pincode || "",
+                itemsSummary,
+                o.computed_total_inr ?? 0,
+            ].map(escape).join(",");
+        });
+
+        const csv = [headers.map(escape).join(","), ...csvRows].join("\n");
+        const blob = new Blob([csv], { type: "text/csv;charset=utf-8;" });
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement("a");
+        a.href = url;
+        const dateStr = new Date().toISOString().slice(0, 10);
+        a.download = `coreatoms-orders-${dateStr}.csv`;
+        a.click();
+        URL.revokeObjectURL(url);
+    };
+
     return (
         <div className="mx-auto max-w-6xl px-4 py-10">
             <div className="card p-6">
@@ -527,6 +701,62 @@ export default function AdminDashboard() {
                     Logged in as{" "}
                     <span className="font-semibold">{profile?.email}</span> • role:{" "}
                     <span className="font-semibold">{profile?.role}</span>
+                </div>
+
+                {/* Stats Row */}
+                <div className="mt-6 grid grid-cols-2 gap-3 sm:grid-cols-4 lg:grid-cols-5">
+                    <div className="rounded-2xl border border-neutral-200 bg-white p-4 shadow-sm">
+                        <div className="text-xs text-neutral-500">Total Orders</div>
+                        <div className="mt-1 text-2xl font-semibold text-neutral-950">{stats.totalOrders}</div>
+                    </div>
+                    <div className="rounded-2xl border border-neutral-200 bg-white p-4 shadow-sm">
+                        <div className="text-xs text-neutral-500">Total Revenue</div>
+                        <div className="mt-1 text-2xl font-semibold text-neutral-950">
+                            ₹{stats.totalRevenue.toLocaleString("en-IN")}
+                        </div>
+                    </div>
+                    <div className="rounded-2xl border border-neutral-200 bg-white p-4 shadow-sm">
+                        <div className="text-xs text-neutral-500">Active Products</div>
+                        <div className="mt-1 text-2xl font-semibold text-neutral-950">{stats.activeProducts}</div>
+                    </div>
+                    <div className={[
+                        "rounded-2xl border p-4 shadow-sm",
+                        stats.lowStock > 0
+                            ? "border-amber-200 bg-amber-50"
+                            : "border-neutral-200 bg-white",
+                    ].join(" ")}>
+                        <div className={stats.lowStock > 0 ? "text-xs text-amber-600" : "text-xs text-neutral-500"}>
+                            Low Stock {stats.lowStock > 0 ? "⚠️" : ""}
+                        </div>
+                        <div className={[
+                            "mt-1 text-2xl font-semibold",
+                            stats.lowStock > 0 ? "text-amber-700" : "text-neutral-950",
+                        ].join(" ")}>
+                            {stats.lowStock}
+                        </div>
+                        {stats.lowStock > 0 && (
+                            <div className="mt-1 text-xs text-amber-600">≤{LOW_STOCK_THRESHOLD} units</div>
+                        )}
+                    </div>
+                    <div className={[
+                        "rounded-2xl border p-4 shadow-sm",
+                        stats.pendingOrders > 0
+                            ? "border-blue-200 bg-blue-50"
+                            : "border-neutral-200 bg-white",
+                    ].join(" ")}>
+                        <div className={stats.pendingOrders > 0 ? "text-xs text-blue-600" : "text-xs text-neutral-500"}>
+                            Pending Orders {stats.pendingOrders > 0 ? "🔔" : ""}
+                        </div>
+                        <div className={[
+                            "mt-1 text-2xl font-semibold",
+                            stats.pendingOrders > 0 ? "text-blue-700" : "text-neutral-950",
+                        ].join(" ")}>
+                            {stats.pendingOrders}
+                        </div>
+                        {stats.pendingOrders > 0 && (
+                            <div className="mt-1 text-xs text-blue-600">Need action</div>
+                        )}
+                    </div>
                 </div>
 
                 {/* Tab Bar (mobile friendly) */}
@@ -548,13 +778,21 @@ export default function AdminDashboard() {
                         type="button"
                         onClick={() => setActiveTab("orders")}
                         className={[
-                            "shrink-0 rounded-xl border px-4 py-2 text-sm font-semibold transition",
+                            "shrink-0 rounded-xl border px-4 py-2 text-sm font-semibold transition flex items-center gap-2",
                             activeTab === "orders"
                                 ? "border-neutral-300 bg-neutral-900 text-white shadow-sm"
                                 : "border-neutral-200 bg-white text-neutral-900 hover:bg-neutral-50",
                         ].join(" ")}
                     >
                         Orders
+                        {stats.pendingOrders > 0 && (
+                            <span className={[
+                                "inline-flex h-5 min-w-5 items-center justify-center rounded-full px-1 text-[11px] font-semibold",
+                                activeTab === "orders" ? "bg-white text-neutral-900" : "bg-red-500 text-white",
+                            ].join(" ")}>
+                                {stats.pendingOrders}
+                            </span>
+                        )}
                     </button>
 
                     <button
@@ -631,13 +869,20 @@ export default function AdminDashboard() {
                                         </div>
                                     </div>
 
-                                    <button
-                                        type="button"
-                                        onClick={openAddProduct}
-                                        className="rounded-xl bg-gradient-to-r from-neutral-200 to-neutral-300 px-4 py-2 text-sm font-semibold text-neutral-900 shadow-sm hover:shadow"
-                                    >
-                                        + Add Product
-                                    </button>
+                                    <div className="flex items-center gap-2">
+                                        {stats.lowStock > 0 && (
+                                            <span className="inline-flex items-center rounded-full bg-amber-100 px-3 py-1.5 text-xs font-semibold text-amber-700">
+                                                {stats.lowStock} low stock ⚠️
+                                            </span>
+                                        )}
+                                        <button
+                                            type="button"
+                                            onClick={openAddProduct}
+                                            className="rounded-xl bg-gradient-to-r from-neutral-200 to-neutral-300 px-4 py-2 text-sm font-semibold text-neutral-900 shadow-sm hover:shadow"
+                                        >
+                                            + Add Product
+                                        </button>
+                                    </div>
                                 </div>
 
                                 {showProductForm && (
@@ -790,10 +1035,26 @@ export default function AdminDashboard() {
                                                         ref={fileInputRef}
                                                         type="file"
                                                         accept="image/*"
-                                                        onChange={(e) => setPFile(e.target.files?.[0] || null)}
+                                                        onChange={(e) => {
+                                                        const f = e.target.files?.[0] || null;
+                                                        setPFile(f);
+                                                        if (f) setPImagePreview(URL.createObjectURL(f));
+                                                    }}
                                                         className="mt-1 w-full text-sm"
                                                     />
-                                                    {pImageUrl && (
+                                                    {pImagePreview && (
+                                                        <div className="mt-3 flex items-center gap-3">
+                                                            <img
+                                                                src={pImagePreview}
+                                                                alt="Preview"
+                                                                className="h-20 w-20 rounded-xl border border-neutral-200 object-cover shadow-sm"
+                                                            />
+                                                            <div className="text-xs text-neutral-500">
+                                                                {pFile ? "New image selected" : "Current image"}
+                                                            </div>
+                                                        </div>
+                                                    )}
+                                                    {!pImagePreview && pImageUrl && (
                                                         <div className="mt-2 text-xs text-neutral-500">
                                                             Current image:
                                                             <a
@@ -841,6 +1102,28 @@ export default function AdminDashboard() {
                                     </div>
                                 )}
 
+                                {/* Product search */}
+                                <div className="mt-4 flex items-center gap-3">
+                                    <input
+                                        value={productSearch}
+                                        onChange={(e) => setProductSearch(e.target.value)}
+                                        placeholder="Search by name or category…"
+                                        className="w-full sm:w-72 rounded-xl border border-neutral-200 bg-white px-3 py-2 text-sm text-neutral-900 focus:ring-2 focus:ring-neutral-300 outline-none"
+                                    />
+                                    {productSearch && (
+                                        <button
+                                            type="button"
+                                            onClick={() => setProductSearch("")}
+                                            className="text-xs text-neutral-500 hover:text-neutral-900"
+                                        >
+                                            Clear
+                                        </button>
+                                    )}
+                                    <div className="ml-auto text-xs text-neutral-500">
+                                        {filteredProducts.length} of {products.length} products
+                                    </div>
+                                </div>
+
                                 {/* List */}
                                 <div className="mt-4">
                                     {loadingProducts ? (
@@ -853,7 +1136,7 @@ export default function AdminDashboard() {
                                         <div className="mt-2">
                                             {/* Mobile cards */}
                                             <div className="grid gap-3 md:hidden">
-                                                {products.map((p) => {
+                                                {filteredProducts.map((p) => {
                                                     const out = Number(p.stock_qty || 0) <= 0;
                                                     return (
                                                         <div
@@ -888,10 +1171,33 @@ export default function AdminDashboard() {
                                                                             className={
                                                                                 out
                                                                                     ? "rounded-xl border border-neutral-200 bg-white px-3 py-2 text-red-600 font-semibold"
+                                                                                    : Number(p.stock_qty || 0) <= LOW_STOCK_THRESHOLD
+                                                                                    ? "rounded-xl border border-amber-200 bg-amber-50 px-3 py-2 text-amber-700 font-semibold"
                                                                                     : "rounded-xl border border-neutral-200 bg-white px-3 py-2 text-green-600 font-semibold"
                                                                             }
                                                                         >
-                                                                            {out ? "Out of stock" : "In stock"} ({Number(p.stock_qty || 0)})
+                                                                            {inlineStockId === p.id ? (
+                                                                                <div className="flex items-center gap-1">
+                                                                                    <input
+                                                                                        type="number"
+                                                                                        value={inlineStockValue}
+                                                                                        onChange={(e) => setInlineStockValue(e.target.value)}
+                                                                                        className="w-14 rounded-lg border border-neutral-300 px-1.5 py-0.5 text-xs text-neutral-900 outline-none"
+                                                                                        min={0}
+                                                                                        autoFocus
+                                                                                    />
+                                                                                    <button type="button" onClick={() => saveInlineStock(p.id)} className="text-[10px] font-semibold text-neutral-900">Save</button>
+                                                                                    <button type="button" onClick={() => { setInlineStockId(null); setInlineStockValue(""); }} className="text-[10px] text-neutral-500">✕</button>
+                                                                                </div>
+                                                                            ) : (
+                                                                                <button type="button" onClick={() => { setInlineStockId(p.id); setInlineStockValue(String(p.stock_qty || 0)); }} className="w-full text-left">
+                                                                                    {out
+                                                                                        ? `Out of stock (0)`
+                                                                                        : Number(p.stock_qty || 0) <= LOW_STOCK_THRESHOLD
+                                                                                        ? `Low stock ⚠️ (${Number(p.stock_qty || 0)})`
+                                                                                        : `In stock (${Number(p.stock_qty || 0)})`} ✏️
+                                                                                </button>
+                                                                            )}
                                                                         </div>
                                                                     </div>
 
@@ -937,7 +1243,7 @@ export default function AdminDashboard() {
                                                     </thead>
 
                                                     <tbody>
-                                                    {products.map((p) => {
+                                                    {filteredProducts.map((p) => {
                                                         const out = Number(p.stock_qty || 0) <= 0;
                                                         return (
                                                             <tr key={p.id} className="border-b align-top">
@@ -969,18 +1275,53 @@ export default function AdminDashboard() {
                                                                 </td>
 
                                                                 <td className="py-2 pr-4">
-                                    <span
-                                        className={
-                                            out
-                                                ? "text-red-600 font-semibold"
-                                                : "text-green-600 font-semibold"
-                                        }
-                                    >
-                                      {out ? "Out of stock" : "In stock"}
-                                    </span>
-                                                                    <span className="ml-2 text-xs text-neutral-500">
-                                      ({Number(p.stock_qty || 0)})
-                                    </span>
+                                                                    {inlineStockId === p.id ? (
+                                                                        <div className="flex items-center gap-1">
+                                                                            <input
+                                                                                type="number"
+                                                                                value={inlineStockValue}
+                                                                                onChange={(e) => setInlineStockValue(e.target.value)}
+                                                                                onKeyDown={(e) => {
+                                                                                    if (e.key === "Enter") saveInlineStock(p.id);
+                                                                                    if (e.key === "Escape") { setInlineStockId(null); setInlineStockValue(""); }
+                                                                                }}
+                                                                                className="w-16 rounded-lg border border-neutral-300 px-2 py-1 text-xs focus:ring-2 focus:ring-neutral-300 outline-none"
+                                                                                min={0}
+                                                                                autoFocus
+                                                                            />
+                                                                            <button
+                                                                                type="button"
+                                                                                onClick={() => saveInlineStock(p.id)}
+                                                                                disabled={savingInlineStock}
+                                                                                className="rounded-lg bg-neutral-900 px-2 py-1 text-[10px] font-semibold text-white hover:bg-neutral-700 disabled:opacity-50"
+                                                                            >
+                                                                                {savingInlineStock ? "…" : "Save"}
+                                                                            </button>
+                                                                            <button
+                                                                                type="button"
+                                                                                onClick={() => { setInlineStockId(null); setInlineStockValue(""); }}
+                                                                                className="rounded-lg border border-neutral-200 px-2 py-1 text-[10px] text-neutral-600 hover:bg-neutral-50"
+                                                                            >
+                                                                                ✕
+                                                                            </button>
+                                                                        </div>
+                                                                    ) : (
+                                                                        <button
+                                                                            type="button"
+                                                                            onClick={() => { setInlineStockId(p.id); setInlineStockValue(String(p.stock_qty || 0)); }}
+                                                                            className="group flex items-center gap-1.5 rounded-lg px-2 py-1 hover:bg-neutral-100 transition"
+                                                                            title="Click to edit stock"
+                                                                        >
+                                                                            <span className={out ? "text-red-600 font-semibold" : "text-green-600 font-semibold"}>
+                                                                                {out ? "Out of stock" : "In stock"}
+                                                                            </span>
+                                                                            <span className="text-xs text-neutral-500">({Number(p.stock_qty || 0)})</span>
+                                                                            {!out && Number(p.stock_qty || 0) <= LOW_STOCK_THRESHOLD && (
+                                                                                <span className="inline-flex items-center rounded-full bg-amber-100 px-2 py-0.5 text-[10px] font-semibold text-amber-700">Low ⚠️</span>
+                                                                            )}
+                                                                            <span className="hidden group-hover:inline text-[10px] text-neutral-400 ml-1">✏️</span>
+                                                                        </button>
+                                                                    )}
                                                                 </td>
 
                                                                 <td className="py-2 pr-4">
@@ -1056,9 +1397,10 @@ export default function AdminDashboard() {
                                         >
                                             <option value="All">All</option>
                                             <option value="placed">Placed</option>
-                                            <option value="packed">Packed</option>
+                                            <option value="processing">Processing</option>
                                             <option value="shipped">Shipped</option>
                                             <option value="delivered">Delivered</option>
+                                            <option value="cancelled">Cancelled</option>
                                         </select>
                                     </div>
 
@@ -1086,23 +1428,78 @@ export default function AdminDashboard() {
                                 <div className="mt-3 flex flex-wrap items-center justify-between gap-2">
                                     <div className="text-xs text-neutral-500">
                                         Showing{" "}
-                                        <span className="font-semibold text-neutral-900">
-                      {filteredOrders.length}
-                    </span>{" "}
+                                        <span className="font-semibold text-neutral-900">{filteredOrders.length}</span>{" "}
                                         of {orders.length}
+                                        {selectedOrderIds.size > 0 && (
+                                            <span className="ml-2 font-semibold text-neutral-900">
+                                                • {selectedOrderIds.size} selected
+                                            </span>
+                                        )}
                                     </div>
-                                    <button
-                                        type="button"
-                                        onClick={() => {
-                                            setOrderSearch("");
-                                            setOrderStatusFilter("All");
-                                            setOrderDateFrom("");
-                                            setOrderDateTo("");
-                                        }}
-                                        className="rounded-xl border border-neutral-200 bg-white px-3 py-2 text-xs font-semibold text-neutral-900 hover:bg-neutral-50"
-                                    >
-                                        Clear filters
-                                    </button>
+
+                                    <div className="flex flex-wrap items-center gap-2">
+                                        {/* Bulk status update */}
+                                        {selectedOrderIds.size > 0 && (
+                                            <div className="flex items-center gap-2 rounded-xl border border-blue-200 bg-blue-50 px-3 py-1.5">
+                                                <span className="text-xs font-semibold text-blue-700">
+                                                    {selectedOrderIds.size} selected
+                                                </span>
+                                                <select
+                                                    value={bulkStatus}
+                                                    onChange={(e) => setBulkStatus(e.target.value)}
+                                                    className="rounded-lg border border-blue-200 bg-white px-2 py-1 text-xs text-neutral-900 outline-none"
+                                                >
+                                                    <option value="">Set status…</option>
+                                                    {STATUS_OPTIONS.map((s) => (
+                                                        <option key={s} value={s}>{STATUS_LABELS[s]}</option>
+                                                    ))}
+                                                </select>
+                                                <button
+                                                    type="button"
+                                                    onClick={applyBulkStatus}
+                                                    disabled={!bulkStatus || applyingBulk}
+                                                    className="rounded-lg bg-blue-600 px-3 py-1 text-xs font-semibold text-white hover:bg-blue-700 disabled:opacity-40"
+                                                >
+                                                    {applyingBulk ? "Applying…" : "Apply"}
+                                                </button>
+                                                <button
+                                                    type="button"
+                                                    onClick={() => { setSelectedOrderIds(new Set()); setBulkStatus(""); }}
+                                                    className="text-xs text-blue-600 hover:text-blue-800"
+                                                >
+                                                    ✕
+                                                </button>
+                                            </div>
+                                        )}
+
+                                        {/* Export CSV */}
+                                        <button
+                                            type="button"
+                                            onClick={exportOrdersCSV}
+                                            disabled={filteredOrders.length === 0}
+                                            className="rounded-xl border border-neutral-200 bg-white px-3 py-2 text-xs font-semibold text-neutral-900 hover:bg-neutral-50 disabled:opacity-40 flex items-center gap-1.5"
+                                        >
+                                            ↓ Export CSV
+                                            {filteredOrders.length > 0 && (
+                                                <span className="text-neutral-500">({filteredOrders.length})</span>
+                                            )}
+                                        </button>
+
+                                        <button
+                                            type="button"
+                                            onClick={() => {
+                                                setOrderSearch("");
+                                                setOrderStatusFilter("All");
+                                                setOrderDateFrom("");
+                                                setOrderDateTo("");
+                                                setSelectedOrderIds(new Set());
+                                                setBulkStatus("");
+                                            }}
+                                            className="rounded-xl border border-neutral-200 bg-white px-3 py-2 text-xs font-semibold text-neutral-900 hover:bg-neutral-50"
+                                        >
+                                            Clear filters
+                                        </button>
+                                    </div>
                                 </div>
 
                                 {orderErr && <div className="mt-3 text-sm text-red-600">{orderErr}</div>}
@@ -1121,7 +1518,7 @@ export default function AdminDashboard() {
                                                 const badge = [
                                                     "inline-flex items-center rounded-full px-2 py-1 text-[11px] font-semibold",
                                                     st === "placed" && "bg-green-50 text-green-700",
-                                                    st === "packed" && "bg-yellow-50 text-yellow-700",
+                                                    st === "processing" && "bg-yellow-50 text-yellow-700",
                                                     st === "shipped" && "bg-purple-50 text-purple-700",
                                                     st === "delivered" && "bg-green-50 text-green-700",
                                                 ]
@@ -1142,13 +1539,21 @@ export default function AdminDashboard() {
                                                 const isOpen = expandedOrderIds.has(o.id);
 
                                                 return (
-                                                    <div key={o.id} className="rounded-2xl border border-neutral-200 bg-white p-4">
+                                                    <div key={o.id} className={["rounded-2xl border p-4", selectedOrderIds.has(o.id) ? "border-blue-300 bg-blue-50/50" : "border-neutral-200 bg-white"].join(" ")}>
                                                         <div className="flex items-start justify-between gap-3">
-                                                            <div className="min-w-0">
-                                                                <div className="text-sm font-semibold text-neutral-900">#{o.id}</div>
-                                                                <div className="mt-1 text-xs text-neutral-600 truncate">{customerLine}</div>
-                                                                <div className="mt-2 text-sm font-semibold text-neutral-900">
-                                                                    ₹{Number(o.computed_total_inr ?? 0).toLocaleString("en-IN")}
+                                                            <div className="flex items-start gap-2 min-w-0">
+                                                                <input
+                                                                    type="checkbox"
+                                                                    checked={selectedOrderIds.has(o.id)}
+                                                                    onChange={() => toggleSelectOrder(o.id)}
+                                                                    className="mt-0.5 h-4 w-4 rounded shrink-0"
+                                                                />
+                                                                <div className="min-w-0">
+                                                                    <div className="text-sm font-semibold text-neutral-900">#{o.id}</div>
+                                                                    <div className="mt-1 text-xs text-neutral-600 truncate">{customerLine}</div>
+                                                                    <div className="mt-2 text-sm font-semibold text-neutral-900">
+                                                                        ₹{Number(o.computed_total_inr ?? 0).toLocaleString("en-IN")}
+                                                                    </div>
                                                                 </div>
                                                             </div>
 
@@ -1167,9 +1572,10 @@ export default function AdminDashboard() {
                                                                 className="w-full rounded-xl border border-neutral-200 bg-white px-3 py-2 text-xs"
                                                             >
                                                                 <option value="placed">Placed</option>
-                                                                <option value="packed">Packed</option>
+                                                                <option value="processing">Processing</option>
                                                                 <option value="shipped">Shipped</option>
                                                                 <option value="delivered">Delivered</option>
+                                                                <option value="cancelled">Cancelled</option>
                                                             </select>
 
                                                             <button
@@ -1265,11 +1671,19 @@ export default function AdminDashboard() {
                                             <table className="w-full table-fixed text-sm">
                                                 <thead>
                                                 <tr className="text-left text-neutral-500 border-b">
-                                                    <th className="py-2 pr-4 w-[18%]">Order ID</th>
-                                                    <th className="py-2 pr-4 w-[28%]">Customer</th>
-                                                    <th className="py-2 pr-4 w-[12%]">Total</th>
-                                                    <th className="py-2 pr-4 w-[12%]">Status</th>
-                                                    <th className="py-2 pr-4 w-[18%]">Created</th>
+                                                    <th className="py-2 pr-2 w-[4%]">
+                                                        <input
+                                                            type="checkbox"
+                                                            checked={filteredOrders.length > 0 && selectedOrderIds.size === filteredOrders.length}
+                                                            onChange={toggleSelectAll}
+                                                            className="h-4 w-4 rounded"
+                                                        />
+                                                    </th>
+                                                    <th className="py-2 pr-4 w-[16%]">Order ID</th>
+                                                    <th className="py-2 pr-4 w-[26%]">Customer</th>
+                                                    <th className="py-2 pr-4 w-[11%]">Total</th>
+                                                    <th className="py-2 pr-4 w-[11%]">Status</th>
+                                                    <th className="py-2 pr-4 w-[16%]">Created</th>
                                                     <th className="py-2 w-[12%]">Actions</th>
                                                 </tr>
                                                 </thead>
@@ -1281,7 +1695,7 @@ export default function AdminDashboard() {
                                                     const badge = [
                                                         "inline-flex items-center rounded-full px-2 py-1 text-xs font-semibold",
                                                         st === "placed" && "bg-green-50 text-green-700",
-                                                        st === "packed" && "bg-yellow-50 text-yellow-700",
+                                                        st === "processing" && "bg-yellow-50 text-yellow-700",
                                                         st === "shipped" && "bg-purple-50 text-purple-700",
                                                         st === "delivered" && "bg-green-50 text-green-700",
                                                     ]
@@ -1301,7 +1715,15 @@ export default function AdminDashboard() {
 
                                                     return (
                                                         <Fragment key={o.id}>
-                                                            <tr className="border-b align-top">
+                                                            <tr className={["border-b align-top", selectedOrderIds.has(o.id) ? "bg-blue-50/60" : ""].join(" ")}>
+                                                                <td className="py-2 pr-2">
+                                                                    <input
+                                                                        type="checkbox"
+                                                                        checked={selectedOrderIds.has(o.id)}
+                                                                        onChange={() => toggleSelectOrder(o.id)}
+                                                                        className="h-4 w-4 rounded"
+                                                                    />
+                                                                </td>
                                                                 <td className="py-2 pr-4 text-xs font-semibold text-neutral-900 break-all">
                                                                     #{o.id}
                                                                 </td>
@@ -1330,9 +1752,10 @@ export default function AdminDashboard() {
                                                                             className="w-full rounded-lg border border-neutral-200 bg-white px-2 py-1.5 text-xs"
                                                                         >
                                                                             <option value="placed">Placed</option>
-                                                                            <option value="packed">Packed</option>
+                                                                            <option value="processing">Processing</option>
                                                                             <option value="shipped">Shipped</option>
                                                                             <option value="delivered">Delivered</option>
+                                                                            <option value="cancelled">Cancelled</option>
                                                                         </select>
 
                                                                         <button

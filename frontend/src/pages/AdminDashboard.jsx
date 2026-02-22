@@ -302,10 +302,10 @@ export default function AdminDashboard() {
                 }
             }
 
-            // 4️⃣ Compute totals from order_items
+            // 4️⃣ Compute totals from order_items (with product_id)
             const { data: itemsData } = await supabase
                 .from("order_items")
-                .select("order_id,qty,unit_price_inr,line_total_inr");
+                .select("order_id,product_id,qty,unit_price_inr,line_total_inr");
 
             const itemsGrouped = (itemsData || []).reduce((acc, item) => {
                 if (!acc[item.order_id]) acc[item.order_id] = [];
@@ -313,24 +313,116 @@ export default function AdminDashboard() {
                 return acc;
             }, {});
 
+            // Fetch product names for all unique product_ids in items
+            const productIds = [
+                ...new Set(
+                    (itemsData || [])
+                        .map((it) => it.product_id)
+                        .filter(Boolean)
+                ),
+            ];
+
+            let productsMap = {};
+            if (productIds.length > 0) {
+                const { data: productsData } = await supabase
+                    .from("products")
+                    .select("id,name")
+                    .in("id", productIds);
+
+                if (productsData && productsData.length > 0) {
+                    productsMap = productsData.reduce((acc, p) => {
+                        acc[p.id] = p;
+                        return acc;
+                    }, {});
+                }
+            }
+
             // 5️⃣ Enrich orders
             const enriched = ordersData.map((o) => {
                 const profile = profilesMap[o.user_id] || {};
 
                 const items = itemsGrouped[o.id] || [];
 
-                const computedTotal = items.reduce((sum, it) => {
-                    const line =
+                const detailedItems = items.map((it) => {
+                    const p = productsMap[it.product_id] || {};
+                    const qtyNum = Number(it.qty || 0);
+                    const unitNum = Number(it.unit_price_inr || 0);
+                    const lineNum =
                         Number(it.line_total_inr) ||
-                        (Number(it.qty || 0) * Number(it.unit_price_inr || 0));
-                    return sum + (Number.isFinite(line) ? line : 0);
-                }, 0);
+                        (qtyNum * unitNum);
+
+                    return {
+                        ...it,
+                        product_name: p.name || "",
+                        qty_num: qtyNum,
+                        unit_price_num: unitNum,
+                        line_total_num: Number.isFinite(lineNum) ? lineNum : 0,
+                    };
+                });
+
+                const computedTotal = detailedItems.reduce((sum, it) => sum + (Number(it.line_total_num) || 0), 0);
+
+                // Shipping/customer fields (works whether you store them as columns or in a JSON object)
+                const ship = o.shipping_address || o.shipping || o.address || {};
+
+                const shipping_name =
+                    o.shipping_name ||
+                    ship.full_name ||
+                    ship.name ||
+                    ship.customer_name ||
+                    ship.recipient ||
+                    "";
+
+                const shipping_phone =
+                    o.shipping_phone ||
+                    ship.phone ||
+                    ship.mobile ||
+                    ship.contact ||
+                    ship.contact_number ||
+                    "";
+
+                const shipping_email =
+                    o.shipping_email ||
+                    ship.email ||
+                    "";
+
+                const shipping_address_1 =
+                    o.shipping_address_1 ||
+                    ship.address1 ||
+                    ship.address_line1 ||
+                    ship.line1 ||
+                    ship.street ||
+                    "";
+
+                const shipping_address_2 =
+                    o.shipping_address_2 ||
+                    ship.address2 ||
+                    ship.address_line2 ||
+                    ship.line2 ||
+                    ship.landmark ||
+                    "";
+
+                const shipping_city = o.shipping_city || ship.city || "";
+                const shipping_state = o.shipping_state || ship.state || "";
+                const shipping_pincode = o.shipping_pincode || ship.pincode || ship.zip || ship.postal_code || "";
+                const shipping_country = o.shipping_country || ship.country || "";
 
                 return {
                     ...o,
                     user_email: profile.email || "",
                     user_full_name: profile.full_name || "",
                     computed_total_inr: computedTotal,
+                    order_items_detailed: detailedItems,
+
+                    shipping_name,
+                    shipping_phone,
+                    shipping_email,
+                    shipping_address_1,
+                    shipping_address_2,
+                    shipping_city,
+                    shipping_state,
+                    shipping_pincode,
+                    shipping_country,
                 };
             });
 
@@ -373,6 +465,17 @@ export default function AdminDashboard() {
         }
 
         loadOrders();
+    };
+
+    // -------------------- Expand/collapse order details --------------------
+    const [expandedOrderIds, setExpandedOrderIds] = useState(() => new Set());
+    const toggleOrderExpanded = (orderId) => {
+      setExpandedOrderIds((prev) => {
+        const next = new Set(prev);
+        if (next.has(orderId)) next.delete(orderId);
+        else next.add(orderId);
+        return next;
+      });
     };
 
     // -------------------- Orders Filtering --------------------
@@ -848,7 +951,7 @@ export default function AdminDashboard() {
                                                 <th className="py-2 pr-4 w-[12%]">Total</th>
                                                 <th className="py-2 pr-4 w-[12%]">Status</th>
                                                 <th className="py-2 pr-4 w-[18%]">Created</th>
-                                                <th className="py-2 w-[12%]">Update</th>
+                                                <th className="py-2 w-[12%]">Actions</th>
                                             </tr>
                                             </thead>
 
@@ -867,6 +970,7 @@ export default function AdminDashboard() {
                                                     .join(" ");
 
                                                 return (
+                                                    <>
                                                     <tr key={o.id} className="border-b align-top">
                                                         <td className="py-2 pr-4 text-xs font-semibold text-neutral-900 break-all">#{o.id}</td>
 
@@ -889,6 +993,7 @@ export default function AdminDashboard() {
                                                         </td>
 
                                                         <td className="py-2">
+                                                          <div className="flex flex-col gap-2">
                                                             <select
                                                                 value={st}
                                                                 onChange={(e) => updateOrderStatus(o.id, e.target.value)}
@@ -899,8 +1004,91 @@ export default function AdminDashboard() {
                                                                 <option value="shipped">Shipped</option>
                                                                 <option value="delivered">Delivered</option>
                                                             </select>
+                                                            <button
+                                                              type="button"
+                                                              onClick={() => toggleOrderExpanded(o.id)}
+                                                              className="w-full rounded-lg border border-neutral-200 bg-white px-2 py-1.5 text-xs font-semibold text-neutral-900 hover:bg-neutral-50"
+                                                            >
+                                                              {expandedOrderIds.has(o.id) ? "Hide details" : "View details"}
+                                                            </button>
+                                                          </div>
                                                         </td>
                                                     </tr>
+                                                    {expandedOrderIds.has(o.id) && (
+                                                      <tr className="border-b bg-neutral-50/50">
+                                                        <td colSpan={6} className="py-3 px-2">
+                                                          <div className="grid gap-4 md:grid-cols-3">
+                                                            {/* Customer */}
+                                                            <div className="rounded-xl border border-neutral-200 bg-white p-4">
+                                                              <div className="text-xs font-semibold text-neutral-500">Customer</div>
+                                                              <div className="mt-2 text-sm text-neutral-900">
+                                                                <div className="font-semibold">
+                                                                  {o.shipping_name || o.user_full_name || "(No name)"}
+                                                                </div>
+                                                                <div className="mt-1 text-xs text-neutral-600">
+                                                                  Email: {o.shipping_email || o.user_email || "(No email)"}
+                                                                </div>
+                                                                <div className="mt-1 text-xs text-neutral-600">
+                                                                  Phone: {o.shipping_phone || "(No phone)"}
+                                                                </div>
+                                                              </div>
+                                                            </div>
+
+                                                            {/* Address */}
+                                                            <div className="rounded-xl border border-neutral-200 bg-white p-4">
+                                                              <div className="text-xs font-semibold text-neutral-500">Shipping Address</div>
+                                                              <div className="mt-2 text-sm text-neutral-900">
+                                                                <div className="text-xs text-neutral-700 leading-relaxed">
+                                                                  {[
+                                                                    o.shipping_address_1,
+                                                                    o.shipping_address_2,
+                                                                    [o.shipping_city, o.shipping_state].filter(Boolean).join(", "),
+                                                                    o.shipping_pincode,
+                                                                    o.shipping_country,
+                                                                  ]
+                                                                    .filter(Boolean)
+                                                                    .join("\n")
+                                                                    .split("\n")
+                                                                    .map((line, idx) => (
+                                                                      <div key={idx}>{line}</div>
+                                                                    ))}
+                                                                </div>
+                                                              </div>
+                                                            </div>
+
+                                                            {/* Items */}
+                                                            <div className="rounded-xl border border-neutral-200 bg-white p-4">
+                                                              <div className="text-xs font-semibold text-neutral-500">Items</div>
+                                                              <div className="mt-2 space-y-2">
+                                                                {(o.order_items_detailed || []).length === 0 ? (
+                                                                  <div className="text-xs text-neutral-600">No items found for this order.</div>
+                                                                ) : (
+                                                                  (o.order_items_detailed || []).map((it, idx) => (
+                                                                    <div key={idx} className="flex items-start justify-between gap-3 text-xs">
+                                                                      <div className="min-w-0">
+                                                                        <div className="font-semibold text-neutral-900 truncate">
+                                                                          {it.product_name || `Product #${it.product_id}`}
+                                                                        </div>
+                                                                        <div className="text-neutral-600">Qty: {Number(it.qty_num || it.qty || 0)}</div>
+                                                                      </div>
+                                                                      <div className="shrink-0 text-neutral-900 font-semibold">
+                                                                        ₹{Number(it.line_total_num || 0).toLocaleString("en-IN")}
+                                                                      </div>
+                                                                    </div>
+                                                                  ))
+                                                                )}
+
+                                                                <div className="pt-2 mt-2 border-t border-neutral-200 flex items-center justify-between text-xs">
+                                                                  <div className="text-neutral-600">Order Total</div>
+                                                                  <div className="font-semibold text-neutral-900">₹{Number(o.computed_total_inr ?? 0).toLocaleString("en-IN")}</div>
+                                                                </div>
+                                                              </div>
+                                                            </div>
+                                                          </div>
+                                                        </td>
+                                                      </tr>
+                                                    )}
+                                                    </>
                                                 );
                                             })}
                                             </tbody>

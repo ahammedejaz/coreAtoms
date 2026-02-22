@@ -28,6 +28,70 @@ export default function AdminDashboard() {
         });
     };
 
+    // -------------------- Reviews --------------------
+    const [reviews, setReviews] = useState([]);
+    const [loadingReviews, setLoadingReviews] = useState(false);
+    const [reviewErr, setReviewErr] = useState("");
+    const [reviewSearch, setReviewSearch] = useState("");
+
+    const loadReviews = async () => {
+        setLoadingReviews(true);
+        setReviewErr("");
+
+        // Fetch reviews + product name — NO profiles join (causes schema cache error)
+        const { data, error } = await supabase
+            .from("product_reviews")
+            .select("id,rating,title,body,created_at,product_id,user_id,order_id,products(name)")
+            .order("created_at", { ascending: false });
+
+        if (error) { setReviewErr(error.message); setReviews([]); setLoadingReviews(false); return; }
+
+        const rawReviews = data || [];
+
+        // Fetch profile names + emails separately
+        const userIds = [...new Set(rawReviews.map((r) => r.user_id).filter(Boolean))];
+        const profileMap = {};
+        if (userIds.length > 0) {
+            const { data: profileRows } = await supabase
+                .from("profiles")
+                .select("id,full_name,email")
+                .in("id", userIds);
+            (profileRows || []).forEach((p) => { profileMap[p.id] = p; });
+        }
+
+        const enriched = rawReviews.map((r) => ({
+            ...r,
+            _profile: profileMap[r.user_id] || null,
+        }));
+
+        setReviews(enriched);
+        setLoadingReviews(false);
+    };
+
+    useEffect(() => {
+        if (activeTab === "reviews") loadReviews();
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [activeTab]);
+
+    const deleteReview = async (id) => {
+        if (!window.confirm("Delete this review? This cannot be undone.")) return;
+        const { error } = await supabase.from("product_reviews").delete().eq("id", id);
+        if (error) { alert(error.message); return; }
+        setReviews((prev) => prev.filter((r) => r.id !== id));
+    };
+
+    const filteredReviews = useMemo(() => {
+        const q = String(reviewSearch || "").trim().toLowerCase();
+        if (!q) return reviews;
+        return reviews.filter((r) =>
+            String(r.products?.name || "").toLowerCase().includes(q) ||
+            String(r._profile?.full_name || "").toLowerCase().includes(q) ||
+            String(r._profile?.email || "").toLowerCase().includes(q) ||
+            String(r.title || "").toLowerCase().includes(q) ||
+            String(r.body || "").toLowerCase().includes(q)
+        );
+    }, [reviews, reviewSearch]);
+
     // -------------------- Orders filters --------------------
     const [orderSearch, setOrderSearch] = useState("");
     const [orderStatusFilter, setOrderStatusFilter] = useState("All");
@@ -43,6 +107,7 @@ export default function AdminDashboard() {
     const [editingId, setEditingId] = useState(null);
 
     const [pName, setPName] = useState("");
+    const [pSku, setPSku] = useState("");
     const [pCategory, setPCategory] = useState("");
     const [pPrice, setPPrice] = useState("");
     const [pStock, setPStock] = useState("");
@@ -152,6 +217,7 @@ export default function AdminDashboard() {
     const resetProductForm = () => {
         setEditingId(null);
         setPName("");
+        setPSku("");
         setPCategory("");
         setPPrice("");
         setPStock("");
@@ -180,6 +246,7 @@ export default function AdminDashboard() {
         setActiveTab("products");
         setEditingId(p.id);
         setPName(p.name || "");
+        setPSku(p.sku || "");
         setPCategory(p.category || "");
         setPPrice(String(p.price_inr ?? ""));
         setPStock(String(p.stock_qty ?? ""));
@@ -304,6 +371,7 @@ export default function AdminDashboard() {
 
             const payload = {
                 name,
+                sku: String(pSku || "").trim() || null,
                 category: category || null,
                 description: description || null,
                 price_inr: price,
@@ -888,6 +956,24 @@ export default function AdminDashboard() {
                         Settings
                     </button>
 
+                    <button
+                        type="button"
+                        onClick={() => setActiveTab("reviews")}
+                        className={[
+                            "shrink-0 rounded-xl border px-4 py-2 text-sm font-semibold transition flex items-center gap-2",
+                            activeTab === "reviews"
+                                ? "border-neutral-300 bg-neutral-900 text-white shadow-sm"
+                                : "border-neutral-200 bg-white text-neutral-900 hover:bg-neutral-50",
+                        ].join(" ")}
+                    >
+                        Reviews
+                        {reviews.length > 0 && (
+                            <span className={["inline-flex h-5 min-w-5 items-center justify-center rounded-full px-1 text-[11px] font-semibold", activeTab === "reviews" ? "bg-white text-neutral-900" : "bg-neutral-200 text-neutral-700"].join(" ")}>
+                                {reviews.length}
+                            </span>
+                        )}
+                    </button>
+
                     <div className="hidden md:block ml-auto text-xs text-neutral-500">
                         {activeTab === "products" && `${products.length} products`}
                         {activeTab === "orders" && `${orders.length} orders`}
@@ -1001,6 +1087,19 @@ export default function AdminDashboard() {
                                                     />
                                                 </div>
 
+                                                <div>
+                                                    <div className="text-xs text-neutral-500">SKU</div>
+                                                    <input
+                                                        type="text"
+                                                        value={pSku}
+                                                        onChange={(e) => setPSku(e.target.value)}
+                                                        placeholder="e.g. CA-MULTI-001"
+                                                        className="mt-1 w-full rounded-xl border border-neutral-200 bg-white px-3 py-2 text-sm text-neutral-900 focus:ring-2 focus:ring-neutral-300 outline-none"
+                                                    />
+                                                </div>
+                                            </div>
+
+                                            <div className="grid gap-3 md:grid-cols-2">
                                                 <div>
                                                     <div className="text-xs text-neutral-500">Category</div>
                                                     <input
@@ -2049,6 +2148,80 @@ export default function AdminDashboard() {
                                     </div>
                                 )}
                             </div>
+                        </div>
+                    )}
+                    {/* Reviews Tab */}
+                    {activeTab === "reviews" && (
+                        <div className="rounded-2xl border border-neutral-200 bg-white p-5">
+                            <div className="text-base font-semibold text-neutral-950">Customer Reviews</div>
+                            <div className="mt-1 text-xs text-neutral-500">View and moderate customer reviews. You can delete bogus reviews but cannot modify them.</div>
+
+                            <div className="mt-4 flex items-center gap-3">
+                                <input
+                                    value={reviewSearch}
+                                    onChange={(e) => setReviewSearch(e.target.value)}
+                                    placeholder="Search by product, customer, or review text…"
+                                    className="w-full sm:w-80 rounded-xl border border-neutral-200 bg-white px-3 py-2 text-sm text-neutral-900 focus:ring-2 focus:ring-neutral-300 outline-none"
+                                />
+                                {reviewSearch && (
+                                    <button type="button" onClick={() => setReviewSearch("")} className="text-xs text-neutral-500 hover:text-neutral-900">Clear</button>
+                                )}
+                                <div className="ml-auto text-xs text-neutral-500">{filteredReviews.length} of {reviews.length} reviews</div>
+                                <button type="button" onClick={loadReviews} className="rounded-xl border border-neutral-200 bg-white px-3 py-2 text-xs font-semibold text-neutral-900 hover:bg-neutral-50">Refresh</button>
+                            </div>
+
+                            {reviewErr && <div className="mt-3 text-sm text-red-600">{reviewErr}</div>}
+
+                            {loadingReviews ? (
+                                <div className="mt-4 text-sm text-neutral-500">Loading reviews…</div>
+                            ) : filteredReviews.length === 0 ? (
+                                <div className="mt-6 rounded-xl border border-neutral-200 bg-neutral-50 p-6 text-center text-sm text-neutral-500">
+                                    No reviews yet.
+                                </div>
+                            ) : (
+                                <div className="mt-4 space-y-3">
+                                    {filteredReviews.map((r) => {
+                                        const stars = Number(r.rating || 0);
+                                        return (
+                                            <div key={r.id} className="rounded-2xl border border-neutral-200 bg-white p-4">
+                                                <div className="flex items-start justify-between gap-3">
+                                                    <div className="min-w-0 flex-1">
+                                                        {/* Stars + product */}
+                                                        <div className="flex items-center gap-2 flex-wrap">
+                                                            <div className="flex gap-0.5">
+                                                                {[1,2,3,4,5].map((i) => (
+                                                                    <span key={i} className={`text-sm ${i <= stars ? "text-amber-400" : "text-neutral-200"}`}>★</span>
+                                                                ))}
+                                                            </div>
+                                                            <span className="text-xs font-semibold text-neutral-700">{r.products?.name || "Unknown product"}</span>
+                                                            <span className="inline-flex items-center rounded-full bg-emerald-50 border border-emerald-200 px-2 py-0.5 text-[10px] font-semibold text-emerald-700">Verified</span>
+                                                        </div>
+
+                                                        {/* Reviewer + date */}
+                                                        <div className="mt-1 text-xs text-neutral-500">
+                                                            {r._profile?.full_name || "Anonymous"} • {r._profile?.email || ""} • {r.created_at ? new Date(r.created_at).toLocaleDateString("en-IN", { day: "numeric", month: "short", year: "numeric" }) : ""}
+                                                        </div>
+
+                                                        {/* Title */}
+                                                        {r.title && <div className="mt-2 text-sm font-semibold text-neutral-900">{r.title}</div>}
+
+                                                        {/* Body */}
+                                                        {r.body && <div className="mt-1 text-sm text-neutral-700 leading-relaxed">{r.body}</div>}
+                                                    </div>
+
+                                                    <button
+                                                        type="button"
+                                                        onClick={() => deleteReview(r.id)}
+                                                        className="shrink-0 rounded-xl border border-red-200 bg-red-50 px-3 py-1.5 text-xs font-semibold text-red-600 hover:bg-red-100 transition"
+                                                    >
+                                                        Delete
+                                                    </button>
+                                                </div>
+                                            </div>
+                                        );
+                                    })}
+                                </div>
+                            )}
                         </div>
                     )}
                 </div>

@@ -1,10 +1,8 @@
 import { Link } from "react-router-dom";
 import { useCart } from "../context/CartContext";
 import { useEffect, useState } from "react";
-import { supabase } from "../services/supabase/client";
-
-const money = (n) => `₹${Number(n || 0).toLocaleString("en-IN")}`;
-const FALLBACK_IMG = "/placeholder-product.jpg";
+import { fetchProducts } from "../services/products";
+import { ProductCard } from "./Shop";
 
 // ── Static data ────────────────────────────────────────────────────────────
 
@@ -104,11 +102,7 @@ function Stars({ count = 5 }) {
 // ── Component ──────────────────────────────────────────────────────────────
 
 export default function Home() {
-  const cart = useCart();
-  const addFn =
-    cart?.addItem ||
-    cart?.addToCart ||
-    ((item) => console.warn("No addItem found", item));
+  const { addItem } = useCart();
 
   const heroImages = [
     "/hero/hero-1.jpg",
@@ -121,6 +115,7 @@ export default function Home() {
   const [featuredProducts, setFeaturedProducts] = useState([]);
   const [loadingProducts, setLoadingProducts] = useState(true);
   const [toast, setToast] = useState({ open: false, message: "" });
+  const [justAddedId, setJustAddedId] = useState(null);
 
   // Hero auto-advance
   useEffect(() => {
@@ -130,31 +125,29 @@ export default function Home() {
     return () => clearInterval(interval);
   }, []);
 
-  // Featured products — 6 latest
+  // Featured products via fetchProducts so ratings + images all come through
   useEffect(() => {
     (async () => {
       setLoadingProducts(true);
-      const { data } = await supabase
-        .from("products")
-        .select("id,name,price_inr,image_url,stock_qty,category,description,is_active,created_at")
-        .eq("is_active", true)
-        .order("created_at", { ascending: false })
-        .limit(6);
-      if (data) setFeaturedProducts(data);
-      setLoadingProducts(false);
+      try {
+        const list = await fetchProducts();
+        setFeaturedProducts(list.slice(0, 6));
+      } catch (e) {
+        console.error("Home products error:", e);
+      } finally {
+        setLoadingProducts(false);
+      }
     })();
   }, []);
 
-  const handleAddToCart = (product) => {
-    addFn({
-      id: product.id,
-      name: product.name,
-      unitPrice: product.price_inr,
-      image: product.image_url,
-      qty: 1,
-    });
-    setToast({ open: true, message: `${product.name} added to cart` });
-    setTimeout(() => setToast({ open: false, message: "" }), 1800);
+  const handleAdd = (p) => {
+    addItem(p, 1);
+    setJustAddedId(p.id);
+    setToast({ open: true, message: `${p.name} added to cart` });
+    window.clearTimeout(window.__coreatoms_home_btn);
+    window.__coreatoms_home_btn = window.setTimeout(() => setJustAddedId(null), 900);
+    window.clearTimeout(window.__coreatoms_home_toast);
+    window.__coreatoms_home_toast = window.setTimeout(() => setToast({ open: false, message: "" }), 1800);
   };
 
   return (
@@ -256,15 +249,15 @@ export default function Home() {
         </div>
 
         {loadingProducts ? (
-          <div className="grid gap-8 sm:grid-cols-2 lg:grid-cols-3">
+          <div className="grid gap-5 sm:grid-cols-2 lg:grid-cols-3">
             {Array.from({ length: 6 }).map((_, i) => (
-              <div key={i} className="rounded-2xl border border-neutral-200 bg-white overflow-hidden animate-pulse">
+              <div key={i} className="rounded-3xl border border-black/10 bg-white overflow-hidden animate-pulse">
                 <div className="h-56 bg-neutral-100" />
                 <div className="p-5 space-y-3">
-                  <div className="h-3 bg-neutral-100 rounded w-1/3" />
                   <div className="h-4 bg-neutral-100 rounded w-2/3" />
                   <div className="h-3 bg-neutral-100 rounded w-full" />
-                  <div className="h-9 bg-neutral-100 rounded-xl mt-2" />
+                  <div className="h-3 bg-neutral-100 rounded w-4/5" />
+                  <div className="h-9 bg-neutral-100 rounded-xl mt-4" />
                 </div>
               </div>
             ))}
@@ -272,57 +265,14 @@ export default function Home() {
         ) : featuredProducts.length === 0 ? (
           <div className="text-sm text-neutral-500">No products found.</div>
         ) : (
-          <div className="grid gap-8 sm:grid-cols-2 lg:grid-cols-3">
-            {featuredProducts.map((product) => (
-              <div
-                key={product.id}
-                className="group rounded-2xl border border-neutral-200 bg-white shadow-sm hover:shadow-lg transition-all duration-300 overflow-hidden"
-              >
-                <Link to={`/product/${product.id}`} className="block overflow-hidden">
-                  <img
-                    src={product.image_url || FALLBACK_IMG}
-                    alt={product.name}
-                    className="h-56 w-full object-cover group-hover:scale-105 transition-transform duration-500"
-                    onError={(e) => { e.currentTarget.src = FALLBACK_IMG; }}
-                  />
-                </Link>
-
-                <div className="p-5 space-y-3">
-                  {product.category && (
-                    <div className="text-xs inline-block px-3 py-1 rounded-full bg-neutral-100 text-neutral-600 font-medium">
-                      {product.category}
-                    </div>
-                  )}
-
-                  <Link to={`/product/${product.id}`} className="block text-lg font-semibold text-neutral-900 hover:underline leading-snug">
-                    {product.name}
-                  </Link>
-
-                  {product.description && (
-                    <p className="text-sm text-neutral-500 line-clamp-2">{product.description}</p>
-                  )}
-
-                  <div className="flex items-center justify-between pt-1">
-                    <div className="text-lg font-semibold text-neutral-900">{money(product.price_inr)}</div>
-                    <div className={`text-xs font-medium flex items-center gap-1 ${product.stock_qty > 0 ? "text-emerald-600" : "text-red-500"}`}>
-                      <span className={`h-1.5 w-1.5 rounded-full ${product.stock_qty > 0 ? "bg-emerald-500" : "bg-red-500"}`} />
-                      {product.stock_qty > 0 ? "In Stock" : "Out of Stock"}
-                    </div>
-                  </div>
-
-                  <button
-                    onClick={() => handleAddToCart(product)}
-                    disabled={product.stock_qty <= 0}
-                    className={`w-full rounded-xl py-2.5 text-sm font-medium transition-all ${
-                      product.stock_qty > 0
-                        ? "bg-neutral-900 text-white hover:bg-neutral-700"
-                        : "bg-neutral-100 text-neutral-400 cursor-not-allowed"
-                    }`}
-                  >
-                    {product.stock_qty > 0 ? "Add to Cart" : "Unavailable"}
-                  </button>
-                </div>
-              </div>
+          <div className="grid gap-5 sm:grid-cols-2 lg:grid-cols-3">
+            {featuredProducts.map((p) => (
+              <ProductCard
+                key={p.id}
+                p={p}
+                onAdd={handleAdd}
+                justAdded={justAddedId === p.id}
+              />
             ))}
           </div>
         )}
@@ -333,17 +283,28 @@ export default function Home() {
         <div className="text-center mb-10">
           <p className="text-xs font-semibold tracking-widest text-neutral-500 uppercase">Browse by Goal</p>
           <h2 className="mt-2 text-3xl font-semibold text-neutral-900">Shop by Category</h2>
+          <p className="mt-2 text-sm text-neutral-500">Find the right formula for your goal</p>
         </div>
-        <div className="grid grid-cols-2 gap-4 sm:grid-cols-3 lg:grid-cols-6">
+        <div className="grid grid-cols-2 gap-5 sm:grid-cols-3 lg:grid-cols-6">
           {CATEGORIES.map((cat) => (
             <Link
               key={cat.category}
               to={`/shop?category=${encodeURIComponent(cat.category)}`}
-              className="group rounded-2xl border border-neutral-200 bg-white p-5 text-center shadow-sm hover:shadow-md hover:border-neutral-400 transition-all duration-200"
+              className="group rounded-3xl border border-black/10 bg-white overflow-hidden shadow-[0_20px_60px_-40px_rgba(0,0,0,0.25)] hover:shadow-[0_30px_80px_-45px_rgba(0,0,0,0.35)] transition-shadow"
             >
-              <div className="text-3xl">{cat.emoji}</div>
-              <div className="mt-3 text-xs font-semibold text-neutral-700 group-hover:text-neutral-950 leading-snug">
-                {cat.label}
+              <div className="relative h-28 bg-neutral-50 flex items-center justify-center overflow-hidden">
+                <span className="text-5xl transition-transform duration-300 group-hover:scale-110">{cat.emoji}</span>
+                <div className="absolute inset-0 bg-gradient-to-t from-black/10 via-transparent to-transparent pointer-events-none" />
+              </div>
+              <div className="p-4">
+                <div className="text-sm font-semibold text-neutral-950 group-hover:underline leading-snug">
+                  {cat.label}
+                </div>
+                <div className="mt-2">
+                  <span className="rounded-full border border-black/10 bg-white px-2.5 py-1 text-[10px] font-medium text-neutral-600">
+                    Shop now →
+                  </span>
+                </div>
               </div>
             </Link>
           ))}

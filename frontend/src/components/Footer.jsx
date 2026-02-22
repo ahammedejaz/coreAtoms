@@ -2,18 +2,17 @@ import { Link } from "react-router-dom";
 export default function Footer() {
   const year = new Date().getFullYear();
 
-  const links = {
-    Shop: [
-      { label: "All Products", href: "/shop" },
-      { label: "Track Order", href: "/orders" },
-      { label: "Cart", href: "/cart" },
-    ],
-    Company: [
-      { label: "About", href: "https://atomslifecare.com/about" },
-      { label: "Brand", href: "https://atomslifecare.com/brands" },
-      { label: "Contact", href: "https://atomslifecare.com/contact" },
-    ],
-  };
+  const internalLinks = [
+    { label: "All Products", href: "/shop" },
+    { label: "Track Order", href: "/orders" },
+    { label: "Cart", href: "/cart" },
+  ];
+
+  const externalLinks = [
+    { label: "About", href: "https://atomslifecare.com/about" },
+    { label: "Brand", href: "https://atomslifecare.com/brands" },
+    { label: "Contact", href: "https://atomslifecare.com/contact" },
+  ];
 
   return (
     <footer className="mt-auto border-t border-neutral-200 bg-white/70 backdrop-blur shadow-[0_-20px_60px_-30px_rgba(0,0,0,0.15)]">
@@ -74,26 +73,41 @@ export default function Footer() {
             </div>
           </div>
 
-          {/* Link columns */}
-          {Object.entries(links).map(([title, items]) => (
-            <div key={title} className="space-y-3">
-              <div className="text-xs font-semibold tracking-widest text-neutral-500 uppercase">
-                {title}
-              </div>
-              <ul className="space-y-2">
-                {items.map((l) => (
-                  <li key={l.label}>
-                    <Link
-                      to={l.href}
-                      className="text-sm text-neutral-700 hover:text-neutral-950 hover:underline underline-offset-4 transition"
-                    >
-                      {l.label}
-                    </Link>
-                  </li>
-                ))}
-              </ul>
-            </div>
-          ))}
+          {/* Shop links — internal */}
+          <div className="space-y-3">
+            <div className="text-xs font-semibold tracking-widest text-neutral-500 uppercase">Shop</div>
+            <ul className="space-y-2">
+              {internalLinks.map((l) => (
+                <li key={l.label}>
+                  <Link
+                    to={l.href}
+                    className="text-sm text-neutral-700 hover:text-neutral-950 hover:underline underline-offset-4 transition"
+                  >
+                    {l.label}
+                  </Link>
+                </li>
+              ))}
+            </ul>
+          </div>
+
+          {/* Company links — external */}
+          <div className="space-y-3">
+            <div className="text-xs font-semibold tracking-widest text-neutral-500 uppercase">Company</div>
+            <ul className="space-y-2">
+              {externalLinks.map((l) => (
+                <li key={l.label}>
+                  <a
+                    href={l.href}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="text-sm text-neutral-700 hover:text-neutral-950 hover:underline underline-offset-4 transition"
+                  >
+                    {l.label}
+                  </a>
+                </li>
+              ))}
+            </ul>
+          </div>
         </div>
 
         {/* Divider */}

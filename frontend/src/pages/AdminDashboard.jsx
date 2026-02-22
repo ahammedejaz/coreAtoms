@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from "react";
+import { Fragment, useEffect, useMemo, useRef, useState } from "react";
 import { supabase } from "../services/supabase/client";
 import { useAuth } from "../context/AuthContext";
 
@@ -16,11 +16,23 @@ export default function AdminDashboard() {
     const [loadingOrders, setLoadingOrders] = useState(false);
     const [orderErr, setOrderErr] = useState("");
 
+    // Orders expand (details)
+    const [expandedOrderIds, setExpandedOrderIds] = useState(new Set());
+
+    const toggleOrderExpanded = (orderId) => {
+        setExpandedOrderIds((prev) => {
+            const next = new Set(prev);
+            if (next.has(orderId)) next.delete(orderId);
+            else next.add(orderId);
+            return next;
+        });
+    };
+
     // -------------------- Orders filters --------------------
-    const [orderSearch, setOrderSearch] = useState(""); // matches order id or user id or email
+    const [orderSearch, setOrderSearch] = useState("");
     const [orderStatusFilter, setOrderStatusFilter] = useState("All");
-    const [orderDateFrom, setOrderDateFrom] = useState(""); // YYYY-MM-DD
-    const [orderDateTo, setOrderDateTo] = useState(""); // YYYY-MM-DD
+    const [orderDateFrom, setOrderDateFrom] = useState("");
+    const [orderDateTo, setOrderDateTo] = useState("");
 
     // -------------------- Products (Admin CRUD) --------------------
     const [products, setProducts] = useState([]);
@@ -98,9 +110,13 @@ export default function AdminDashboard() {
 
         const channel = supabase
             .channel("products-realtime")
-            .on("postgres_changes", { event: "*", schema: "public", table: "products" }, () => {
-                loadProducts();
-            })
+            .on(
+                "postgres_changes",
+                { event: "*", schema: "public", table: "products" },
+                () => {
+                    loadProducts();
+                }
+            )
             .subscribe();
 
         return () => {
@@ -151,7 +167,9 @@ export default function AdminDashboard() {
 
         const ext = String(pFile.name || "").split(".").pop() || "jpg";
         const safeExt = ext.toLowerCase();
-        const path = `products/${Date.now()}-${Math.random().toString(16).slice(2)}.${safeExt}`;
+        const path = `products/${Date.now()}-${Math.random()
+            .toString(16)
+            .slice(2)}.${safeExt}`;
 
         const { error: upErr } = await supabase.storage
             .from(PRODUCT_BUCKET)
@@ -175,8 +193,10 @@ export default function AdminDashboard() {
             const stock = Number(pStock);
 
             if (!name) throw new Error("Product name is required");
-            if (!Number.isFinite(price) || price < 0) throw new Error("Enter a valid price");
-            if (!Number.isFinite(stock) || stock < 0) throw new Error("Enter a valid stock quantity");
+            if (!Number.isFinite(price) || price < 0)
+                throw new Error("Enter a valid price");
+            if (!Number.isFinite(stock) || stock < 0)
+                throw new Error("Enter a valid stock quantity");
 
             // Upload new image if selected
             let image_url = pImageUrl || "";
@@ -195,13 +215,14 @@ export default function AdminDashboard() {
             };
 
             if (editingId) {
-                const { error } = await supabase.from("products").update(payload).eq("id", editingId);
+                const { error } = await supabase
+                    .from("products")
+                    .update(payload)
+                    .eq("id", editingId);
                 if (error) throw new Error(error.message);
                 setProductMsg("Updated ✅");
             } else {
-                const { error } = await supabase.from("products").insert([
-                    { ...payload, created_at: new Date().toISOString() },
-                ]);
+                const { error } = await supabase.from("products").insert([{ ...payload }]);
                 if (error) throw new Error(error.message);
                 setProductMsg("Created ✅");
             }
@@ -217,7 +238,9 @@ export default function AdminDashboard() {
     };
 
     const deleteProduct = async (id) => {
-        const ok = window.confirm("Delete this product? This will remove it from the shop.");
+        const ok = window.confirm(
+            "Delete this product? This will remove it from the shop."
+        );
         if (!ok) return;
 
         const { error } = await supabase.from("products").delete().eq("id", id);
@@ -257,225 +280,173 @@ export default function AdminDashboard() {
         setSaving(false);
     };
 
-    // -------------------- Load orders (with totals + user info) --------------------
+    // -------------------- Load orders (with profile + items + product names) --------------------
     const loadOrders = async () => {
         setLoadingOrders(true);
         setOrderErr("");
 
+        let data = [];
+        let queryError = null;
+
         try {
-            // 1️⃣ Load orders WITHOUT any join (no profiles relation required)
-            const { data: ordersData, error: ordersError } = await supabase
+            const res = await supabase
                 .from("orders")
-                .select("*")
+                .select(
+                    `
+          id,
+          user_id,
+          status,
+          created_at,
+          total_amount_inr,
+          total_inr,
+          total_items,
+          shipping_address,
+          profiles (
+            id,
+            email,
+            full_name
+          ),
+          order_items (
+            product_id,
+            qty,
+            unit_price_inr,
+            line_total_inr,
+            products (
+              name
+            )
+          )
+        `
+                )
                 .order("created_at", { ascending: false });
 
-            if (ordersError) throw new Error(ordersError.message);
+            data = res?.data || [];
+            queryError = res?.error || null;
 
-            if (!ordersData || ordersData.length === 0) {
-                setOrders([]);
-                return;
-            }
+            if (queryError) throw new Error(queryError.message);
 
-            // 2️⃣ Collect unique user_ids
-            const userIds = [
-                ...new Set(
-                    ordersData
-                        .map((o) => o.user_id)
-                        .filter(Boolean)
-                ),
-            ];
+            // Fallback profiles fetch
+            const userIds = Array.from(
+                new Set((data || []).map((o) => o?.user_id).filter(Boolean))
+            );
 
-            let profilesMap = {};
-
-            // 3️⃣ Fetch profiles manually (NO FK needed)
-            if (userIds.length > 0) {
-                const { data: profilesData } = await supabase
+            let profileMap = {};
+            if (userIds.length) {
+                const profRes = await supabase
                     .from("profiles")
                     .select("id,email,full_name")
                     .in("id", userIds);
 
-                if (profilesData && profilesData.length > 0) {
-                    profilesMap = profilesData.reduce((acc, p) => {
-                        acc[p.id] = p;
-                        return acc;
-                    }, {});
+                if (!profRes?.error) {
+                    (profRes?.data || []).forEach((p) => {
+                        profileMap[p.id] = {
+                            email: String(p?.email || "").trim(),
+                            full_name: String(p?.full_name || "").trim(),
+                        };
+                    });
                 }
             }
 
-            // 4️⃣ Compute totals from order_items (with product_id)
-            const { data: itemsData } = await supabase
-                .from("order_items")
-                .select("order_id,product_id,qty,unit_price_inr,line_total_inr");
+            const enriched = (data || []).map((o) => {
+                const prof = Array.isArray(o?.profiles) ? o.profiles[0] : o?.profiles;
 
-            const itemsGrouped = (itemsData || []).reduce((acc, item) => {
-                if (!acc[item.order_id]) acc[item.order_id] = [];
-                acc[item.order_id].push(item);
-                return acc;
-            }, {});
+                const joinEmail = String(prof?.email || "").trim();
+                const joinName = String(prof?.full_name || "").trim();
 
-            // Fetch product names for all unique product_ids in items
-            const productIds = [
-                ...new Set(
-                    (itemsData || [])
-                        .map((it) => it.product_id)
-                        .filter(Boolean)
-                ),
-            ];
+                const fallback = profileMap?.[o?.user_id] || null;
+                const fallbackEmail = String(fallback?.email || "").trim();
+                const fallbackName = String(fallback?.full_name || "").trim();
 
-            let productsMap = {};
-            if (productIds.length > 0) {
-                const { data: productsData } = await supabase
-                    .from("products")
-                    .select("id,name")
-                    .in("id", productIds);
+                const ship = o?.shipping_address || {};
+                const shipEmail = String(
+                    ship?.email || ship?.Email || ship?.userEmail || ship?.user_email || ""
+                ).trim();
 
-                if (productsData && productsData.length > 0) {
-                    productsMap = productsData.reduce((acc, p) => {
-                        acc[p.id] = p;
-                        return acc;
-                    }, {});
-                }
-            }
+                const profileEmail = joinEmail || fallbackEmail || shipEmail || "";
+                const profileName = joinName || fallbackName || "";
 
-            // 5️⃣ Enrich orders
-            const enriched = ordersData.map((o) => {
-                const profile = profilesMap[o.user_id] || {};
+                const shipping_name = String(ship?.fullName || ship?.name || "").trim();
+                const shipping_phone = String(ship?.phone || ship?.mobile || "").trim();
+                const shipping_address_1 = String(ship?.line1 || ship?.address1 || "").trim();
+                const shipping_address_2 = String(ship?.line2 || ship?.address2 || "").trim();
+                const shipping_city = String(ship?.city || "").trim();
+                const shipping_state = String(ship?.state || "").trim();
+                const shipping_pincode = String(ship?.pincode || ship?.zip || "").trim();
+                const shipping_country = String(ship?.country || "India").trim();
 
-                const items = itemsGrouped[o.id] || [];
+                const dbTotal = Number(o?.total_amount_inr ?? o?.total_inr ?? 0);
+                let computed_total_inr =
+                    Number.isFinite(dbTotal) && dbTotal > 0 ? dbTotal : 0;
 
+                const items = Array.isArray(o?.order_items) ? o.order_items : [];
                 const detailedItems = items.map((it) => {
-                    const p = productsMap[it.product_id] || {};
-                    const qtyNum = Number(it.qty || 0);
-                    const unitNum = Number(it.unit_price_inr || 0);
-                    const lineNum =
-                        Number(it.line_total_inr) ||
-                        (qtyNum * unitNum);
+                    const qtyNum = Number(it?.qty || 0);
+                    const unitNum = Number(it?.unit_price_inr || 0);
+                    const lineNum = Number(it?.line_total_inr ?? qtyNum * unitNum);
 
                     return {
-                        ...it,
-                        product_name: p.name || "",
-                        qty_num: qtyNum,
-                        unit_price_num: unitNum,
+                        product_id: it?.product_id,
+                        product_name: it?.products?.name || "",
+                        qty: it?.qty,
+                        qty_num: Number.isFinite(qtyNum) ? qtyNum : 0,
+                        unit_price_inr: it?.unit_price_inr,
+                        line_total_inr: it?.line_total_inr,
                         line_total_num: Number.isFinite(lineNum) ? lineNum : 0,
                     };
                 });
 
-                const computedTotal = detailedItems.reduce((sum, it) => sum + (Number(it.line_total_num) || 0), 0);
-
-                // Shipping/customer fields (works whether you store them as columns or in a JSON object)
-                const ship = o.shipping_address || o.shipping || o.address || {};
-
-                const shipping_name =
-                    o.shipping_name ||
-                    ship.full_name ||
-                    ship.name ||
-                    ship.customer_name ||
-                    ship.recipient ||
-                    "";
-
-                const shipping_phone =
-                    o.shipping_phone ||
-                    ship.phone ||
-                    ship.mobile ||
-                    ship.contact ||
-                    ship.contact_number ||
-                    "";
-
-                const shipping_email =
-                    o.shipping_email ||
-                    ship.email ||
-                    "";
-
-                const shipping_address_1 =
-                    o.shipping_address_1 ||
-                    ship.address1 ||
-                    ship.address_line1 ||
-                    ship.line1 ||
-                    ship.street ||
-                    "";
-
-                const shipping_address_2 =
-                    o.shipping_address_2 ||
-                    ship.address2 ||
-                    ship.address_line2 ||
-                    ship.line2 ||
-                    ship.landmark ||
-                    "";
-
-                const shipping_city = o.shipping_city || ship.city || "";
-                const shipping_state = o.shipping_state || ship.state || "";
-                const shipping_pincode = o.shipping_pincode || ship.pincode || ship.zip || ship.postal_code || "";
-                const shipping_country = o.shipping_country || ship.country || "";
+                if (!computed_total_inr) {
+                    computed_total_inr = detailedItems.reduce(
+                        (sum, it) => sum + (it.line_total_num || 0),
+                        0
+                    );
+                }
 
                 return {
                     ...o,
-                    user_email: profile.email || "",
-                    user_full_name: profile.full_name || "",
-                    computed_total_inr: computedTotal,
-                    order_items_detailed: detailedItems,
-
-                    shipping_name,
+                    user_email: profileEmail,
+                    user_full_name: profileName,
+                    shipping_name: shipping_name || profileName || "",
+                    shipping_email: profileEmail || "",
                     shipping_phone,
-                    shipping_email,
                     shipping_address_1,
                     shipping_address_2,
                     shipping_city,
                     shipping_state,
                     shipping_pincode,
                     shipping_country,
+                    computed_total_inr,
+                    order_items_detailed: detailedItems,
                 };
             });
 
             setOrders(enriched);
         } catch (e) {
-            setOrders([]);
             setOrderErr(e?.message || "Failed to load orders");
+            setOrders([]);
         } finally {
             setLoadingOrders(false);
         }
     };
 
-    // -------------------- Orders realtime (load only when Orders tab is open) --------------------
+    // Reload orders whenever Orders tab is opened
     useEffect(() => {
-        if (activeTab !== "orders") return;
-
-        loadOrders();
-
-        const channel = supabase
-            .channel("orders-realtime")
-            .on("postgres_changes", { event: "*", schema: "public", table: "orders" }, () => {
-                loadOrders();
-            })
-            .subscribe();
-
-        return () => {
-            supabase.removeChannel(channel);
-        };
+        if (activeTab === "orders") {
+            loadOrders();
+        }
         // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [activeTab]);
 
-    // -------------------- Update order status (normalize lowercase) --------------------
+    // -------------------- Update order status --------------------
     const updateOrderStatus = async (orderId, newStatus) => {
-        const normalized = String(newStatus || "").trim().toLowerCase();
-
-        const { error } = await supabase.from("orders").update({ status: normalized }).eq("id", orderId);
+        const { error } = await supabase
+            .from("orders")
+            .update({ status: newStatus })
+            .eq("id", orderId);
         if (error) {
             alert(error.message);
             return;
         }
-
         loadOrders();
-    };
-
-    // -------------------- Expand/collapse order details --------------------
-    const [expandedOrderIds, setExpandedOrderIds] = useState(() => new Set());
-    const toggleOrderExpanded = (orderId) => {
-      setExpandedOrderIds((prev) => {
-        const next = new Set(prev);
-        if (next.has(orderId)) next.delete(orderId);
-        else next.add(orderId);
-        return next;
-      });
     };
 
     // -------------------- Orders Filtering --------------------
@@ -488,17 +459,29 @@ export default function AdminDashboard() {
                 const idStr = String(o?.id ?? "").toLowerCase();
                 const userStr = String(o?.user_id ?? "").toLowerCase();
                 const emailStr = String(o?.user_email ?? "").toLowerCase();
-                return idStr.includes(q) || userStr.includes(q) || emailStr.includes(q);
+                const nameStr = String(o?.shipping_name ?? "").toLowerCase();
+                return (
+                    idStr.includes(q) ||
+                    userStr.includes(q) ||
+                    emailStr.includes(q) ||
+                    nameStr.includes(q)
+                );
             });
         }
 
         if (orderStatusFilter && orderStatusFilter !== "All") {
             const wanted = String(orderStatusFilter || "").trim().toLowerCase();
-            list = list.filter((o) => String(o?.status || "").trim().toLowerCase() === wanted);
+            list = list.filter(
+                (o) => String(o?.status || "").trim().toLowerCase() === wanted
+            );
         }
 
-        const from = orderDateFrom ? new Date(`${orderDateFrom}T00:00:00`).getTime() : null;
-        const to = orderDateTo ? new Date(`${orderDateTo}T23:59:59`).getTime() : null;
+        const from = orderDateFrom
+            ? new Date(`${orderDateFrom}T00:00:00`).getTime()
+            : null;
+        const to = orderDateTo
+            ? new Date(`${orderDateTo}T23:59:59`).getTime()
+            : null;
 
         if (from || to) {
             list = list.filter((o) => {
@@ -517,19 +500,22 @@ export default function AdminDashboard() {
         <div className="mx-auto max-w-6xl px-4 py-10">
             <div className="card p-6">
                 <div className="text-xs text-neutral-500">Admin</div>
-                <div className="mt-1 text-2xl font-semibold text-neutral-950">Dashboard</div>
+                <div className="mt-1 text-2xl font-semibold text-neutral-950">
+                    Dashboard
+                </div>
                 <div className="mt-2 text-sm text-neutral-600">
-                    Logged in as <span className="font-semibold">{profile?.email}</span> • role:{" "}
+                    Logged in as{" "}
+                    <span className="font-semibold">{profile?.email}</span> • role:{" "}
                     <span className="font-semibold">{profile?.role}</span>
                 </div>
 
-                {/* Tab Bar */}
-                <div className="mt-6 flex flex-wrap items-center gap-2">
+                {/* Tab Bar (mobile friendly) */}
+                <div className="mt-6 -mx-4 px-4 flex items-center gap-2 overflow-x-auto whitespace-nowrap">
                     <button
                         type="button"
                         onClick={() => setActiveTab("products")}
                         className={[
-                            "rounded-xl border px-4 py-2 text-sm font-semibold transition",
+                            "shrink-0 rounded-xl border px-4 py-2 text-sm font-semibold transition",
                             activeTab === "products"
                                 ? "border-neutral-300 bg-neutral-900 text-white shadow-sm"
                                 : "border-neutral-200 bg-white text-neutral-900 hover:bg-neutral-50",
@@ -542,7 +528,7 @@ export default function AdminDashboard() {
                         type="button"
                         onClick={() => setActiveTab("orders")}
                         className={[
-                            "rounded-xl border px-4 py-2 text-sm font-semibold transition",
+                            "shrink-0 rounded-xl border px-4 py-2 text-sm font-semibold transition",
                             activeTab === "orders"
                                 ? "border-neutral-300 bg-neutral-900 text-white shadow-sm"
                                 : "border-neutral-200 bg-white text-neutral-900 hover:bg-neutral-50",
@@ -555,7 +541,7 @@ export default function AdminDashboard() {
                         type="button"
                         onClick={() => setActiveTab("settings")}
                         className={[
-                            "rounded-xl border px-4 py-2 text-sm font-semibold transition",
+                            "shrink-0 rounded-xl border px-4 py-2 text-sm font-semibold transition",
                             activeTab === "settings"
                                 ? "border-neutral-300 bg-neutral-900 text-white shadow-sm"
                                 : "border-neutral-200 bg-white text-neutral-900 hover:bg-neutral-50",
@@ -564,7 +550,7 @@ export default function AdminDashboard() {
                         Settings
                     </button>
 
-                    <div className="ml-auto text-xs text-neutral-500">
+                    <div className="hidden md:block ml-auto text-xs text-neutral-500">
                         {activeTab === "products" && `${products.length} products`}
                         {activeTab === "orders" && `${orders.length} orders`}
                         {activeTab === "settings" && "App settings"}
@@ -576,7 +562,9 @@ export default function AdminDashboard() {
                     {activeTab === "settings" && (
                         <div className="max-w-2xl">
                             <div className="rounded-2xl border border-neutral-200 bg-white p-5">
-                                <div className="text-base font-semibold text-neutral-950">Order settings</div>
+                                <div className="text-base font-semibold text-neutral-950">
+                                    Order settings
+                                </div>
                                 <div className="mt-2 text-sm text-neutral-600">
                                     Set the max number of total items allowed per order (dynamic).
                                 </div>
@@ -593,7 +581,11 @@ export default function AdminDashboard() {
                                 </div>
 
                                 <div className="mt-4 flex items-center gap-3">
-                                    <button onClick={save} disabled={saving} className="btn-primary disabled:opacity-50">
+                                    <button
+                                        onClick={save}
+                                        disabled={saving}
+                                        className="btn-primary disabled:opacity-50"
+                                    >
                                         {saving ? "Saving..." : "Save"}
                                     </button>
                                     {msg && <div className="text-sm text-neutral-700">{msg}</div>}
@@ -610,9 +602,12 @@ export default function AdminDashboard() {
                             <div className="mt-4">
                                 <div className="flex items-center justify-between gap-3">
                                     <div>
-                                        <div className="text-sm font-semibold text-neutral-900">Products</div>
+                                        <div className="text-sm font-semibold text-neutral-900">
+                                            Products
+                                        </div>
                                         <div className="mt-1 text-xs text-neutral-500">
-                                            Create, edit, delete products. Changes reflect immediately in Shop and Product Detail.
+                                            Create, edit, delete products. Changes reflect immediately in
+                                            Shop and Product Detail.
                                         </div>
                                     </div>
 
@@ -633,7 +628,7 @@ export default function AdminDashboard() {
                                                     {editingId ? `Edit Product #${editingId}` : "Add New Product"}
                                                 </div>
                                                 <div className="mt-1 text-xs text-neutral-500">
-                                                    Upload 1 main image (jpg/png/webp). Multiple images can be added later as an upgrade.
+                                                    Upload 1 main image (jpg/png/webp).
                                                 </div>
                                             </div>
 
@@ -750,7 +745,11 @@ export default function AdminDashboard() {
                                                         disabled={savingProduct}
                                                         className="w-full rounded-xl bg-gradient-to-r from-neutral-200 to-neutral-300 px-4 py-2.5 text-sm font-semibold text-neutral-900 shadow-sm hover:shadow disabled:opacity-60"
                                                     >
-                                                        {savingProduct ? "Saving..." : editingId ? "Save Changes" : "Create Product"}
+                                                        {savingProduct
+                                                            ? "Saving..."
+                                                            : editingId
+                                                                ? "Save Changes"
+                                                                : "Create Product"}
                                                     </button>
 
                                                     {editingId && (
@@ -765,7 +764,9 @@ export default function AdminDashboard() {
                                                 </div>
                                             </div>
 
-                                            {productMsg && <div className="text-sm text-neutral-700">{productMsg}</div>}
+                                            {productMsg && (
+                                                <div className="text-sm text-neutral-700">{productMsg}</div>
+                                            )}
                                         </div>
                                     </div>
                                 )}
@@ -779,80 +780,172 @@ export default function AdminDashboard() {
                                     ) : products.length === 0 ? (
                                         <div className="text-sm text-neutral-500">No products yet.</div>
                                     ) : (
-                                        <div className="mt-2 overflow-x-auto">
-                                            <table className="w-full table-fixed text-sm">
-                                                <thead>
-                                                <tr className="text-left text-neutral-500 border-b">
-                                                    <th className="py-2 pr-4 w-[40%]">Product</th>
-                                                    <th className="py-2 pr-4 w-[14%]">Price</th>
-                                                    <th className="py-2 pr-4 w-[14%]">Stock</th>
-                                                    <th className="py-2 pr-4 w-[10%]">Active</th>
-                                                    <th className="py-2 pr-4 w-[16%]">Created</th>
-                                                    <th className="py-2 w-[6%]">Action</th>
-                                                </tr>
-                                                </thead>
-                                                <tbody>
+                                        <div className="mt-2">
+                                            {/* Mobile cards */}
+                                            <div className="grid gap-3 md:hidden">
                                                 {products.map((p) => {
                                                     const out = Number(p.stock_qty || 0) <= 0;
-
                                                     return (
-                                                        <tr key={p.id} className="border-b align-top">
-                                                            <td className="py-2 pr-4">
-                                                                <div className="flex items-center gap-3">
-                                                                    <div className="h-10 w-10 rounded-lg bg-neutral-100 overflow-hidden shrink-0">
-                                                                        {p.image_url ? (
-                                                                            <img
-                                                                                src={p.image_url}
-                                                                                alt={p.name}
-                                                                                className="h-full w-full object-cover"
-                                                                                loading="lazy"
-                                                                            />
-                                                                        ) : null}
+                                                        <div
+                                                            key={p.id}
+                                                            className="rounded-2xl border border-neutral-200 bg-white p-4"
+                                                        >
+                                                            <div className="flex items-start gap-3">
+                                                                <div className="h-14 w-14 rounded-xl bg-neutral-100 overflow-hidden shrink-0">
+                                                                    {p.image_url ? (
+                                                                        <img
+                                                                            src={p.image_url}
+                                                                            alt={p.name}
+                                                                            className="h-full w-full object-cover"
+                                                                            loading="lazy"
+                                                                        />
+                                                                    ) : null}
+                                                                </div>
+
+                                                                <div className="min-w-0 flex-1">
+                                                                    <div className="font-semibold text-neutral-900 truncate">
+                                                                        {p.name}
                                                                     </div>
-                                                                    <div>
-                                                                        <div className="font-semibold text-neutral-900">{p.name}</div>
-                                                                        <div className="text-xs text-neutral-500">{p.category || "—"}</div>
+                                                                    <div className="mt-0.5 text-xs text-neutral-500 truncate">
+                                                                        {p.category || "—"}
+                                                                    </div>
+
+                                                                    <div className="mt-3 grid grid-cols-2 gap-2 text-xs">
+                                                                        <div className="rounded-xl border border-neutral-200 bg-white px-3 py-2">
+                                                                            ₹{Number(p.price_inr || 0).toLocaleString("en-IN")}
+                                                                        </div>
+                                                                        <div
+                                                                            className={
+                                                                                out
+                                                                                    ? "rounded-xl border border-neutral-200 bg-white px-3 py-2 text-red-600 font-semibold"
+                                                                                    : "rounded-xl border border-neutral-200 bg-white px-3 py-2 text-green-600 font-semibold"
+                                                                            }
+                                                                        >
+                                                                            {out ? "Out of stock" : "In stock"} ({Number(p.stock_qty || 0)})
+                                                                        </div>
+                                                                    </div>
+
+                                                                    <div className="mt-3 flex items-center justify-between gap-2">
+                                                                        <div className="text-xs text-neutral-500">
+                                                                            Active:{" "}
+                                                                            <span className="font-semibold text-neutral-900">
+                                        {p.is_active ? "Yes" : "No"}
+                                      </span>
+                                                                        </div>
+                                                                        <button
+                                                                            type="button"
+                                                                            onClick={() => openEditProduct(p)}
+                                                                            className="rounded-xl border border-neutral-200 bg-white px-3 py-2 text-xs font-semibold text-neutral-900 hover:bg-neutral-50"
+                                                                        >
+                                                                            Edit
+                                                                        </button>
                                                                     </div>
                                                                 </div>
-                                                            </td>
+                                                            </div>
 
-                                                            <td className="py-2 pr-4">₹{Number(p.price_inr || 0).toLocaleString("en-IN")}</td>
-
-                                                            <td className="py-2 pr-4">
-                                  <span className={out ? "text-red-600 font-semibold" : "text-green-600 font-semibold"}>
-                                    {out ? "Out of stock" : "In stock"}
-                                  </span>
-                                                                <span className="ml-2 text-xs text-neutral-500">({Number(p.stock_qty || 0)})</span>
-                                                            </td>
-
-                                                            <td className="py-2 pr-4">
-                                  <span
-                                      className={
-                                          p.is_active ? "text-green-600 font-semibold" : "text-neutral-500 font-semibold"
-                                      }
-                                  >
-                                    {p.is_active ? "Yes" : "No"}
-                                  </span>
-                                                            </td>
-
-                                                            <td className="py-2 pr-4 text-xs text-neutral-500">
+                                                            <div className="mt-3 text-[11px] text-neutral-500">
+                                                                Created:{" "}
                                                                 {p.created_at ? new Date(p.created_at).toLocaleString() : "—"}
-                                                            </td>
-
-                                                            <td className="py-2">
-                                                                <button
-                                                                    type="button"
-                                                                    onClick={() => openEditProduct(p)}
-                                                                    className="rounded-lg border border-neutral-200 px-3 py-1.5 text-xs hover:bg-neutral-50"
-                                                                >
-                                                                    Edit
-                                                                </button>
-                                                            </td>
-                                                        </tr>
+                                                            </div>
+                                                        </div>
                                                     );
                                                 })}
-                                                </tbody>
-                                            </table>
+                                            </div>
+
+                                            {/* Desktop table */}
+                                            <div className="hidden md:block overflow-x-auto">
+                                                <table className="w-full table-fixed text-sm">
+                                                    <thead>
+                                                    <tr className="text-left text-neutral-500 border-b">
+                                                        <th className="py-2 pr-4 w-[40%]">Product</th>
+                                                        <th className="py-2 pr-4 w-[14%]">Price</th>
+                                                        <th className="py-2 pr-4 w-[14%]">Stock</th>
+                                                        <th className="py-2 pr-4 w-[10%]">Active</th>
+                                                        <th className="py-2 pr-4 w-[16%]">Created</th>
+                                                        <th className="py-2 w-[6%]">Action</th>
+                                                    </tr>
+                                                    </thead>
+
+                                                    <tbody>
+                                                    {products.map((p) => {
+                                                        const out = Number(p.stock_qty || 0) <= 0;
+                                                        return (
+                                                            <tr key={p.id} className="border-b align-top">
+                                                                <td className="py-2 pr-4">
+                                                                    <div className="flex items-center gap-3">
+                                                                        <div className="h-10 w-10 rounded-lg bg-neutral-100 overflow-hidden shrink-0">
+                                                                            {p.image_url ? (
+                                                                                <img
+                                                                                    src={p.image_url}
+                                                                                    alt={p.name}
+                                                                                    className="h-full w-full object-cover"
+                                                                                    loading="lazy"
+                                                                                />
+                                                                            ) : null}
+                                                                        </div>
+                                                                        <div>
+                                                                            <div className="font-semibold text-neutral-900">
+                                                                                {p.name}
+                                                                            </div>
+                                                                            <div className="text-xs text-neutral-500">
+                                                                                {p.category || "—"}
+                                                                            </div>
+                                                                        </div>
+                                                                    </div>
+                                                                </td>
+
+                                                                <td className="py-2 pr-4">
+                                                                    ₹{Number(p.price_inr || 0).toLocaleString("en-IN")}
+                                                                </td>
+
+                                                                <td className="py-2 pr-4">
+                                    <span
+                                        className={
+                                            out
+                                                ? "text-red-600 font-semibold"
+                                                : "text-green-600 font-semibold"
+                                        }
+                                    >
+                                      {out ? "Out of stock" : "In stock"}
+                                    </span>
+                                                                    <span className="ml-2 text-xs text-neutral-500">
+                                      ({Number(p.stock_qty || 0)})
+                                    </span>
+                                                                </td>
+
+                                                                <td className="py-2 pr-4">
+                                    <span
+                                        className={
+                                            p.is_active
+                                                ? "text-green-600 font-semibold"
+                                                : "text-neutral-500 font-semibold"
+                                        }
+                                    >
+                                      {p.is_active ? "Yes" : "No"}
+                                    </span>
+                                                                </td>
+
+                                                                <td className="py-2 pr-4 text-xs text-neutral-500">
+                                                                    {p.created_at
+                                                                        ? new Date(p.created_at).toLocaleString()
+                                                                        : "—"}
+                                                                </td>
+
+                                                                <td className="py-2">
+                                                                    <button
+                                                                        type="button"
+                                                                        onClick={() => openEditProduct(p)}
+                                                                        className="rounded-lg border border-neutral-200 px-3 py-1.5 text-xs hover:bg-neutral-50"
+                                                                    >
+                                                                        Edit
+                                                                    </button>
+                                                                </td>
+                                                            </tr>
+                                                        );
+                                                    })}
+                                                    </tbody>
+                                                </table>
+                                            </div>
                                         </div>
                                     )}
                                 </div>
@@ -866,16 +959,20 @@ export default function AdminDashboard() {
                             <div className="text-base font-semibold text-neutral-950">Orders</div>
 
                             <div className="mt-4">
-                                <div className="text-sm font-semibold text-neutral-900">Orders Management</div>
+                                <div className="text-sm font-semibold text-neutral-900">
+                                    Orders Management
+                                </div>
 
                                 {/* Filter Bar */}
                                 <div className="mt-3 grid gap-3 md:grid-cols-4">
                                     <div>
-                                        <div className="text-xs text-neutral-500">Search (Order ID / User)</div>
+                                        <div className="text-xs text-neutral-500">
+                                            Search (Order ID / User)
+                                        </div>
                                         <input
                                             value={orderSearch}
                                             onChange={(e) => setOrderSearch(e.target.value)}
-                                            placeholder="Search by order id, user id, or email..."
+                                            placeholder="Search by order id, user id, name, or email..."
                                             className="mt-1 w-full rounded-xl border border-neutral-200 bg-white px-3 py-2 text-sm text-neutral-900 focus:ring-2 focus:ring-neutral-300 outline-none"
                                         />
                                     </div>
@@ -918,8 +1015,11 @@ export default function AdminDashboard() {
 
                                 <div className="mt-3 flex flex-wrap items-center justify-between gap-2">
                                     <div className="text-xs text-neutral-500">
-                                        Showing <span className="font-semibold text-neutral-900">{filteredOrders.length}</span> of{" "}
-                                        {orders.length}
+                                        Showing{" "}
+                                        <span className="font-semibold text-neutral-900">
+                      {filteredOrders.length}
+                    </span>{" "}
+                                        of {orders.length}
                                     </div>
                                     <button
                                         type="button"
@@ -942,25 +1042,14 @@ export default function AdminDashboard() {
                                 ) : filteredOrders.length === 0 ? (
                                     <div className="mt-4 text-sm text-neutral-500">No orders yet.</div>
                                 ) : (
-                                    <div className="mt-3 overflow-x-auto">
-                                        <table className="w-full table-fixed text-sm">
-                                            <thead>
-                                            <tr className="text-left text-neutral-500 border-b">
-                                                <th className="py-2 pr-4 w-[18%]">Order ID</th>
-                                                <th className="py-2 pr-4 w-[28%]">User</th>
-                                                <th className="py-2 pr-4 w-[12%]">Total</th>
-                                                <th className="py-2 pr-4 w-[12%]">Status</th>
-                                                <th className="py-2 pr-4 w-[18%]">Created</th>
-                                                <th className="py-2 w-[12%]">Actions</th>
-                                            </tr>
-                                            </thead>
-
-                                            <tbody>
+                                    <div className="mt-3">
+                                        {/* Mobile cards */}
+                                        <div className="grid gap-3 md:hidden">
                                             {filteredOrders.map((o) => {
                                                 const st = String(o.status || "").trim().toLowerCase();
 
                                                 const badge = [
-                                                    "inline-flex items-center rounded-full px-2 py-1 text-xs font-semibold",
+                                                    "inline-flex items-center rounded-full px-2 py-1 text-[11px] font-semibold",
                                                     st === "placed" && "bg-green-50 text-green-700",
                                                     st === "packed" && "bg-yellow-50 text-yellow-700",
                                                     st === "shipped" && "bg-purple-50 text-purple-700",
@@ -969,130 +1058,311 @@ export default function AdminDashboard() {
                                                     .filter(Boolean)
                                                     .join(" ");
 
+                                                const displayName = o.user_full_name || o.shipping_name || "";
+                                                const displayEmail = o.user_email || "";
+                                                const customerLine =
+                                                    displayName && displayEmail
+                                                        ? `${displayName} (${displayEmail})`
+                                                        : displayName
+                                                            ? displayName
+                                                            : displayEmail
+                                                                ? displayEmail
+                                                                : o.user_id;
+
+                                                const isOpen = expandedOrderIds.has(o.id);
+
                                                 return (
-                                                    <>
-                                                    <tr key={o.id} className="border-b align-top">
-                                                        <td className="py-2 pr-4 text-xs font-semibold text-neutral-900 break-all">#{o.id}</td>
+                                                    <div key={o.id} className="rounded-2xl border border-neutral-200 bg-white p-4">
+                                                        <div className="flex items-start justify-between gap-3">
+                                                            <div className="min-w-0">
+                                                                <div className="text-sm font-semibold text-neutral-900">#{o.id}</div>
+                                                                <div className="mt-1 text-xs text-neutral-600 truncate">{customerLine}</div>
+                                                                <div className="mt-2 text-sm font-semibold text-neutral-900">
+                                                                    ₹{Number(o.computed_total_inr ?? 0).toLocaleString("en-IN")}
+                                                                </div>
+                                                            </div>
 
-                                                        <td className="py-2 pr-4 text-xs text-neutral-600 break-all">
-                                                            {o.user_full_name
-                                                                ? `${o.user_full_name}${o.user_email ? ` (${o.user_email})` : ""}`
-                                                                : o.user_email
-                                                                    ? o.user_email
-                                                                    : o.user_id}
-                                                        </td>
+                                                            <div className="shrink-0 flex flex-col items-end gap-2">
+                                                                <span className={badge}>{st || "—"}</span>
+                                                                <div className="text-[11px] text-neutral-500">
+                                                                    {o.created_at ? new Date(o.created_at).toLocaleString() : "—"}
+                                                                </div>
+                                                            </div>
+                                                        </div>
 
-                                                        <td className="py-2 pr-4">₹{Number(o.computed_total_inr ?? 0).toLocaleString("en-IN")}</td>
-
-                                                        <td className="py-2 pr-4">
-                                                            <span className={badge}>{st || "—"}</span>
-                                                        </td>
-
-                                                        <td className="py-2 pr-4 text-xs text-neutral-500">
-                                                            {o.created_at ? new Date(o.created_at).toLocaleString() : "—"}
-                                                        </td>
-
-                                                        <td className="py-2">
-                                                          <div className="flex flex-col gap-2">
+                                                        <div className="mt-3 grid grid-cols-2 gap-2">
                                                             <select
                                                                 value={st}
                                                                 onChange={(e) => updateOrderStatus(o.id, e.target.value)}
-                                                                className="w-full rounded-lg border border-neutral-200 bg-white px-2 py-1.5 text-xs"
+                                                                className="w-full rounded-xl border border-neutral-200 bg-white px-3 py-2 text-xs"
                                                             >
                                                                 <option value="placed">Placed</option>
                                                                 <option value="packed">Packed</option>
                                                                 <option value="shipped">Shipped</option>
                                                                 <option value="delivered">Delivered</option>
                                                             </select>
+
                                                             <button
-                                                              type="button"
-                                                              onClick={() => toggleOrderExpanded(o.id)}
-                                                              className="w-full rounded-lg border border-neutral-200 bg-white px-2 py-1.5 text-xs font-semibold text-neutral-900 hover:bg-neutral-50"
+                                                                type="button"
+                                                                onClick={() => toggleOrderExpanded(o.id)}
+                                                                className="w-full rounded-xl border border-neutral-200 bg-white px-3 py-2 text-xs font-semibold text-neutral-900 hover:bg-neutral-50"
                                                             >
-                                                              {expandedOrderIds.has(o.id) ? "Hide details" : "View details"}
+                                                                {isOpen ? "Hide details" : "View details"}
                                                             </button>
-                                                          </div>
-                                                        </td>
-                                                    </tr>
-                                                    {expandedOrderIds.has(o.id) && (
-                                                      <tr className="border-b bg-neutral-50/50">
-                                                        <td colSpan={6} className="py-3 px-2">
-                                                          <div className="grid gap-4 md:grid-cols-3">
-                                                            {/* Customer */}
-                                                            <div className="rounded-xl border border-neutral-200 bg-white p-4">
-                                                              <div className="text-xs font-semibold text-neutral-500">Customer</div>
-                                                              <div className="mt-2 text-sm text-neutral-900">
-                                                                <div className="font-semibold">
-                                                                  {o.shipping_name || o.user_full_name || "(No name)"}
-                                                                </div>
-                                                                <div className="mt-1 text-xs text-neutral-600">
-                                                                  Email: {o.shipping_email || o.user_email || "(No email)"}
-                                                                </div>
-                                                                <div className="mt-1 text-xs text-neutral-600">
-                                                                  Phone: {o.shipping_phone || "(No phone)"}
-                                                                </div>
-                                                              </div>
-                                                            </div>
+                                                        </div>
 
-                                                            {/* Address */}
-                                                            <div className="rounded-xl border border-neutral-200 bg-white p-4">
-                                                              <div className="text-xs font-semibold text-neutral-500">Shipping Address</div>
-                                                              <div className="mt-2 text-sm text-neutral-900">
-                                                                <div className="text-xs text-neutral-700 leading-relaxed">
-                                                                  {[
-                                                                    o.shipping_address_1,
-                                                                    o.shipping_address_2,
-                                                                    [o.shipping_city, o.shipping_state].filter(Boolean).join(", "),
-                                                                    o.shipping_pincode,
-                                                                    o.shipping_country,
-                                                                  ]
-                                                                    .filter(Boolean)
-                                                                    .join("\n")
-                                                                    .split("\n")
-                                                                    .map((line, idx) => (
-                                                                      <div key={idx}>{line}</div>
-                                                                    ))}
-                                                                </div>
-                                                              </div>
-                                                            </div>
-
-                                                            {/* Items */}
-                                                            <div className="rounded-xl border border-neutral-200 bg-white p-4">
-                                                              <div className="text-xs font-semibold text-neutral-500">Items</div>
-                                                              <div className="mt-2 space-y-2">
-                                                                {(o.order_items_detailed || []).length === 0 ? (
-                                                                  <div className="text-xs text-neutral-600">No items found for this order.</div>
-                                                                ) : (
-                                                                  (o.order_items_detailed || []).map((it, idx) => (
-                                                                    <div key={idx} className="flex items-start justify-between gap-3 text-xs">
-                                                                      <div className="min-w-0">
-                                                                        <div className="font-semibold text-neutral-900 truncate">
-                                                                          {it.product_name || `Product #${it.product_id}`}
+                                                        {isOpen && (
+                                                            <div className="mt-3 rounded-2xl border border-neutral-200 bg-neutral-50/50 p-3">
+                                                                <div className="grid gap-3">
+                                                                    <div className="rounded-xl border border-neutral-200 bg-white p-3">
+                                                                        <div className="text-xs font-semibold text-neutral-500">Customer</div>
+                                                                        <div className="mt-2 text-sm text-neutral-900">
+                                                                            <div className="font-semibold">
+                                                                                {o.shipping_name || o.user_full_name || "(No name)"}
+                                                                            </div>
+                                                                            <div className="mt-1 text-xs text-neutral-600">
+                                                                                Email: {o.user_email || "(No email)"}
+                                                                            </div>
+                                                                            <div className="mt-1 text-xs text-neutral-600">
+                                                                                Phone: {o.shipping_phone || "(No phone)"}
+                                                                            </div>
                                                                         </div>
-                                                                        <div className="text-neutral-600">Qty: {Number(it.qty_num || it.qty || 0)}</div>
-                                                                      </div>
-                                                                      <div className="shrink-0 text-neutral-900 font-semibold">
-                                                                        ₹{Number(it.line_total_num || 0).toLocaleString("en-IN")}
-                                                                      </div>
                                                                     </div>
-                                                                  ))
-                                                                )}
 
-                                                                <div className="pt-2 mt-2 border-t border-neutral-200 flex items-center justify-between text-xs">
-                                                                  <div className="text-neutral-600">Order Total</div>
-                                                                  <div className="font-semibold text-neutral-900">₹{Number(o.computed_total_inr ?? 0).toLocaleString("en-IN")}</div>
+                                                                    <div className="rounded-xl border border-neutral-200 bg-white p-3">
+                                                                        <div className="text-xs font-semibold text-neutral-500">Shipping Address</div>
+                                                                        <div className="mt-2 text-xs text-neutral-700 leading-relaxed">
+                                                                            {[
+                                                                                o.shipping_address_1,
+                                                                                o.shipping_address_2,
+                                                                                [o.shipping_city, o.shipping_state].filter(Boolean).join(", "),
+                                                                                o.shipping_pincode,
+                                                                                o.shipping_country,
+                                                                            ]
+                                                                                .filter(Boolean)
+                                                                                .map((line, idx) => (
+                                                                                    <div key={idx}>{line}</div>
+                                                                                ))}
+                                                                        </div>
+                                                                    </div>
+
+                                                                    <div className="rounded-xl border border-neutral-200 bg-white p-3">
+                                                                        <div className="text-xs font-semibold text-neutral-500">Items</div>
+                                                                        <div className="mt-2 space-y-2">
+                                                                            {(o.order_items_detailed || []).length === 0 ? (
+                                                                                <div className="text-xs text-neutral-600">
+                                                                                    No items found for this order.
+                                                                                </div>
+                                                                            ) : (
+                                                                                (o.order_items_detailed || []).map((it, idx) => (
+                                                                                    <div
+                                                                                        key={it.product_id || idx}
+                                                                                        className="flex items-start justify-between gap-3 text-xs"
+                                                                                    >
+                                                                                        <div className="min-w-0">
+                                                                                            <div className="font-semibold text-neutral-900 truncate">
+                                                                                                {it.product_name || `Product #${it.product_id}`}
+                                                                                            </div>
+                                                                                            <div className="text-neutral-600">
+                                                                                                Qty: {Number(it.qty_num || 0)}
+                                                                                            </div>
+                                                                                        </div>
+                                                                                        <div className="shrink-0 text-neutral-900 font-semibold">
+                                                                                            ₹{Number(it.line_total_num || 0).toLocaleString("en-IN")}
+                                                                                        </div>
+                                                                                    </div>
+                                                                                ))
+                                                                            )}
+
+                                                                            <div className="pt-2 mt-2 border-t border-neutral-200 flex items-center justify-between text-xs">
+                                                                                <div className="text-neutral-600">Order Total</div>
+                                                                                <div className="font-semibold text-neutral-900">
+                                                                                    ₹{Number(o.computed_total_inr ?? 0).toLocaleString("en-IN")}
+                                                                                </div>
+                                                                            </div>
+                                                                        </div>
+                                                                    </div>
                                                                 </div>
-                                                              </div>
                                                             </div>
-                                                          </div>
-                                                        </td>
-                                                      </tr>
-                                                    )}
-                                                    </>
+                                                        )}
+                                                    </div>
                                                 );
                                             })}
-                                            </tbody>
-                                        </table>
+                                        </div>
+
+                                        {/* Desktop table */}
+                                        <div className="hidden md:block overflow-x-auto">
+                                            <table className="w-full table-fixed text-sm">
+                                                <thead>
+                                                <tr className="text-left text-neutral-500 border-b">
+                                                    <th className="py-2 pr-4 w-[18%]">Order ID</th>
+                                                    <th className="py-2 pr-4 w-[28%]">Customer</th>
+                                                    <th className="py-2 pr-4 w-[12%]">Total</th>
+                                                    <th className="py-2 pr-4 w-[12%]">Status</th>
+                                                    <th className="py-2 pr-4 w-[18%]">Created</th>
+                                                    <th className="py-2 w-[12%]">Actions</th>
+                                                </tr>
+                                                </thead>
+
+                                                <tbody>
+                                                {filteredOrders.map((o) => {
+                                                    const st = String(o.status || "").trim().toLowerCase();
+
+                                                    const badge = [
+                                                        "inline-flex items-center rounded-full px-2 py-1 text-xs font-semibold",
+                                                        st === "placed" && "bg-green-50 text-green-700",
+                                                        st === "packed" && "bg-yellow-50 text-yellow-700",
+                                                        st === "shipped" && "bg-purple-50 text-purple-700",
+                                                        st === "delivered" && "bg-green-50 text-green-700",
+                                                    ]
+                                                        .filter(Boolean)
+                                                        .join(" ");
+
+                                                    const displayName = o.user_full_name || o.shipping_name || "";
+                                                    const displayEmail = o.user_email || "";
+                                                    const customerCell =
+                                                        displayName && displayEmail
+                                                            ? `${displayName} (${displayEmail})`
+                                                            : displayName
+                                                                ? displayName
+                                                                : displayEmail
+                                                                    ? displayEmail
+                                                                    : o.user_id;
+
+                                                    return (
+                                                        <Fragment key={o.id}>
+                                                            <tr className="border-b align-top">
+                                                                <td className="py-2 pr-4 text-xs font-semibold text-neutral-900 break-all">
+                                                                    #{o.id}
+                                                                </td>
+
+                                                                <td className="py-2 pr-4 text-xs text-neutral-600 break-all">
+                                                                    {customerCell}
+                                                                </td>
+
+                                                                <td className="py-2 pr-4">
+                                                                    ₹{Number(o.computed_total_inr ?? 0).toLocaleString("en-IN")}
+                                                                </td>
+
+                                                                <td className="py-2 pr-4">
+                                                                    <span className={badge}>{st || "—"}</span>
+                                                                </td>
+
+                                                                <td className="py-2 pr-4 text-xs text-neutral-500">
+                                                                    {o.created_at ? new Date(o.created_at).toLocaleString() : "—"}
+                                                                </td>
+
+                                                                <td className="py-2">
+                                                                    <div className="flex flex-col gap-2">
+                                                                        <select
+                                                                            value={st}
+                                                                            onChange={(e) => updateOrderStatus(o.id, e.target.value)}
+                                                                            className="w-full rounded-lg border border-neutral-200 bg-white px-2 py-1.5 text-xs"
+                                                                        >
+                                                                            <option value="placed">Placed</option>
+                                                                            <option value="packed">Packed</option>
+                                                                            <option value="shipped">Shipped</option>
+                                                                            <option value="delivered">Delivered</option>
+                                                                        </select>
+
+                                                                        <button
+                                                                            type="button"
+                                                                            onClick={() => toggleOrderExpanded(o.id)}
+                                                                            className="w-full rounded-lg border border-neutral-200 bg-white px-2 py-1.5 text-xs font-semibold text-neutral-900 hover:bg-neutral-50"
+                                                                        >
+                                                                            {expandedOrderIds.has(o.id) ? "Hide details" : "View details"}
+                                                                        </button>
+                                                                    </div>
+                                                                </td>
+                                                            </tr>
+
+                                                            {expandedOrderIds.has(o.id) && (
+                                                                <tr className="border-b bg-neutral-50/50">
+                                                                    <td colSpan={6} className="py-3 px-2">
+                                                                        <div className="grid gap-4 md:grid-cols-3">
+                                                                            {/* Customer */}
+                                                                            <div className="rounded-xl border border-neutral-200 bg-white p-4">
+                                                                                <div className="text-xs font-semibold text-neutral-500">Customer</div>
+                                                                                <div className="mt-2 text-sm text-neutral-900">
+                                                                                    <div className="font-semibold">
+                                                                                        {o.shipping_name || o.user_full_name || "(No name)"}
+                                                                                    </div>
+                                                                                    <div className="mt-1 text-xs text-neutral-600">
+                                                                                        Email: {o.user_email || "(No email)"}
+                                                                                    </div>
+                                                                                    <div className="mt-1 text-xs text-neutral-600">
+                                                                                        Phone: {o.shipping_phone || "(No phone)"}
+                                                                                    </div>
+                                                                                </div>
+                                                                            </div>
+
+                                                                            {/* Address */}
+                                                                            <div className="rounded-xl border border-neutral-200 bg-white p-4">
+                                                                                <div className="text-xs font-semibold text-neutral-500">Shipping Address</div>
+                                                                                <div className="mt-2 text-sm text-neutral-900">
+                                                                                    <div className="text-xs text-neutral-700 leading-relaxed">
+                                                                                        {[
+                                                                                            o.shipping_address_1,
+                                                                                            o.shipping_address_2,
+                                                                                            [o.shipping_city, o.shipping_state].filter(Boolean).join(", "),
+                                                                                            o.shipping_pincode,
+                                                                                            o.shipping_country,
+                                                                                        ]
+                                                                                            .filter(Boolean)
+                                                                                            .map((line, idx) => (
+                                                                                                <div key={idx}>{line}</div>
+                                                                                            ))}
+                                                                                    </div>
+                                                                                </div>
+                                                                            </div>
+
+                                                                            {/* Items */}
+                                                                            <div className="rounded-xl border border-neutral-200 bg-white p-4">
+                                                                                <div className="text-xs font-semibold text-neutral-500">Items</div>
+                                                                                <div className="mt-2 space-y-2">
+                                                                                    {(o.order_items_detailed || []).length === 0 ? (
+                                                                                        <div className="text-xs text-neutral-600">
+                                                                                            No items found for this order.
+                                                                                        </div>
+                                                                                    ) : (
+                                                                                        (o.order_items_detailed || []).map((it, idx) => (
+                                                                                            <div
+                                                                                                key={it.product_id || idx}
+                                                                                                className="flex items-start justify-between gap-3 text-xs"
+                                                                                            >
+                                                                                                <div className="min-w-0">
+                                                                                                    <div className="font-semibold text-neutral-900 truncate">
+                                                                                                        {it.product_name || `Product #${it.product_id}`}
+                                                                                                    </div>
+                                                                                                    <div className="text-neutral-600">
+                                                                                                        Qty: {Number(it.qty_num || 0)}
+                                                                                                    </div>
+                                                                                                </div>
+                                                                                                <div className="shrink-0 text-neutral-900 font-semibold">
+                                                                                                    ₹{Number(it.line_total_num || 0).toLocaleString("en-IN")}
+                                                                                                </div>
+                                                                                            </div>
+                                                                                        ))
+                                                                                    )}
+
+                                                                                    <div className="pt-2 mt-2 border-t border-neutral-200 flex items-center justify-between text-xs">
+                                                                                        <div className="text-neutral-600">Order Total</div>
+                                                                                        <div className="font-semibold text-neutral-900">
+                                                                                            ₹{Number(o.computed_total_inr ?? 0).toLocaleString("en-IN")}
+                                                                                        </div>
+                                                                                    </div>
+                                                                                </div>
+                                                                            </div>
+                                                                        </div>
+                                                                    </td>
+                                                                </tr>
+                                                            )}
+                                                        </Fragment>
+                                                    );
+                                                })}
+                                                </tbody>
+                                            </table>
+                                        </div>
                                     </div>
                                 )}
                             </div>

@@ -56,6 +56,12 @@ export default function AdminDashboard() {
     const [pRecommendedStack, setPRecommendedStack] = useState("");
     const [pImagePreview, setPImagePreview] = useState(""); // live preview URL
 
+    // -------------------- Extra images (product_images table) --------------------
+    const [extraImages, setExtraImages] = useState([]); // [{ id, image_url, sort_order }]
+    const [extraImageFiles, setExtraImageFiles] = useState([]); // pending uploads
+    const [uploadingExtra, setUploadingExtra] = useState(false);
+    const extraFileInputRef = useRef(null);
+
     // Inline stock edit
     const [inlineStockId, setInlineStockId] = useState(null);
     const [inlineStockValue, setInlineStockValue] = useState("");
@@ -154,6 +160,8 @@ export default function AdminDashboard() {
         setPImageUrl("");
         setPFile(null);
         setPImagePreview("");
+        setExtraImages([]);
+        setExtraImageFiles([]);
         setPAboutText("");
         setPBestFor("");
         setPPairsWellWith("");
@@ -179,6 +187,16 @@ export default function AdminDashboard() {
         setPActive(p.is_active !== false);
         setPImageUrl(p.image_url || "");
         setPImagePreview(p.image_url || "");
+        setExtraImageFiles([]);
+        // Load existing extra images from product_images table
+        (async () => {
+            const { data } = await supabase
+                .from("product_images")
+                .select("id,image_url,sort_order")
+                .eq("product_id", p.id)
+                .order("sort_order", { ascending: true });
+            setExtraImages(data || []);
+        })();
         setPAboutText(p.about_text || "");
         setPBestFor(p.best_for || "");
         setPPairsWellWith(p.pairs_well_with || "");
@@ -206,6 +224,60 @@ export default function AdminDashboard() {
 
         const { data } = supabase.storage.from(PRODUCT_BUCKET).getPublicUrl(path);
         return data?.publicUrl || null;
+    };
+
+    const uploadAndSaveExtraImages = async (productId) => {
+        if (extraImageFiles.length === 0) return;
+        setUploadingExtra(true);
+        try {
+            // Get current max sort_order
+            const currentMax = extraImages.reduce((m, img) => Math.max(m, img.sort_order ?? 0), -1);
+            const inserts = [];
+            for (let i = 0; i < extraImageFiles.length; i++) {
+                const file = extraImageFiles[i];
+                const ext = String(file.name || "").split(".").pop().toLowerCase() || "jpg";
+                const path = `products/${Date.now()}-${Math.random().toString(16).slice(2)}.${ext}`;
+                const { error: upErr } = await supabase.storage
+                    .from(PRODUCT_BUCKET)
+                    .upload(path, file, { cacheControl: "3600", upsert: false });
+                if (upErr) throw new Error(upErr.message);
+                const { data } = supabase.storage.from(PRODUCT_BUCKET).getPublicUrl(path);
+                if (data?.publicUrl) {
+                    inserts.push({ product_id: productId, image_url: data.publicUrl, sort_order: currentMax + 1 + i });
+                }
+            }
+            if (inserts.length > 0) {
+                const { error } = await supabase.from("product_images").insert(inserts);
+                if (error) throw new Error(error.message);
+            }
+        } finally {
+            setUploadingExtra(false);
+        }
+    };
+
+    const deleteExtraImage = async (imgId) => {
+        const ok = window.confirm("Remove this image?");
+        if (!ok) return;
+        const { error } = await supabase.from("product_images").delete().eq("id", imgId);
+        if (error) { alert(error.message); return; }
+        setExtraImages((prev) => prev.filter((img) => img.id !== imgId));
+    };
+
+    const moveExtraImage = async (imgId, direction) => {
+        const idx = extraImages.findIndex((img) => img.id === imgId);
+        const swapIdx = direction === "up" ? idx - 1 : idx + 1;
+        if (swapIdx < 0 || swapIdx >= extraImages.length) return;
+
+        const updated = [...extraImages];
+        const tmp = updated[idx].sort_order;
+        updated[idx] = { ...updated[idx], sort_order: updated[swapIdx].sort_order };
+        updated[swapIdx] = { ...updated[swapIdx], sort_order: tmp };
+        [updated[idx], updated[swapIdx]] = [updated[swapIdx], updated[idx]];
+        setExtraImages(updated);
+
+        // Persist sort_order to DB
+        await supabase.from("product_images").update({ sort_order: updated[idx].sort_order }).eq("id", updated[idx].id);
+        await supabase.from("product_images").update({ sort_order: updated[swapIdx].sort_order }).eq("id", updated[swapIdx].id);
     };
 
     const saveProduct = async () => {
@@ -251,16 +323,24 @@ export default function AdminDashboard() {
                     .update(payload)
                     .eq("id", editingId);
                 if (error) throw new Error(error.message);
+                await uploadAndSaveExtraImages(editingId);
                 setProductMsg("Updated ✅");
             } else {
-                const { error } = await supabase.from("products").insert([{ ...payload }]);
+                const { data: inserted, error } = await supabase
+                    .from("products")
+                    .insert([{ ...payload }])
+                    .select("id")
+                    .single();
                 if (error) throw new Error(error.message);
+                await uploadAndSaveExtraImages(inserted.id);
                 setProductMsg("Created ✅");
             }
 
             await loadProducts();
             setPFile(null);
+            setExtraImageFiles([]);
             if (fileInputRef.current) fileInputRef.current.value = "";
+            if (extraFileInputRef.current) extraFileInputRef.current.value = "";
         } catch (e) {
             setProductMsg(e?.message || "Failed to save product");
         } finally {
@@ -1095,9 +1175,119 @@ export default function AdminDashboard() {
                                                 </div>
                                             </div>
 
-                                            {productMsg && (
+                                                {productMsg && (
                                                 <div className="text-sm text-neutral-700">{productMsg}</div>
                                             )}
+
+                                            {/* ── Extra Images Gallery ── */}
+                                            <div className="rounded-xl border border-neutral-200 bg-neutral-50 p-4 space-y-3">
+                                                <div className="flex items-center justify-between gap-3">
+                                                    <div>
+                                                        <div className="text-xs font-semibold text-neutral-700">Additional Images</div>
+                                                        <div className="text-xs text-neutral-500 mt-0.5">
+                                                            These appear in the product gallery alongside the main image.
+                                                        </div>
+                                                    </div>
+                                                    <button
+                                                        type="button"
+                                                        onClick={() => extraFileInputRef.current?.click()}
+                                                        className="shrink-0 rounded-xl border border-neutral-300 bg-white px-3 py-2 text-xs font-semibold text-neutral-900 hover:bg-neutral-50 shadow-sm"
+                                                    >
+                                                        + Add Image
+                                                    </button>
+                                                </div>
+
+                                                <input
+                                                    ref={extraFileInputRef}
+                                                    type="file"
+                                                    accept="image/*"
+                                                    multiple
+                                                    className="hidden"
+                                                    onChange={(e) => {
+                                                        const files = Array.from(e.target.files || []);
+                                                        if (!files.length) return;
+                                                        setExtraImageFiles((prev) => [...prev, ...files]);
+                                                        if (extraFileInputRef.current) extraFileInputRef.current.value = "";
+                                                    }}
+                                                />
+
+                                                {/* Pending uploads (not yet saved) */}
+                                                {extraImageFiles.length > 0 && (
+                                                    <div>
+                                                        <div className="text-[11px] text-amber-600 font-semibold mb-2">
+                                                            {extraImageFiles.length} pending — will upload on Save
+                                                        </div>
+                                                        <div className="flex flex-wrap gap-2">
+                                                            {extraImageFiles.map((f, i) => (
+                                                                <div key={i} className="relative group">
+                                                                    <img
+                                                                        src={URL.createObjectURL(f)}
+                                                                        alt=""
+                                                                        className="h-16 w-16 rounded-xl border-2 border-amber-300 object-cover"
+                                                                    />
+                                                                    <button
+                                                                        type="button"
+                                                                        onClick={() => setExtraImageFiles((prev) => prev.filter((_, idx) => idx !== i))}
+                                                                        className="absolute -top-1.5 -right-1.5 h-5 w-5 rounded-full bg-red-500 text-white text-[10px] flex items-center justify-center opacity-0 group-hover:opacity-100 transition"
+                                                                    >
+                                                                        ✕
+                                                                    </button>
+                                                                </div>
+                                                            ))}
+                                                        </div>
+                                                    </div>
+                                                )}
+
+                                                {/* Saved extra images */}
+                                                {extraImages.length > 0 ? (
+                                                    <div className="space-y-2">
+                                                        {extraImages.map((img, i) => (
+                                                            <div key={img.id} className="flex items-center gap-3 rounded-xl border border-neutral-200 bg-white p-2">
+                                                                <img
+                                                                    src={img.image_url}
+                                                                    alt=""
+                                                                    className="h-12 w-12 rounded-lg object-cover border border-neutral-200 shrink-0"
+                                                                />
+                                                                <div className="text-xs text-neutral-500 flex-1 truncate">
+                                                                    Image {i + 1}
+                                                                </div>
+                                                                <div className="flex items-center gap-1 shrink-0">
+                                                                    <button
+                                                                        type="button"
+                                                                        onClick={() => moveExtraImage(img.id, "up")}
+                                                                        disabled={i === 0}
+                                                                        className="h-7 w-7 rounded-lg border border-neutral-200 text-xs text-neutral-600 hover:bg-neutral-50 disabled:opacity-30"
+                                                                        title="Move up"
+                                                                    >
+                                                                        ↑
+                                                                    </button>
+                                                                    <button
+                                                                        type="button"
+                                                                        onClick={() => moveExtraImage(img.id, "down")}
+                                                                        disabled={i === extraImages.length - 1}
+                                                                        className="h-7 w-7 rounded-lg border border-neutral-200 text-xs text-neutral-600 hover:bg-neutral-50 disabled:opacity-30"
+                                                                        title="Move down"
+                                                                    >
+                                                                        ↓
+                                                                    </button>
+                                                                    <button
+                                                                        type="button"
+                                                                        onClick={() => deleteExtraImage(img.id)}
+                                                                        className="h-7 w-7 rounded-lg border border-red-200 text-xs text-red-600 hover:bg-red-50"
+                                                                        title="Delete"
+                                                                    >
+                                                                        ✕
+                                                                    </button>
+                                                                </div>
+                                                            </div>
+                                                        ))}
+                                                    </div>
+                                                ) : extraImageFiles.length === 0 && (
+                                                    <div className="text-xs text-neutral-400 text-center py-3">
+                                                        No additional images yet. Click "+ Add Image" to upload.
+                                                    </div>
+                                                )}
+                                            </div>
                                         </div>
                                     </div>
                                 )}

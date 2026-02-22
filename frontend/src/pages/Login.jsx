@@ -1,4 +1,5 @@
 import { useState } from "react";
+import { useNavigate } from "react-router-dom";
 import { supabase } from "../services/supabase/client";
 import Button from "../components/Button";
 
@@ -8,6 +9,23 @@ export default function Login() {
   const [password, setPassword] = useState("");
   const [loading, setLoading] = useState(false);
   const [message, setMessage] = useState("");
+
+  const navigate = useNavigate();
+
+  const redirectAfterLogin = async (userId) => {
+    // Fetch profile to check role
+    const { data: profile } = await supabase
+      .from("profiles")
+      .select("role")
+      .eq("id", userId)
+      .maybeSingle();
+
+    if (profile?.role === "admin") {
+      navigate("/admin", { replace: true });
+    } else {
+      navigate("/", { replace: true });
+    }
+  };
 
   const handleEmailAuth = async (e) => {
     e.preventDefault();
@@ -20,8 +38,9 @@ export default function Login() {
         if (error) throw error;
         setMessage("Check your email to confirm your account.");
       } else {
-        const { error } = await supabase.auth.signInWithPassword({ email, password });
+        const { data, error } = await supabase.auth.signInWithPassword({ email, password });
         if (error) throw error;
+        await redirectAfterLogin(data.user.id);
       }
     } catch (err) {
       setMessage(err.message);

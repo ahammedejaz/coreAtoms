@@ -1,56 +1,94 @@
 @import "tailwindcss";
 
-/* Premium micro-interactions utilities */
+/* ─── Core Atoms Design System ─────────────────────────────────────────────
+   Palette:
+   - Background:  #FAFAF8  (warm off-white)
+   - Surface:     #FFFFFF  (pure white cards)
+   - Border:      #E8E4DE  (warm stone)
+   - Text primary:#1C1917  (warm near-black)
+   - Text muted:  #78716C  (stone-500)
+   - Accent:      #1e3a5f  (dark navy — CTAs, badges, active)
+   - Accent soft: #EFF6FF  (navy tint — hover backgrounds)
+   ──────────────────────────────────────────────────────────────────────── */
+
+@layer base {
+  html { font-family: 'Inter', system-ui, -apple-system, sans-serif; }
+  body { background-color: #FAFAF8; color: #1C1917; }
+}
+
 @layer components {
-    .btn-primary {
-        @apply inline-flex items-center justify-center gap-2 rounded-xl px-4 py-2.5 text-sm font-semibold
-        border border-neutral-200
-        bg-gradient-to-r from-neutral-200 to-neutral-300 text-neutral-950
-        transition duration-200 ease-out
-        hover:shadow-sm hover:-translate-y-[1px]
-        active:translate-y-0 active:scale-[0.99]
-        focus:outline-none focus-visible:ring-2 focus-visible:ring-neutral-400/70 focus-visible:ring-offset-2 focus-visible:ring-offset-white;
-    }
 
-    .btn-ghost {
-        @apply inline-flex items-center justify-center gap-2 rounded-xl px-4 py-2.5 text-sm font-semibold
-        border border-neutral-200 bg-white text-neutral-900
-        transition duration-200 ease-out
-        hover:bg-neutral-50 hover:shadow-sm hover:-translate-y-[1px]
-        active:translate-y-0 active:scale-[0.99]
-        focus:outline-none focus-visible:ring-2 focus-visible:ring-neutral-400/70 focus-visible:ring-offset-2 focus-visible:ring-offset-white;
-    }
+  /* Primary CTA — dark navy, clean */
+  .btn-primary {
+    @apply inline-flex items-center justify-center gap-2
+    rounded-xl px-5 py-2.5 text-sm font-semibold tracking-tight
+    bg-[#1e3a5f] text-white
+    border border-[#1e3a5f]
+    shadow-sm
+    transition-all duration-200 ease-out
+    hover:bg-[#162d4a] hover:shadow-md hover:-translate-y-px
+    active:translate-y-0 active:scale-[0.99]
+    focus:outline-none focus-visible:ring-2 focus-visible:ring-[#1e3a5f]/40 focus-visible:ring-offset-2;
+  }
 
-    .pill {
-        @apply inline-flex items-center gap-2 rounded-full border border-neutral-200 bg-white px-3 py-1.5 text-xs text-neutral-700;
-    }
+  /* Ghost — warm white, stone border */
+  .btn-ghost {
+    @apply inline-flex items-center justify-center gap-2
+    rounded-xl px-5 py-2.5 text-sm font-semibold tracking-tight
+    bg-white text-[#1C1917]
+    border border-[#E8E4DE]
+    shadow-sm
+    transition-all duration-200 ease-out
+    hover:bg-stone-50 hover:border-stone-300 hover:shadow
+    active:translate-y-0 active:scale-[0.99]
+    focus:outline-none focus-visible:ring-2 focus-visible:ring-stone-300 focus-visible:ring-offset-2;
+  }
 
-    .card {
-        @apply rounded-2xl border border-neutral-200 bg-white shadow-sm;
-    }
+  /* Card — white surface, warm border, soft shadow */
+  .card {
+    @apply rounded-2xl border border-[#E8E4DE] bg-white shadow-[0_2px_12px_rgba(0,0,0,0.06)];
+  }
+
+  /* Pill / tag */
+  .pill {
+    @apply inline-flex items-center gap-1.5 rounded-full border border-[#E8E4DE]
+    bg-white px-3 py-1 text-xs font-medium text-stone-600;
+  }
+
+  /* Input — warm borders */
+  .input {
+    @apply w-full rounded-xl border border-[#E8E4DE] bg-white
+    px-4 py-3 text-sm text-stone-900 placeholder:text-stone-400
+    outline-none transition
+    focus:border-[#1e3a5f] focus:ring-2 focus:ring-[#1e3a5f]/10;
+  }
+
+  /* Section label — small caps above headings */
+  .section-label {
+    @apply text-xs font-semibold tracking-[0.12em] uppercase text-stone-400;
+  }
 }
 
 @keyframes coreatoms_progress {
-    0% { transform: translateX(-100%); }
-    50% { transform: translateX(50%); }
-    100% { transform: translateX(200%); }
+  0%   { transform: translateX(-100%); }
+  50%  { transform: translateX(50%); }
+  100% { transform: translateX(200%); }
+}
+
+@keyframes fadeUp {
+  from { opacity: 0; transform: translateY(10px); }
+  to   { opacity: 1; transform: translateY(0); }
 }
 
 @keyframes toastIn {
-    from {
-        opacity: 0;
-        transform: translateY(-8px) scale(0.98);
-    }
-    to {
-        opacity: 1;
-        transform: translateY(0) scale(1);
-    }
+  from { opacity: 0; transform: translateY(-8px) scale(0.97); }
+  to   { opacity: 1; transform: translateY(0)   scale(1); }
 }
 
 @keyframes shakeX {
-    0%, 100% { transform: translateX(0); }
-    20% { transform: translateX(-6px); }
-    40% { transform: translateX(6px); }
-    60% { transform: translateX(-4px); }
-    80% { transform: translateX(4px); }
+  0%,100% { transform: translateX(0); }
+  20%     { transform: translateX(-5px); }
+  40%     { transform: translateX(5px); }
+  60%     { transform: translateX(-3px); }
+  80%     { transform: translateX(3px); }
 }

@@ -1,0 +1,49 @@
+import { useEffect, useState } from "react";
+import { supabase } from "../../services/supabase/client";
+
+export default function AdminSettings() {
+    const [maxItems, setMaxItems] = useState(15);
+    const [saving, setSaving]     = useState(false);
+    const [msg, setMsg]           = useState("");
+
+    useEffect(() => {
+        supabase.from("app_settings").select("value")
+            .eq("key", "max_items_per_order").maybeSingle()
+            .then(({ data }) => {
+                const n = Number(data?.value?.n);
+                if (Number.isFinite(n) && n > 0) setMaxItems(n);
+            });
+    }, []);
+
+    const save = async () => {
+        setSaving(true); setMsg("");
+        const n = Number(maxItems);
+        if (!Number.isFinite(n) || n <= 0) { setMsg("Enter a valid number > 0"); setSaving(false); return; }
+        const { error } = await supabase.from("app_settings")
+            .update({ value: { n } }).eq("key", "max_items_per_order");
+        setMsg(error ? error.message : "Saved ✅");
+        setSaving(false);
+    };
+
+    return (
+        <div className="max-w-2xl">
+            <div className="rounded-2xl border border-[#E8E4DE] bg-white p-5">
+                <div className="text-base font-semibold text-stone-900">Order settings</div>
+                <div className="mt-2 text-sm text-stone-500">
+                    Set the max number of total items allowed per order.
+                </div>
+                <div className="mt-4">
+                    <div className="text-xs text-stone-400">Max items per order</div>
+                    <input type="number" value={maxItems} onChange={(e) => setMaxItems(e.target.value)} min={1}
+                        className="mt-1 w-full rounded-xl border border-[#E8E4DE] bg-white px-4 py-3 text-sm text-stone-900 focus:ring-2 focus:ring-[#1e3a5f]/20 outline-none" />
+                </div>
+                <div className="mt-4 flex items-center gap-3">
+                    <button onClick={save} disabled={saving} className="btn-primary disabled:opacity-50">
+                        {saving ? "Saving..." : "Save"}
+                    </button>
+                    {msg && <div className="text-sm text-stone-600">{msg}</div>}
+                </div>
+            </div>
+        </div>
+    );
+}

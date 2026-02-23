@@ -1,1375 +1,170 @@
-import { Fragment, useEffect, useMemo, useRef, useState } from "react";
-import { supabase } from "../services/supabase/client";
-import { useAuth } from "../context/AuthContext";
+/**
+ * AdminDashboard.jsx — Shell only.
+ * Tab components are always mounted but hidden with CSS so their state and
+ * data survives tab switches. This prevents the Homepage editor from losing
+ * unsaved changes when you click away, and lets Reviews load its count on
+ * app start without needing a tab visit.
+ */
+import { useMemo, useState } from "react";
+import { useAuth } from "../context/AuthContext.jsx";
+import AdminProducts from "./admin/AdminProducts.jsx";
+import AdminOrders   from "./admin/AdminOrders.jsx";
+import AdminHomepage from "./admin/AdminHomepage.jsx";
+import AdminReviews  from "./admin/AdminReviews.jsx";
+import AdminSettings from "./admin/AdminSettings.jsx";
+
+const LOW_STOCK_THRESHOLD = 5;
 
 export default function AdminDashboard() {
     const { profile } = useAuth();
-
-    // -------------------- Settings --------------------
-    const [maxItems, setMaxItems] = useState(15);
-    const [saving, setSaving] = useState(false);
-    const [msg, setMsg] = useState("");
     const [activeTab, setActiveTab] = useState("products");
 
-    // -------------------- Orders --------------------
-    const [orders, setOrders] = useState([]);
-    const [loadingOrders, setLoadingOrders] = useState(false);
-    const [orderErr, setOrderErr] = useState("");
+    // Sub-components report their data up via callbacks so the stats bar stays current
+    const [products, setProducts]       = useState([]);
+    const [orders, setOrders]           = useState([]);
+    const [reviewCount, setReviewCount] = useState(0);
 
-    // Orders expand (details)
-    const [expandedOrderIds, setExpandedOrderIds] = useState(new Set());
+    const stats = useMemo(() => {
+        const totalOrders    = orders.length;
+        const totalRevenue   = orders.reduce((s, o) => s + Number(o.computed_total_inr || 0), 0);
+        const activeProducts = products.filter((p) => p.is_active).length;
+        const lowStock       = products.filter(
+            (p) => p.is_active && Number(p.stock_qty || 0) <= LOW_STOCK_THRESHOLD
+        ).length;
+        const pendingOrders  = orders.filter(
+            (o) => ["placed", "processing"].includes(String(o.status || "").toLowerCase())
+        ).length;
+        return { totalOrders, totalRevenue, activeProducts, lowStock, pendingOrders };
+    }, [orders, products]);
 
-    const toggleOrderExpanded = (orderId) => {
-        setExpandedOrderIds((prev) => {
-            const next = new Set(prev);
-            if (next.has(orderId)) next.delete(orderId);
-            else next.add(orderId);
-            return next;
-        });
-    };
-
-    // -------------------- Orders filters --------------------
-    const [orderSearch, setOrderSearch] = useState("");
-    const [orderStatusFilter, setOrderStatusFilter] = useState("All");
-    const [orderDateFrom, setOrderDateFrom] = useState("");
-    const [orderDateTo, setOrderDateTo] = useState("");
-
-    // -------------------- Products (Admin CRUD) --------------------
-    const [products, setProducts] = useState([]);
-    const [loadingProducts, setLoadingProducts] = useState(true);
-    const [productErr, setProductErr] = useState("");
-
-    const [showProductForm, setShowProductForm] = useState(false);
-    const [editingId, setEditingId] = useState(null);
-
-    const [pName, setPName] = useState("");
-    const [pCategory, setPCategory] = useState("");
-    const [pPrice, setPPrice] = useState("");
-    const [pStock, setPStock] = useState("");
-    const [pDesc, setPDesc] = useState("");
-    const [pActive, setPActive] = useState(true);
-    const [pImageUrl, setPImageUrl] = useState("");
-    const [pFile, setPFile] = useState(null);
-
-    const [savingProduct, setSavingProduct] = useState(false);
-    const [productMsg, setProductMsg] = useState("");
-
-    const fileInputRef = useRef(null);
-
-    // NOTE: Ensure this bucket exists in Supabase Storage
-    const PRODUCT_BUCKET = "product-images";
-
-    // -------------------- Load max items setting --------------------
-    useEffect(() => {
-        (async () => {
-            const { data } = await supabase
-                .from("app_settings")
-                .select("value")
-                .eq("key", "max_items_per_order")
-                .maybeSingle();
-
-            const n = Number(data?.value?.n);
-            if (Number.isFinite(n) && n > 0) setMaxItems(n);
-        })();
-    }, []);
-
-    // -------------------- Products (load + realtime) --------------------
-    const loadProducts = async () => {
-        setLoadingProducts(true);
-        setProductErr("");
-
-        const { data, error } = await supabase
-            .from("products")
-            .select(
-                `
-        id,
-        name,
-        category,
-        description,
-        price_inr,
-        stock_qty,
-        image_url,
-        is_active,
-        created_at
-      `
-            )
-            .order("created_at", { ascending: false });
-
-        if (error) {
-            setProductErr(error.message);
-            setProducts([]);
-        } else {
-            setProducts(data || []);
-        }
-
-        setLoadingProducts(false);
-    };
-
-    useEffect(() => {
-        loadProducts();
-
-        const channel = supabase
-            .channel("products-realtime")
-            .on(
-                "postgres_changes",
-                { event: "*", schema: "public", table: "products" },
-                () => {
-                    loadProducts();
-                }
-            )
-            .subscribe();
-
-        return () => {
-            supabase.removeChannel(channel);
-        };
-        // eslint-disable-next-line react-hooks/exhaustive-deps
-    }, []);
-
-    // -------------------- Helpers --------------------
-    const resetProductForm = () => {
-        setEditingId(null);
-        setPName("");
-        setPCategory("");
-        setPPrice("");
-        setPStock("");
-        setPDesc("");
-        setPActive(true);
-        setPImageUrl("");
-        setPFile(null);
-        setProductMsg("");
-        if (fileInputRef.current) fileInputRef.current.value = "";
-    };
-
-    const openAddProduct = () => {
-        resetProductForm();
-        setShowProductForm(true);
-        setActiveTab("products");
-    };
-
-    const openEditProduct = (p) => {
-        setActiveTab("products");
-        setEditingId(p.id);
-        setPName(p.name || "");
-        setPCategory(p.category || "");
-        setPPrice(String(p.price_inr ?? ""));
-        setPStock(String(p.stock_qty ?? ""));
-        setPDesc(p.description || "");
-        setPActive(p.is_active !== false);
-        setPImageUrl(p.image_url || "");
-        setPFile(null);
-        setProductMsg("");
-        if (fileInputRef.current) fileInputRef.current.value = "";
-        setShowProductForm(true);
-    };
-
-    const uploadProductImageIfAny = async () => {
-        if (!pFile) return null;
-
-        const ext = String(pFile.name || "").split(".").pop() || "jpg";
-        const safeExt = ext.toLowerCase();
-        const path = `products/${Date.now()}-${Math.random()
-            .toString(16)
-            .slice(2)}.${safeExt}`;
-
-        const { error: upErr } = await supabase.storage
-            .from(PRODUCT_BUCKET)
-            .upload(path, pFile, { cacheControl: "3600", upsert: false });
-
-        if (upErr) throw new Error(upErr.message);
-
-        const { data } = supabase.storage.from(PRODUCT_BUCKET).getPublicUrl(path);
-        return data?.publicUrl || null;
-    };
-
-    const saveProduct = async () => {
-        setSavingProduct(true);
-        setProductMsg("");
-
-        try {
-            const name = String(pName || "").trim();
-            const category = String(pCategory || "").trim();
-            const description = String(pDesc || "").trim();
-            const price = Number(pPrice);
-            const stock = Number(pStock);
-
-            if (!name) throw new Error("Product name is required");
-            if (!Number.isFinite(price) || price < 0)
-                throw new Error("Enter a valid price");
-            if (!Number.isFinite(stock) || stock < 0)
-                throw new Error("Enter a valid stock quantity");
-
-            // Upload new image if selected
-            let image_url = pImageUrl || "";
-            const uploadedUrl = await uploadProductImageIfAny();
-            if (uploadedUrl) image_url = uploadedUrl;
-
-            const payload = {
-                name,
-                category: category || null,
-                description: description || null,
-                price_inr: price,
-                stock_qty: stock,
-                image_url: image_url || null,
-                is_active: !!pActive,
-                updated_at: new Date().toISOString(),
-            };
-
-            if (editingId) {
-                const { error } = await supabase
-                    .from("products")
-                    .update(payload)
-                    .eq("id", editingId);
-                if (error) throw new Error(error.message);
-                setProductMsg("Updated ✅");
-            } else {
-                const { error } = await supabase.from("products").insert([{ ...payload }]);
-                if (error) throw new Error(error.message);
-                setProductMsg("Created ✅");
-            }
-
-            await loadProducts();
-            setPFile(null);
-            if (fileInputRef.current) fileInputRef.current.value = "";
-        } catch (e) {
-            setProductMsg(e?.message || "Failed to save product");
-        } finally {
-            setSavingProduct(false);
-        }
-    };
-
-    const deleteProduct = async (id) => {
-        const ok = window.confirm(
-            "Delete this product? This will remove it from the shop."
+    if (!profile || profile.role !== "admin") {
+        return (
+            <div className="mx-auto max-w-6xl px-4 py-20 text-center">
+                <div className="text-lg font-semibold text-stone-900">Access denied</div>
+                <div className="mt-2 text-sm text-stone-500">You must be an admin to view this page.</div>
+            </div>
         );
-        if (!ok) return;
+    }
 
-        const { error } = await supabase.from("products").delete().eq("id", id);
-        if (error) {
-            alert(error.message);
-            return;
-        }
+    const tab = (id, label, badge, badgeStyle) => (
+        <button
+            type="button"
+            onClick={() => setActiveTab(id)}
+            className={[
+                "shrink-0 rounded-xl border px-4 py-2 text-sm font-semibold transition flex items-center gap-2",
+                activeTab === id
+                    ? "border-stone-300 bg-[#1e3a5f] text-white shadow-sm"
+                    : "border-[#E8E4DE] bg-white text-stone-900 hover:bg-stone-50",
+            ].join(" ")}
+        >
+            {label}
+            {badge > 0 && (
+                <span className={[
+                    "inline-flex h-5 min-w-5 items-center justify-center rounded-full px-1 text-[11px] font-semibold",
+                    activeTab === id
+                        ? "bg-white text-stone-900"
+                        : (badgeStyle || "bg-red-500 text-white"),
+                ].join(" ")}>
+                    {badge}
+                </span>
+            )}
+        </button>
+    );
 
-        if (editingId === id) {
-            resetProductForm();
-            setShowProductForm(false);
-        }
-
-        loadProducts();
-    };
-
-    // -------------------- Save settings --------------------
-    const save = async () => {
-        setSaving(true);
-        setMsg("");
-
-        const n = Number(maxItems);
-        if (!Number.isFinite(n) || n <= 0) {
-            setMsg("Enter a valid number > 0");
-            setSaving(false);
-            return;
-        }
-
-        const { error } = await supabase
-            .from("app_settings")
-            .update({ value: { n }, updated_at: new Date().toISOString() })
-            .eq("key", "max_items_per_order");
-
-        if (error) setMsg(error.message);
-        else setMsg("Saved ✅");
-
-        setSaving(false);
-    };
-
-    // -------------------- Load orders (with profile + items + product names) --------------------
-    const loadOrders = async () => {
-        setLoadingOrders(true);
-        setOrderErr("");
-
-        let data = [];
-        let queryError = null;
-
-        try {
-            const res = await supabase
-                .from("orders")
-                .select(
-                    `
-          id,
-          user_id,
-          status,
-          created_at,
-          total_amount_inr,
-          total_inr,
-          total_items,
-          shipping_address,
-          profiles (
-            id,
-            email,
-            full_name
-          ),
-          order_items (
-            product_id,
-            qty,
-            unit_price_inr,
-            line_total_inr,
-            products (
-              name
-            )
-          )
-        `
-                )
-                .order("created_at", { ascending: false });
-
-            data = res?.data || [];
-            queryError = res?.error || null;
-
-            if (queryError) throw new Error(queryError.message);
-
-            // Fallback profiles fetch
-            const userIds = Array.from(
-                new Set((data || []).map((o) => o?.user_id).filter(Boolean))
-            );
-
-            let profileMap = {};
-            if (userIds.length) {
-                const profRes = await supabase
-                    .from("profiles")
-                    .select("id,email,full_name")
-                    .in("id", userIds);
-
-                if (!profRes?.error) {
-                    (profRes?.data || []).forEach((p) => {
-                        profileMap[p.id] = {
-                            email: String(p?.email || "").trim(),
-                            full_name: String(p?.full_name || "").trim(),
-                        };
-                    });
-                }
-            }
-
-            const enriched = (data || []).map((o) => {
-                const prof = Array.isArray(o?.profiles) ? o.profiles[0] : o?.profiles;
-
-                const joinEmail = String(prof?.email || "").trim();
-                const joinName = String(prof?.full_name || "").trim();
-
-                const fallback = profileMap?.[o?.user_id] || null;
-                const fallbackEmail = String(fallback?.email || "").trim();
-                const fallbackName = String(fallback?.full_name || "").trim();
-
-                const ship = o?.shipping_address || {};
-                const shipEmail = String(
-                    ship?.email || ship?.Email || ship?.userEmail || ship?.user_email || ""
-                ).trim();
-
-                const profileEmail = joinEmail || fallbackEmail || shipEmail || "";
-                const profileName = joinName || fallbackName || "";
-
-                const shipping_name = String(ship?.fullName || ship?.name || "").trim();
-                const shipping_phone = String(ship?.phone || ship?.mobile || "").trim();
-                const shipping_address_1 = String(ship?.line1 || ship?.address1 || "").trim();
-                const shipping_address_2 = String(ship?.line2 || ship?.address2 || "").trim();
-                const shipping_city = String(ship?.city || "").trim();
-                const shipping_state = String(ship?.state || "").trim();
-                const shipping_pincode = String(ship?.pincode || ship?.zip || "").trim();
-                const shipping_country = String(ship?.country || "India").trim();
-
-                const dbTotal = Number(o?.total_amount_inr ?? o?.total_inr ?? 0);
-                let computed_total_inr =
-                    Number.isFinite(dbTotal) && dbTotal > 0 ? dbTotal : 0;
-
-                const items = Array.isArray(o?.order_items) ? o.order_items : [];
-                const detailedItems = items.map((it) => {
-                    const qtyNum = Number(it?.qty || 0);
-                    const unitNum = Number(it?.unit_price_inr || 0);
-                    const lineNum = Number(it?.line_total_inr ?? qtyNum * unitNum);
-
-                    return {
-                        product_id: it?.product_id,
-                        product_name: it?.products?.name || "",
-                        qty: it?.qty,
-                        qty_num: Number.isFinite(qtyNum) ? qtyNum : 0,
-                        unit_price_inr: it?.unit_price_inr,
-                        line_total_inr: it?.line_total_inr,
-                        line_total_num: Number.isFinite(lineNum) ? lineNum : 0,
-                    };
-                });
-
-                if (!computed_total_inr) {
-                    computed_total_inr = detailedItems.reduce(
-                        (sum, it) => sum + (it.line_total_num || 0),
-                        0
-                    );
-                }
-
-                return {
-                    ...o,
-                    user_email: profileEmail,
-                    user_full_name: profileName,
-                    shipping_name: shipping_name || profileName || "",
-                    shipping_email: profileEmail || "",
-                    shipping_phone,
-                    shipping_address_1,
-                    shipping_address_2,
-                    shipping_city,
-                    shipping_state,
-                    shipping_pincode,
-                    shipping_country,
-                    computed_total_inr,
-                    order_items_detailed: detailedItems,
-                };
-            });
-
-            setOrders(enriched);
-        } catch (e) {
-            setOrderErr(e?.message || "Failed to load orders");
-            setOrders([]);
-        } finally {
-            setLoadingOrders(false);
-        }
-    };
-
-    // Reload orders whenever Orders tab is opened
-    useEffect(() => {
-        if (activeTab === "orders") {
-            loadOrders();
-        }
-        // eslint-disable-next-line react-hooks/exhaustive-deps
-    }, [activeTab]);
-
-    // -------------------- Update order status --------------------
-    const updateOrderStatus = async (orderId, newStatus) => {
-        const { error } = await supabase
-            .from("orders")
-            .update({ status: newStatus })
-            .eq("id", orderId);
-        if (error) {
-            alert(error.message);
-            return;
-        }
-        loadOrders();
-    };
-
-    // -------------------- Orders Filtering --------------------
-    const filteredOrders = useMemo(() => {
-        let list = orders || [];
-
-        const q = String(orderSearch || "").trim().toLowerCase();
-        if (q) {
-            list = list.filter((o) => {
-                const idStr = String(o?.id ?? "").toLowerCase();
-                const userStr = String(o?.user_id ?? "").toLowerCase();
-                const emailStr = String(o?.user_email ?? "").toLowerCase();
-                const nameStr = String(o?.shipping_name ?? "").toLowerCase();
-                return (
-                    idStr.includes(q) ||
-                    userStr.includes(q) ||
-                    emailStr.includes(q) ||
-                    nameStr.includes(q)
-                );
-            });
-        }
-
-        if (orderStatusFilter && orderStatusFilter !== "All") {
-            const wanted = String(orderStatusFilter || "").trim().toLowerCase();
-            list = list.filter(
-                (o) => String(o?.status || "").trim().toLowerCase() === wanted
-            );
-        }
-
-        const from = orderDateFrom
-            ? new Date(`${orderDateFrom}T00:00:00`).getTime()
-            : null;
-        const to = orderDateTo
-            ? new Date(`${orderDateTo}T23:59:59`).getTime()
-            : null;
-
-        if (from || to) {
-            list = list.filter((o) => {
-                const t = o?.created_at ? new Date(o.created_at).getTime() : null;
-                if (!t) return false;
-                if (from && t < from) return false;
-                if (to && t > to) return false;
-                return true;
-            });
-        }
-
-        return list;
-    }, [orders, orderSearch, orderStatusFilter, orderDateFrom, orderDateTo]);
+    // Helper: show/hide a tab panel without unmounting it
+    const panel = (id) => ({ className: activeTab === id ? "" : "hidden" });
 
     return (
         <div className="mx-auto max-w-6xl px-4 py-10">
             <div className="card p-6">
-                <div className="text-xs text-neutral-500">Admin</div>
-                <div className="mt-1 text-2xl font-semibold text-neutral-950">
-                    Dashboard
-                </div>
-                <div className="mt-2 text-sm text-neutral-600">
-                    Logged in as{" "}
-                    <span className="font-semibold">{profile?.email}</span> • role:{" "}
-                    <span className="font-semibold">{profile?.role}</span>
+
+                {/* ── Header ── */}
+                <div className="text-xs text-stone-400">Admin</div>
+                <div className="mt-1 text-2xl font-semibold text-stone-900">Dashboard</div>
+                <div className="mt-2 text-sm text-stone-500">
+                    Logged in as <span className="font-semibold">{profile?.email}</span> ·{" "}
+                    role: <span className="font-semibold">{profile?.role}</span>
                 </div>
 
-                {/* Tab Bar (mobile friendly) */}
+                {/* ── Stats Row ── */}
+                <div className="mt-6 grid grid-cols-2 gap-3 sm:grid-cols-4 lg:grid-cols-5">
+                    <StatCard label="Total Orders"    value={stats.totalOrders} />
+                    <StatCard label="Total Revenue"   value={`₹${stats.totalRevenue.toLocaleString("en-IN")}`} />
+                    <StatCard label="Active Products" value={stats.activeProducts} />
+                    <StatCard
+                        label={`Low Stock${stats.lowStock > 0 ? " ⚠️" : ""}`}
+                        value={stats.lowStock}
+                        sub={stats.lowStock > 0 ? `≤${LOW_STOCK_THRESHOLD} units` : null}
+                        warn={stats.lowStock > 0} warnColor="amber"
+                    />
+                    <StatCard
+                        label={`Pending${stats.pendingOrders > 0 ? " 🔔" : ""}`}
+                        value={stats.pendingOrders}
+                        sub={stats.pendingOrders > 0 ? "Need action" : null}
+                        warn={stats.pendingOrders > 0} warnColor="blue"
+                    />
+                </div>
+
+                {/* ── Tab Bar ── */}
                 <div className="mt-6 -mx-4 px-4 flex items-center gap-2 overflow-x-auto whitespace-nowrap">
+                    {tab("products", "Products")}
+                    {tab("orders",   "Orders",  stats.pendingOrders)}
+                    {tab("settings", "Settings")}
+                    {tab("reviews",  "Reviews", reviewCount, "bg-neutral-200 text-stone-600")}
                     <button
                         type="button"
-                        onClick={() => setActiveTab("products")}
+                        onClick={() => setActiveTab("homepage")}
                         className={[
-                            "shrink-0 rounded-xl border px-4 py-2 text-sm font-semibold transition",
-                            activeTab === "products"
-                                ? "border-neutral-300 bg-neutral-900 text-white shadow-sm"
-                                : "border-neutral-200 bg-white text-neutral-900 hover:bg-neutral-50",
+                            "shrink-0 rounded-xl border px-4 py-2 text-sm font-semibold transition flex items-center gap-2",
+                            activeTab === "homepage"
+                                ? "border-stone-300 bg-[#1e3a5f] text-white shadow-sm"
+                                : "border-[#E8E4DE] bg-white text-stone-900 hover:bg-stone-50",
                         ].join(" ")}
                     >
-                        Products
+                        <svg className="h-3.5 w-3.5" viewBox="0 0 20 20" fill="currentColor">
+                            <path d="M10.707 2.293a1 1 0 00-1.414 0l-7 7a1 1 0 001.414 1.414L4 10.414V17a1 1 0 001 1h2a1 1 0 001-1v-2a1 1 0 011-1h2a1 1 0 011 1v2a1 1 0 001 1h2a1 1 0 001-1v-6.586l.293.293a1 1 0 001.414-1.414l-7-7z"/>
+                        </svg>
+                        Homepage
                     </button>
-
-                    <button
-                        type="button"
-                        onClick={() => setActiveTab("orders")}
-                        className={[
-                            "shrink-0 rounded-xl border px-4 py-2 text-sm font-semibold transition",
-                            activeTab === "orders"
-                                ? "border-neutral-300 bg-neutral-900 text-white shadow-sm"
-                                : "border-neutral-200 bg-white text-neutral-900 hover:bg-neutral-50",
-                        ].join(" ")}
-                    >
-                        Orders
-                    </button>
-
-                    <button
-                        type="button"
-                        onClick={() => setActiveTab("settings")}
-                        className={[
-                            "shrink-0 rounded-xl border px-4 py-2 text-sm font-semibold transition",
-                            activeTab === "settings"
-                                ? "border-neutral-300 bg-neutral-900 text-white shadow-sm"
-                                : "border-neutral-200 bg-white text-neutral-900 hover:bg-neutral-50",
-                        ].join(" ")}
-                    >
-                        Settings
-                    </button>
-
-                    <div className="hidden md:block ml-auto text-xs text-neutral-500">
+                    <div className="hidden md:block ml-auto text-xs text-stone-400">
                         {activeTab === "products" && `${products.length} products`}
-                        {activeTab === "orders" && `${orders.length} orders`}
+                        {activeTab === "orders"   && `${orders.length} orders`}
+                        {activeTab === "reviews"  && `${reviewCount} reviews`}
                         {activeTab === "settings" && "App settings"}
+                        {activeTab === "homepage" && "Homepage editor"}
                     </div>
                 </div>
 
+                {/* ── Tab Panels — always mounted, hidden via CSS ── */}
                 <div className="mt-6">
-                    {/* Settings Tab */}
-                    {activeTab === "settings" && (
-                        <div className="max-w-2xl">
-                            <div className="rounded-2xl border border-neutral-200 bg-white p-5">
-                                <div className="text-base font-semibold text-neutral-950">
-                                    Order settings
-                                </div>
-                                <div className="mt-2 text-sm text-neutral-600">
-                                    Set the max number of total items allowed per order (dynamic).
-                                </div>
-
-                                <div className="mt-4">
-                                    <div className="text-xs text-neutral-500">Max items per order</div>
-                                    <input
-                                        type="number"
-                                        value={maxItems}
-                                        onChange={(e) => setMaxItems(e.target.value)}
-                                        className="mt-1 w-full rounded-xl border border-neutral-200 bg-white px-4 py-3 text-sm text-neutral-900 focus:ring-2 focus:ring-neutral-300 outline-none"
-                                        min={1}
-                                    />
-                                </div>
-
-                                <div className="mt-4 flex items-center gap-3">
-                                    <button
-                                        onClick={save}
-                                        disabled={saving}
-                                        className="btn-primary disabled:opacity-50"
-                                    >
-                                        {saving ? "Saving..." : "Save"}
-                                    </button>
-                                    {msg && <div className="text-sm text-neutral-700">{msg}</div>}
-                                </div>
-                            </div>
-                        </div>
-                    )}
-
-                    {/* Products Tab */}
-                    {activeTab === "products" && (
-                        <div className="rounded-2xl border border-neutral-200 bg-white p-5">
-                            <div className="text-base font-semibold text-neutral-950">Products</div>
-
-                            <div className="mt-4">
-                                <div className="flex items-center justify-between gap-3">
-                                    <div>
-                                        <div className="text-sm font-semibold text-neutral-900">
-                                            Products
-                                        </div>
-                                        <div className="mt-1 text-xs text-neutral-500">
-                                            Create, edit, delete products. Changes reflect immediately in
-                                            Shop and Product Detail.
-                                        </div>
-                                    </div>
-
-                                    <button
-                                        type="button"
-                                        onClick={openAddProduct}
-                                        className="rounded-xl bg-gradient-to-r from-neutral-200 to-neutral-300 px-4 py-2 text-sm font-semibold text-neutral-900 shadow-sm hover:shadow"
-                                    >
-                                        + Add Product
-                                    </button>
-                                </div>
-
-                                {showProductForm && (
-                                    <div className="mt-4 rounded-2xl border border-neutral-200 bg-white p-4">
-                                        <div className="flex items-start justify-between gap-3">
-                                            <div>
-                                                <div className="text-sm font-semibold text-neutral-900">
-                                                    {editingId ? `Edit Product #${editingId}` : "Add New Product"}
-                                                </div>
-                                                <div className="mt-1 text-xs text-neutral-500">
-                                                    Upload 1 main image (jpg/png/webp).
-                                                </div>
-                                            </div>
-
-                                            <button
-                                                type="button"
-                                                onClick={() => {
-                                                    resetProductForm();
-                                                    setShowProductForm(false);
-                                                }}
-                                                className="rounded-lg border border-neutral-200 px-3 py-1.5 text-xs text-neutral-700 hover:bg-neutral-50"
-                                            >
-                                                Close
-                                            </button>
-                                        </div>
-
-                                        <div className="mt-4 grid gap-3">
-                                            <div className="grid gap-3 md:grid-cols-2">
-                                                <div>
-                                                    <div className="text-xs text-neutral-500">Product name *</div>
-                                                    <input
-                                                        type="text"
-                                                        value={pName}
-                                                        onChange={(e) => setPName(e.target.value)}
-                                                        className="mt-1 w-full rounded-xl border border-neutral-200 bg-white px-3 py-2 text-sm text-neutral-900 focus:ring-2 focus:ring-neutral-300 outline-none"
-                                                    />
-                                                </div>
-
-                                                <div>
-                                                    <div className="text-xs text-neutral-500">Category</div>
-                                                    <input
-                                                        type="text"
-                                                        value={pCategory}
-                                                        onChange={(e) => setPCategory(e.target.value)}
-                                                        className="mt-1 w-full rounded-xl border border-neutral-200 bg-white px-3 py-2 text-sm text-neutral-900 focus:ring-2 focus:ring-neutral-300 outline-none"
-                                                    />
-                                                </div>
-                                            </div>
-
-                                            <div>
-                                                <div className="text-xs text-neutral-500">Product description</div>
-                                                <textarea
-                                                    value={pDesc}
-                                                    onChange={(e) => setPDesc(e.target.value)}
-                                                    rows={4}
-                                                    className="mt-1 w-full rounded-xl border border-neutral-200 bg-white px-3 py-2 text-sm text-neutral-900 focus:ring-2 focus:ring-neutral-300 outline-none"
-                                                />
-                                            </div>
-
-                                            <div className="grid gap-3 md:grid-cols-3">
-                                                <div>
-                                                    <div className="text-xs text-neutral-500">Price (₹) *</div>
-                                                    <input
-                                                        type="number"
-                                                        value={pPrice}
-                                                        onChange={(e) => setPPrice(e.target.value)}
-                                                        className="mt-1 w-full rounded-xl border border-neutral-200 bg-white px-3 py-2 text-sm text-neutral-900 focus:ring-2 focus:ring-neutral-300 outline-none"
-                                                        min={0}
-                                                    />
-                                                </div>
-
-                                                <div>
-                                                    <div className="text-xs text-neutral-500">Stock qty *</div>
-                                                    <input
-                                                        type="number"
-                                                        value={pStock}
-                                                        onChange={(e) => setPStock(e.target.value)}
-                                                        className="mt-1 w-full rounded-xl border border-neutral-200 bg-white px-3 py-2 text-sm text-neutral-900 focus:ring-2 focus:ring-neutral-300 outline-none"
-                                                        min={0}
-                                                    />
-                                                </div>
-
-                                                <div className="flex items-end gap-3">
-                                                    <label className="flex items-center gap-2 text-sm text-neutral-800 select-none">
-                                                        <input
-                                                            type="checkbox"
-                                                            checked={pActive}
-                                                            onChange={(e) => setPActive(e.target.checked)}
-                                                            className="h-4 w-4"
-                                                        />
-                                                        Active
-                                                    </label>
-                                                </div>
-                                            </div>
-
-                                            <div className="grid gap-3 md:grid-cols-2">
-                                                <div>
-                                                    <div className="text-xs text-neutral-500">Product image</div>
-                                                    <input
-                                                        ref={fileInputRef}
-                                                        type="file"
-                                                        accept="image/*"
-                                                        onChange={(e) => setPFile(e.target.files?.[0] || null)}
-                                                        className="mt-1 w-full text-sm"
-                                                    />
-                                                    {pImageUrl && (
-                                                        <div className="mt-2 text-xs text-neutral-500">
-                                                            Current image:
-                                                            <a
-                                                                href={pImageUrl}
-                                                                target="_blank"
-                                                                rel="noreferrer"
-                                                                className="ml-1 text-neutral-900 hover:underline"
-                                                            >
-                                                                View
-                                                            </a>
-                                                        </div>
-                                                    )}
-                                                </div>
-
-                                                <div className="flex items-end gap-2">
-                                                    <button
-                                                        type="button"
-                                                        onClick={saveProduct}
-                                                        disabled={savingProduct}
-                                                        className="w-full rounded-xl bg-gradient-to-r from-neutral-200 to-neutral-300 px-4 py-2.5 text-sm font-semibold text-neutral-900 shadow-sm hover:shadow disabled:opacity-60"
-                                                    >
-                                                        {savingProduct
-                                                            ? "Saving..."
-                                                            : editingId
-                                                                ? "Save Changes"
-                                                                : "Create Product"}
-                                                    </button>
-
-                                                    {editingId && (
-                                                        <button
-                                                            type="button"
-                                                            onClick={() => deleteProduct(editingId)}
-                                                            className="rounded-xl border border-neutral-200 px-4 py-2.5 text-sm hover:bg-neutral-50"
-                                                        >
-                                                            Delete
-                                                        </button>
-                                                    )}
-                                                </div>
-                                            </div>
-
-                                            {productMsg && (
-                                                <div className="text-sm text-neutral-700">{productMsg}</div>
-                                            )}
-                                        </div>
-                                    </div>
-                                )}
-
-                                {/* List */}
-                                <div className="mt-4">
-                                    {loadingProducts ? (
-                                        <div className="text-sm text-neutral-500">Loading products...</div>
-                                    ) : productErr ? (
-                                        <div className="text-sm text-red-600">{productErr}</div>
-                                    ) : products.length === 0 ? (
-                                        <div className="text-sm text-neutral-500">No products yet.</div>
-                                    ) : (
-                                        <div className="mt-2">
-                                            {/* Mobile cards */}
-                                            <div className="grid gap-3 md:hidden">
-                                                {products.map((p) => {
-                                                    const out = Number(p.stock_qty || 0) <= 0;
-                                                    return (
-                                                        <div
-                                                            key={p.id}
-                                                            className="rounded-2xl border border-neutral-200 bg-white p-4"
-                                                        >
-                                                            <div className="flex items-start gap-3">
-                                                                <div className="h-14 w-14 rounded-xl bg-neutral-100 overflow-hidden shrink-0">
-                                                                    {p.image_url ? (
-                                                                        <img
-                                                                            src={p.image_url}
-                                                                            alt={p.name}
-                                                                            className="h-full w-full object-cover"
-                                                                            loading="lazy"
-                                                                        />
-                                                                    ) : null}
-                                                                </div>
-
-                                                                <div className="min-w-0 flex-1">
-                                                                    <div className="font-semibold text-neutral-900 truncate">
-                                                                        {p.name}
-                                                                    </div>
-                                                                    <div className="mt-0.5 text-xs text-neutral-500 truncate">
-                                                                        {p.category || "—"}
-                                                                    </div>
-
-                                                                    <div className="mt-3 grid grid-cols-2 gap-2 text-xs">
-                                                                        <div className="rounded-xl border border-neutral-200 bg-white px-3 py-2">
-                                                                            ₹{Number(p.price_inr || 0).toLocaleString("en-IN")}
-                                                                        </div>
-                                                                        <div
-                                                                            className={
-                                                                                out
-                                                                                    ? "rounded-xl border border-neutral-200 bg-white px-3 py-2 text-red-600 font-semibold"
-                                                                                    : "rounded-xl border border-neutral-200 bg-white px-3 py-2 text-green-600 font-semibold"
-                                                                            }
-                                                                        >
-                                                                            {out ? "Out of stock" : "In stock"} ({Number(p.stock_qty || 0)})
-                                                                        </div>
-                                                                    </div>
-
-                                                                    <div className="mt-3 flex items-center justify-between gap-2">
-                                                                        <div className="text-xs text-neutral-500">
-                                                                            Active:{" "}
-                                                                            <span className="font-semibold text-neutral-900">
-                                        {p.is_active ? "Yes" : "No"}
-                                      </span>
-                                                                        </div>
-                                                                        <button
-                                                                            type="button"
-                                                                            onClick={() => openEditProduct(p)}
-                                                                            className="rounded-xl border border-neutral-200 bg-white px-3 py-2 text-xs font-semibold text-neutral-900 hover:bg-neutral-50"
-                                                                        >
-                                                                            Edit
-                                                                        </button>
-                                                                    </div>
-                                                                </div>
-                                                            </div>
-
-                                                            <div className="mt-3 text-[11px] text-neutral-500">
-                                                                Created:{" "}
-                                                                {p.created_at ? new Date(p.created_at).toLocaleString() : "—"}
-                                                            </div>
-                                                        </div>
-                                                    );
-                                                })}
-                                            </div>
-
-                                            {/* Desktop table */}
-                                            <div className="hidden md:block overflow-x-auto">
-                                                <table className="w-full table-fixed text-sm">
-                                                    <thead>
-                                                    <tr className="text-left text-neutral-500 border-b">
-                                                        <th className="py-2 pr-4 w-[40%]">Product</th>
-                                                        <th className="py-2 pr-4 w-[14%]">Price</th>
-                                                        <th className="py-2 pr-4 w-[14%]">Stock</th>
-                                                        <th className="py-2 pr-4 w-[10%]">Active</th>
-                                                        <th className="py-2 pr-4 w-[16%]">Created</th>
-                                                        <th className="py-2 w-[6%]">Action</th>
-                                                    </tr>
-                                                    </thead>
-
-                                                    <tbody>
-                                                    {products.map((p) => {
-                                                        const out = Number(p.stock_qty || 0) <= 0;
-                                                        return (
-                                                            <tr key={p.id} className="border-b align-top">
-                                                                <td className="py-2 pr-4">
-                                                                    <div className="flex items-center gap-3">
-                                                                        <div className="h-10 w-10 rounded-lg bg-neutral-100 overflow-hidden shrink-0">
-                                                                            {p.image_url ? (
-                                                                                <img
-                                                                                    src={p.image_url}
-                                                                                    alt={p.name}
-                                                                                    className="h-full w-full object-cover"
-                                                                                    loading="lazy"
-                                                                                />
-                                                                            ) : null}
-                                                                        </div>
-                                                                        <div>
-                                                                            <div className="font-semibold text-neutral-900">
-                                                                                {p.name}
-                                                                            </div>
-                                                                            <div className="text-xs text-neutral-500">
-                                                                                {p.category || "—"}
-                                                                            </div>
-                                                                        </div>
-                                                                    </div>
-                                                                </td>
-
-                                                                <td className="py-2 pr-4">
-                                                                    ₹{Number(p.price_inr || 0).toLocaleString("en-IN")}
-                                                                </td>
-
-                                                                <td className="py-2 pr-4">
-                                    <span
-                                        className={
-                                            out
-                                                ? "text-red-600 font-semibold"
-                                                : "text-green-600 font-semibold"
-                                        }
-                                    >
-                                      {out ? "Out of stock" : "In stock"}
-                                    </span>
-                                                                    <span className="ml-2 text-xs text-neutral-500">
-                                      ({Number(p.stock_qty || 0)})
-                                    </span>
-                                                                </td>
-
-                                                                <td className="py-2 pr-4">
-                                    <span
-                                        className={
-                                            p.is_active
-                                                ? "text-green-600 font-semibold"
-                                                : "text-neutral-500 font-semibold"
-                                        }
-                                    >
-                                      {p.is_active ? "Yes" : "No"}
-                                    </span>
-                                                                </td>
-
-                                                                <td className="py-2 pr-4 text-xs text-neutral-500">
-                                                                    {p.created_at
-                                                                        ? new Date(p.created_at).toLocaleString()
-                                                                        : "—"}
-                                                                </td>
-
-                                                                <td className="py-2">
-                                                                    <button
-                                                                        type="button"
-                                                                        onClick={() => openEditProduct(p)}
-                                                                        className="rounded-lg border border-neutral-200 px-3 py-1.5 text-xs hover:bg-neutral-50"
-                                                                    >
-                                                                        Edit
-                                                                    </button>
-                                                                </td>
-                                                            </tr>
-                                                        );
-                                                    })}
-                                                    </tbody>
-                                                </table>
-                                            </div>
-                                        </div>
-                                    )}
-                                </div>
-                            </div>
-                        </div>
-                    )}
-
-                    {/* Orders Tab */}
-                    {activeTab === "orders" && (
-                        <div className="rounded-2xl border border-neutral-200 bg-white p-5">
-                            <div className="text-base font-semibold text-neutral-950">Orders</div>
-
-                            <div className="mt-4">
-                                <div className="text-sm font-semibold text-neutral-900">
-                                    Orders Management
-                                </div>
-
-                                {/* Filter Bar */}
-                                <div className="mt-3 grid gap-3 md:grid-cols-4">
-                                    <div>
-                                        <div className="text-xs text-neutral-500">
-                                            Search (Order ID / User)
-                                        </div>
-                                        <input
-                                            value={orderSearch}
-                                            onChange={(e) => setOrderSearch(e.target.value)}
-                                            placeholder="Search by order id, user id, name, or email..."
-                                            className="mt-1 w-full rounded-xl border border-neutral-200 bg-white px-3 py-2 text-sm text-neutral-900 focus:ring-2 focus:ring-neutral-300 outline-none"
-                                        />
-                                    </div>
-
-                                    <div>
-                                        <div className="text-xs text-neutral-500">Status</div>
-                                        <select
-                                            value={orderStatusFilter}
-                                            onChange={(e) => setOrderStatusFilter(e.target.value)}
-                                            className="mt-1 w-full rounded-xl border border-neutral-200 bg-white px-3 py-2 text-sm text-neutral-900 focus:ring-2 focus:ring-neutral-300 outline-none"
-                                        >
-                                            <option value="All">All</option>
-                                            <option value="placed">Placed</option>
-                                            <option value="packed">Packed</option>
-                                            <option value="shipped">Shipped</option>
-                                            <option value="delivered">Delivered</option>
-                                        </select>
-                                    </div>
-
-                                    <div>
-                                        <div className="text-xs text-neutral-500">From</div>
-                                        <input
-                                            type="date"
-                                            value={orderDateFrom}
-                                            onChange={(e) => setOrderDateFrom(e.target.value)}
-                                            className="mt-1 w-full rounded-xl border border-neutral-200 bg-white px-3 py-2 text-sm text-neutral-900 focus:ring-2 focus:ring-neutral-300 outline-none"
-                                        />
-                                    </div>
-
-                                    <div>
-                                        <div className="text-xs text-neutral-500">To</div>
-                                        <input
-                                            type="date"
-                                            value={orderDateTo}
-                                            onChange={(e) => setOrderDateTo(e.target.value)}
-                                            className="mt-1 w-full rounded-xl border border-neutral-200 bg-white px-3 py-2 text-sm text-neutral-900 focus:ring-2 focus:ring-neutral-300 outline-none"
-                                        />
-                                    </div>
-                                </div>
-
-                                <div className="mt-3 flex flex-wrap items-center justify-between gap-2">
-                                    <div className="text-xs text-neutral-500">
-                                        Showing{" "}
-                                        <span className="font-semibold text-neutral-900">
-                      {filteredOrders.length}
-                    </span>{" "}
-                                        of {orders.length}
-                                    </div>
-                                    <button
-                                        type="button"
-                                        onClick={() => {
-                                            setOrderSearch("");
-                                            setOrderStatusFilter("All");
-                                            setOrderDateFrom("");
-                                            setOrderDateTo("");
-                                        }}
-                                        className="rounded-xl border border-neutral-200 bg-white px-3 py-2 text-xs font-semibold text-neutral-900 hover:bg-neutral-50"
-                                    >
-                                        Clear filters
-                                    </button>
-                                </div>
-
-                                {orderErr && <div className="mt-3 text-sm text-red-600">{orderErr}</div>}
-
-                                {loadingOrders ? (
-                                    <div className="mt-4 text-sm text-neutral-500">Loading orders...</div>
-                                ) : filteredOrders.length === 0 ? (
-                                    <div className="mt-4 text-sm text-neutral-500">No orders yet.</div>
-                                ) : (
-                                    <div className="mt-3">
-                                        {/* Mobile cards */}
-                                        <div className="grid gap-3 md:hidden">
-                                            {filteredOrders.map((o) => {
-                                                const st = String(o.status || "").trim().toLowerCase();
-
-                                                const badge = [
-                                                    "inline-flex items-center rounded-full px-2 py-1 text-[11px] font-semibold",
-                                                    st === "placed" && "bg-green-50 text-green-700",
-                                                    st === "packed" && "bg-yellow-50 text-yellow-700",
-                                                    st === "shipped" && "bg-purple-50 text-purple-700",
-                                                    st === "delivered" && "bg-green-50 text-green-700",
-                                                ]
-                                                    .filter(Boolean)
-                                                    .join(" ");
-
-                                                const displayName = o.user_full_name || o.shipping_name || "";
-                                                const displayEmail = o.user_email || "";
-                                                const customerLine =
-                                                    displayName && displayEmail
-                                                        ? `${displayName} (${displayEmail})`
-                                                        : displayName
-                                                            ? displayName
-                                                            : displayEmail
-                                                                ? displayEmail
-                                                                : o.user_id;
-
-                                                const isOpen = expandedOrderIds.has(o.id);
-
-                                                return (
-                                                    <div key={o.id} className="rounded-2xl border border-neutral-200 bg-white p-4">
-                                                        <div className="flex items-start justify-between gap-3">
-                                                            <div className="min-w-0">
-                                                                <div className="text-sm font-semibold text-neutral-900">#{o.id}</div>
-                                                                <div className="mt-1 text-xs text-neutral-600 truncate">{customerLine}</div>
-                                                                <div className="mt-2 text-sm font-semibold text-neutral-900">
-                                                                    ₹{Number(o.computed_total_inr ?? 0).toLocaleString("en-IN")}
-                                                                </div>
-                                                            </div>
-
-                                                            <div className="shrink-0 flex flex-col items-end gap-2">
-                                                                <span className={badge}>{st || "—"}</span>
-                                                                <div className="text-[11px] text-neutral-500">
-                                                                    {o.created_at ? new Date(o.created_at).toLocaleString() : "—"}
-                                                                </div>
-                                                            </div>
-                                                        </div>
-
-                                                        <div className="mt-3 grid grid-cols-2 gap-2">
-                                                            <select
-                                                                value={st}
-                                                                onChange={(e) => updateOrderStatus(o.id, e.target.value)}
-                                                                className="w-full rounded-xl border border-neutral-200 bg-white px-3 py-2 text-xs"
-                                                            >
-                                                                <option value="placed">Placed</option>
-                                                                <option value="packed">Packed</option>
-                                                                <option value="shipped">Shipped</option>
-                                                                <option value="delivered">Delivered</option>
-                                                            </select>
-
-                                                            <button
-                                                                type="button"
-                                                                onClick={() => toggleOrderExpanded(o.id)}
-                                                                className="w-full rounded-xl border border-neutral-200 bg-white px-3 py-2 text-xs font-semibold text-neutral-900 hover:bg-neutral-50"
-                                                            >
-                                                                {isOpen ? "Hide details" : "View details"}
-                                                            </button>
-                                                        </div>
-
-                                                        {isOpen && (
-                                                            <div className="mt-3 rounded-2xl border border-neutral-200 bg-neutral-50/50 p-3">
-                                                                <div className="grid gap-3">
-                                                                    <div className="rounded-xl border border-neutral-200 bg-white p-3">
-                                                                        <div className="text-xs font-semibold text-neutral-500">Customer</div>
-                                                                        <div className="mt-2 text-sm text-neutral-900">
-                                                                            <div className="font-semibold">
-                                                                                {o.shipping_name || o.user_full_name || "(No name)"}
-                                                                            </div>
-                                                                            <div className="mt-1 text-xs text-neutral-600">
-                                                                                Email: {o.user_email || "(No email)"}
-                                                                            </div>
-                                                                            <div className="mt-1 text-xs text-neutral-600">
-                                                                                Phone: {o.shipping_phone || "(No phone)"}
-                                                                            </div>
-                                                                        </div>
-                                                                    </div>
-
-                                                                    <div className="rounded-xl border border-neutral-200 bg-white p-3">
-                                                                        <div className="text-xs font-semibold text-neutral-500">Shipping Address</div>
-                                                                        <div className="mt-2 text-xs text-neutral-700 leading-relaxed">
-                                                                            {[
-                                                                                o.shipping_address_1,
-                                                                                o.shipping_address_2,
-                                                                                [o.shipping_city, o.shipping_state].filter(Boolean).join(", "),
-                                                                                o.shipping_pincode,
-                                                                                o.shipping_country,
-                                                                            ]
-                                                                                .filter(Boolean)
-                                                                                .map((line, idx) => (
-                                                                                    <div key={idx}>{line}</div>
-                                                                                ))}
-                                                                        </div>
-                                                                    </div>
-
-                                                                    <div className="rounded-xl border border-neutral-200 bg-white p-3">
-                                                                        <div className="text-xs font-semibold text-neutral-500">Items</div>
-                                                                        <div className="mt-2 space-y-2">
-                                                                            {(o.order_items_detailed || []).length === 0 ? (
-                                                                                <div className="text-xs text-neutral-600">
-                                                                                    No items found for this order.
-                                                                                </div>
-                                                                            ) : (
-                                                                                (o.order_items_detailed || []).map((it, idx) => (
-                                                                                    <div
-                                                                                        key={it.product_id || idx}
-                                                                                        className="flex items-start justify-between gap-3 text-xs"
-                                                                                    >
-                                                                                        <div className="min-w-0">
-                                                                                            <div className="font-semibold text-neutral-900 truncate">
-                                                                                                {it.product_name || `Product #${it.product_id}`}
-                                                                                            </div>
-                                                                                            <div className="text-neutral-600">
-                                                                                                Qty: {Number(it.qty_num || 0)}
-                                                                                            </div>
-                                                                                        </div>
-                                                                                        <div className="shrink-0 text-neutral-900 font-semibold">
-                                                                                            ₹{Number(it.line_total_num || 0).toLocaleString("en-IN")}
-                                                                                        </div>
-                                                                                    </div>
-                                                                                ))
-                                                                            )}
-
-                                                                            <div className="pt-2 mt-2 border-t border-neutral-200 flex items-center justify-between text-xs">
-                                                                                <div className="text-neutral-600">Order Total</div>
-                                                                                <div className="font-semibold text-neutral-900">
-                                                                                    ₹{Number(o.computed_total_inr ?? 0).toLocaleString("en-IN")}
-                                                                                </div>
-                                                                            </div>
-                                                                        </div>
-                                                                    </div>
-                                                                </div>
-                                                            </div>
-                                                        )}
-                                                    </div>
-                                                );
-                                            })}
-                                        </div>
-
-                                        {/* Desktop table */}
-                                        <div className="hidden md:block overflow-x-auto">
-                                            <table className="w-full table-fixed text-sm">
-                                                <thead>
-                                                <tr className="text-left text-neutral-500 border-b">
-                                                    <th className="py-2 pr-4 w-[18%]">Order ID</th>
-                                                    <th className="py-2 pr-4 w-[28%]">Customer</th>
-                                                    <th className="py-2 pr-4 w-[12%]">Total</th>
-                                                    <th className="py-2 pr-4 w-[12%]">Status</th>
-                                                    <th className="py-2 pr-4 w-[18%]">Created</th>
-                                                    <th className="py-2 w-[12%]">Actions</th>
-                                                </tr>
-                                                </thead>
-
-                                                <tbody>
-                                                {filteredOrders.map((o) => {
-                                                    const st = String(o.status || "").trim().toLowerCase();
-
-                                                    const badge = [
-                                                        "inline-flex items-center rounded-full px-2 py-1 text-xs font-semibold",
-                                                        st === "placed" && "bg-green-50 text-green-700",
-                                                        st === "packed" && "bg-yellow-50 text-yellow-700",
-                                                        st === "shipped" && "bg-purple-50 text-purple-700",
-                                                        st === "delivered" && "bg-green-50 text-green-700",
-                                                    ]
-                                                        .filter(Boolean)
-                                                        .join(" ");
-
-                                                    const displayName = o.user_full_name || o.shipping_name || "";
-                                                    const displayEmail = o.user_email || "";
-                                                    const customerCell =
-                                                        displayName && displayEmail
-                                                            ? `${displayName} (${displayEmail})`
-                                                            : displayName
-                                                                ? displayName
-                                                                : displayEmail
-                                                                    ? displayEmail
-                                                                    : o.user_id;
-
-                                                    return (
-                                                        <Fragment key={o.id}>
-                                                            <tr className="border-b align-top">
-                                                                <td className="py-2 pr-4 text-xs font-semibold text-neutral-900 break-all">
-                                                                    #{o.id}
-                                                                </td>
-
-                                                                <td className="py-2 pr-4 text-xs text-neutral-600 break-all">
-                                                                    {customerCell}
-                                                                </td>
-
-                                                                <td className="py-2 pr-4">
-                                                                    ₹{Number(o.computed_total_inr ?? 0).toLocaleString("en-IN")}
-                                                                </td>
-
-                                                                <td className="py-2 pr-4">
-                                                                    <span className={badge}>{st || "—"}</span>
-                                                                </td>
-
-                                                                <td className="py-2 pr-4 text-xs text-neutral-500">
-                                                                    {o.created_at ? new Date(o.created_at).toLocaleString() : "—"}
-                                                                </td>
-
-                                                                <td className="py-2">
-                                                                    <div className="flex flex-col gap-2">
-                                                                        <select
-                                                                            value={st}
-                                                                            onChange={(e) => updateOrderStatus(o.id, e.target.value)}
-                                                                            className="w-full rounded-lg border border-neutral-200 bg-white px-2 py-1.5 text-xs"
-                                                                        >
-                                                                            <option value="placed">Placed</option>
-                                                                            <option value="packed">Packed</option>
-                                                                            <option value="shipped">Shipped</option>
-                                                                            <option value="delivered">Delivered</option>
-                                                                        </select>
-
-                                                                        <button
-                                                                            type="button"
-                                                                            onClick={() => toggleOrderExpanded(o.id)}
-                                                                            className="w-full rounded-lg border border-neutral-200 bg-white px-2 py-1.5 text-xs font-semibold text-neutral-900 hover:bg-neutral-50"
-                                                                        >
-                                                                            {expandedOrderIds.has(o.id) ? "Hide details" : "View details"}
-                                                                        </button>
-                                                                    </div>
-                                                                </td>
-                                                            </tr>
-
-                                                            {expandedOrderIds.has(o.id) && (
-                                                                <tr className="border-b bg-neutral-50/50">
-                                                                    <td colSpan={6} className="py-3 px-2">
-                                                                        <div className="grid gap-4 md:grid-cols-3">
-                                                                            {/* Customer */}
-                                                                            <div className="rounded-xl border border-neutral-200 bg-white p-4">
-                                                                                <div className="text-xs font-semibold text-neutral-500">Customer</div>
-                                                                                <div className="mt-2 text-sm text-neutral-900">
-                                                                                    <div className="font-semibold">
-                                                                                        {o.shipping_name || o.user_full_name || "(No name)"}
-                                                                                    </div>
-                                                                                    <div className="mt-1 text-xs text-neutral-600">
-                                                                                        Email: {o.user_email || "(No email)"}
-                                                                                    </div>
-                                                                                    <div className="mt-1 text-xs text-neutral-600">
-                                                                                        Phone: {o.shipping_phone || "(No phone)"}
-                                                                                    </div>
-                                                                                </div>
-                                                                            </div>
-
-                                                                            {/* Address */}
-                                                                            <div className="rounded-xl border border-neutral-200 bg-white p-4">
-                                                                                <div className="text-xs font-semibold text-neutral-500">Shipping Address</div>
-                                                                                <div className="mt-2 text-sm text-neutral-900">
-                                                                                    <div className="text-xs text-neutral-700 leading-relaxed">
-                                                                                        {[
-                                                                                            o.shipping_address_1,
-                                                                                            o.shipping_address_2,
-                                                                                            [o.shipping_city, o.shipping_state].filter(Boolean).join(", "),
-                                                                                            o.shipping_pincode,
-                                                                                            o.shipping_country,
-                                                                                        ]
-                                                                                            .filter(Boolean)
-                                                                                            .map((line, idx) => (
-                                                                                                <div key={idx}>{line}</div>
-                                                                                            ))}
-                                                                                    </div>
-                                                                                </div>
-                                                                            </div>
-
-                                                                            {/* Items */}
-                                                                            <div className="rounded-xl border border-neutral-200 bg-white p-4">
-                                                                                <div className="text-xs font-semibold text-neutral-500">Items</div>
-                                                                                <div className="mt-2 space-y-2">
-                                                                                    {(o.order_items_detailed || []).length === 0 ? (
-                                                                                        <div className="text-xs text-neutral-600">
-                                                                                            No items found for this order.
-                                                                                        </div>
-                                                                                    ) : (
-                                                                                        (o.order_items_detailed || []).map((it, idx) => (
-                                                                                            <div
-                                                                                                key={it.product_id || idx}
-                                                                                                className="flex items-start justify-between gap-3 text-xs"
-                                                                                            >
-                                                                                                <div className="min-w-0">
-                                                                                                    <div className="font-semibold text-neutral-900 truncate">
-                                                                                                        {it.product_name || `Product #${it.product_id}`}
-                                                                                                    </div>
-                                                                                                    <div className="text-neutral-600">
-                                                                                                        Qty: {Number(it.qty_num || 0)}
-                                                                                                    </div>
-                                                                                                </div>
-                                                                                                <div className="shrink-0 text-neutral-900 font-semibold">
-                                                                                                    ₹{Number(it.line_total_num || 0).toLocaleString("en-IN")}
-                                                                                                </div>
-                                                                                            </div>
-                                                                                        ))
-                                                                                    )}
-
-                                                                                    <div className="pt-2 mt-2 border-t border-neutral-200 flex items-center justify-between text-xs">
-                                                                                        <div className="text-neutral-600">Order Total</div>
-                                                                                        <div className="font-semibold text-neutral-900">
-                                                                                            ₹{Number(o.computed_total_inr ?? 0).toLocaleString("en-IN")}
-                                                                                        </div>
-                                                                                    </div>
-                                                                                </div>
-                                                                            </div>
-                                                                        </div>
-                                                                    </td>
-                                                                </tr>
-                                                            )}
-                                                        </Fragment>
-                                                    );
-                                                })}
-                                                </tbody>
-                                            </table>
-                                        </div>
-                                    </div>
-                                )}
-                            </div>
-                        </div>
-                    )}
+                    <div {...panel("products")}><AdminProducts onProductsChange={setProducts} /></div>
+                    <div {...panel("orders")}  ><AdminOrders   onOrdersChange={setOrders} /></div>
+                    <div {...panel("settings")}><AdminSettings /></div>
+                    {/*
+                      Reviews and Homepage are always rendered (never conditionally removed)
+                      so Reviews fires onCountChange on mount, and Homepage keeps its
+                      unsaved form state while you switch to another tab.
+                    */}
+                    <div {...panel("reviews")} ><AdminReviews  onCountChange={setReviewCount} /></div>
+                    <div {...panel("homepage")}><AdminHomepage products={products} /></div>
                 </div>
+
             </div>
+        </div>
+    );
+}
+
+function StatCard({ label, value, sub, warn, warnColor }) {
+    const palette = {
+        amber: { wrap: "border-amber-200 bg-amber-50", lbl: "text-amber-600", val: "text-amber-700", sub: "text-amber-600" },
+        blue:  { wrap: "border-blue-200 bg-blue-50",   lbl: "text-blue-600",  val: "text-blue-700",  sub: "text-blue-600"  },
+    };
+    const p = warn && warnColor ? palette[warnColor] : null;
+    return (
+        <div className={["rounded-2xl border p-4 shadow-sm", p ? p.wrap : "border-[#E8E4DE] bg-white"].join(" ")}>
+            <div className={["text-xs", p ? p.lbl : "text-stone-400"].join(" ")}>{label}</div>
+            <div className={["mt-1 text-2xl font-semibold", p ? p.val : "text-stone-900"].join(" ")}>{value}</div>
+            {sub && <div className={["mt-1 text-xs", p ? p.sub : "text-stone-400"].join(" ")}>{sub}</div>}
         </div>
     );
 }

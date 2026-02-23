@@ -8,7 +8,7 @@ import ProductDetail from "../pages/ProductDetail";
 import Login from "../pages/Login";
 import MyOrders from "../pages/MyOrders";
 import Checkout from "../pages/Checkout";
-import AdminDashboard from "../pages/AdminDashboard";
+import AdminDashboard from "../pages/AdminDashboard.jsx";
 import NotFound from "../pages/NotFound";
 import ErrorPage from "../pages/ErrorPage";
 

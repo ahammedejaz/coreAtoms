@@ -166,7 +166,6 @@ export default function Home() {
 
           {/* LEFT — carousel */}
           <div className="relative overflow-hidden h-[340px] lg:h-[500px]">
-            {/* Slide strip — use absolute positioning per slide to avoid flex width issues */}
             <div className="relative h-full w-full">
               {heroImages.map((slide, i) => (
                 <div

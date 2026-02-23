@@ -55,6 +55,7 @@ export function mapDbProduct(p) {
     basePrice,
     stockQty: Number(p.stock_qty ?? 0),
     image: primaryImage,
+    imagePosition: p.image_position ?? "50% 50%",
     images: allImages,
     isActive: p.is_active ?? true,
     createdAt: p.created_at,
@@ -71,7 +72,7 @@ export function mapDbProduct(p) {
 }
 
 const PRODUCT_FIELDS =
-  "id,name,sku,category,description,price_inr,stock_qty,image_url,is_active,created_at,updated_at,about_text,best_for,pairs_well_with,recommended_stack,highlights,product_images(id,image_url,sort_order),product_reviews(rating),product_variants(id,label,price_inr,stock_qty,sku,sort_order,is_active)";
+  "id,name,sku,category,description,price_inr,stock_qty,image_url,image_position,is_active,created_at,updated_at,about_text,best_for,pairs_well_with,recommended_stack,highlights,product_images(id,image_url,sort_order),product_reviews(rating),product_variants(id,label,price_inr,stock_qty,sku,sort_order,is_active)";
 
 export async function fetchProducts() {
   const { data, error } = await supabase
@@ -88,7 +89,7 @@ export async function fetchProductById(id) {
   const { data, error } = await supabase
     .from("products")
     .select(
-      "id,name,sku,category,description,price_inr,stock_qty,image_url,is_active,created_at,updated_at,about_text,best_for,pairs_well_with,recommended_stack,highlights,product_images(id,image_url,sort_order),product_reviews(id,rating,title,body,created_at,user_id,order_id),product_variants(id,label,price_inr,stock_qty,sku,sort_order,is_active)"
+      "id,name,sku,category,description,price_inr,stock_qty,image_url,image_position,is_active,created_at,updated_at,about_text,best_for,pairs_well_with,recommended_stack,highlights,product_images(id,image_url,sort_order),product_reviews(id,rating,title,body,created_at,user_id,order_id),product_variants(id,label,price_inr,stock_qty,sku,sort_order,is_active)"
     )
     .eq("id", id)
     .maybeSingle();

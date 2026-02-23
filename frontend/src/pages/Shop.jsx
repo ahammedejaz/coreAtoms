@@ -31,6 +31,7 @@ export function ProductCard({ p, onAdd, justAdded }) {
           src={p.image}
           alt={p.name}
           className="h-full w-full object-cover transition-transform duration-300 group-hover:scale-[1.03]"
+          style={{ objectPosition: p.imagePosition || "50% 50%" }}
           loading="lazy"
         />
         {/* Category */}
@@ -56,30 +57,34 @@ export function ProductCard({ p, onAdd, justAdded }) {
 
       {/* Body */}
       <div className="flex flex-col flex-1 p-5">
+
+        {/* 1. Name — 2 lines max */}
         <Link to={`/product/${p.id}`}>
-          <h3 className="text-[15px] font-semibold text-stone-900 leading-snug group-hover:text-[#1e3a5f] transition-colors">
+          <h3 className="text-[15px] font-semibold text-stone-900 leading-snug line-clamp-2 group-hover:text-[#1e3a5f] transition-colors">
             {p.name}
           </h3>
         </Link>
 
-        {p.reviewCount > 0 && (
-          <div className="mt-1.5"><Stars rating={p.avgRating} count={p.reviewCount} /></div>
-        )}
+        {/* 2. Rating — always reserves space so cards stay aligned */}
+        <div className="mt-1.5 h-5 flex items-center">
+          {p.reviewCount > 0 && <Stars rating={p.avgRating} count={p.reviewCount} />}
+        </div>
 
+        {/* 3. Description — 2 lines max */}
         <p className="mt-2 text-[13px] text-stone-500 leading-relaxed line-clamp-2">{desc}</p>
 
-        {/* Highlights — set in admin, fallback to defaults */}
-        <div className="mt-3 flex flex-wrap gap-1.5">
+        {/* 4. Highlights — pushed to sit just above price */}
+        <div className="mt-auto pt-3 flex flex-wrap gap-1.5">
           {(p.highlights && p.highlights.length > 0
-            ? p.highlights
+            ? p.highlights.slice(0, 3)
             : ["Clean label", "Lab-tested", "COD available"]
           ).map((tag) => (
             <span key={tag} className="rounded-full border border-[#E8E4DE] bg-stone-50 px-2.5 py-0.5 text-[10px] font-medium text-stone-500">{tag}</span>
           ))}
         </div>
 
-        {/* Price + button — pushed to bottom */}
-        <div className="mt-auto pt-4">
+        {/* 5. Price + button */}
+        <div className="pt-4">
           <div className="flex items-baseline justify-between mb-3">
             <div>
               <span className="text-[11px] text-stone-400 block mb-0.5">

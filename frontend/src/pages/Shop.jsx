@@ -5,129 +5,141 @@ import { useCart } from "../context/CartContext";
 
 const money = (n) => `₹${Number(n || 0).toLocaleString("en-IN")}`;
 
-// ── Shared Stars component ──────────────────────────────────────────────────
 export function Stars({ rating, count }) {
   if (!count) return null;
   return (
     <div className="flex items-center gap-1">
-      {[1, 2, 3, 4, 5].map((i) => (
-        <span key={i} className={`text-sm leading-none ${i <= Math.round(rating) ? "text-amber-400" : "text-neutral-200"}`}>★</span>
+      {[1,2,3,4,5].map((i) => (
+        <span key={i} className={`text-[13px] leading-none ${i <= Math.round(rating) ? "text-amber-400" : "text-stone-200"}`}>★</span>
       ))}
-      <span className="text-xs text-neutral-500 ml-0.5">{Number(rating).toFixed(1)} ({count})</span>
+      <span className="text-[11px] text-stone-400 ml-0.5">{Number(rating).toFixed(1)} ({count})</span>
     </div>
   );
 }
 
-// ── Shared ProductCard — used by both Shop and Home ─────────────────────────
 export function ProductCard({ p, onAdd, justAdded }) {
   const out = (p.stockQty ?? 0) <= 0;
-  const added = justAdded;
-
-  const desc = String(p.description || "").trim();
-  const oneLiner = desc
-    ? desc.replace(/\s+/g, " ").slice(0, 120)
-    : "Premium daily supplement with a clean label and reliable quality.";
+  const desc = String(p.description || "").replace(/\s+/g, " ").trim().slice(0, 110) ||
+    "Premium daily supplement with clean ingredients and reliable quality.";
 
   return (
-    <div className="group rounded-3xl border border-black/10 bg-white overflow-hidden shadow-[0_20px_60px_-40px_rgba(0,0,0,0.25)] hover:shadow-[0_30px_80px_-45px_rgba(0,0,0,0.35)] transition-shadow flex flex-col">
+    <div className="group flex flex-col rounded-2xl border border-[#E8E4DE] bg-white overflow-hidden shadow-[0_2px_12px_rgba(0,0,0,0.06)] hover:shadow-[0_8px_30px_rgba(0,0,0,0.10)] hover:-translate-y-0.5 transition-all duration-250">
+
       {/* Image */}
-      <Link to={`/product/${p.id}`} className="block">
-        <div className="relative h-56 bg-neutral-50 overflow-hidden shrink-0">
-          <img
-            src={p.image}
-            alt={p.name}
-            className="h-full w-full object-cover transition-transform duration-300 group-hover:scale-[1.03]"
-            loading="lazy"
-          />
-          {/* Category pill */}
-          {p.category ? (
-            <div className="absolute top-4 left-4">
-              <span className="rounded-full border border-black/10 bg-white/90 px-3 py-1 text-[11px] font-semibold text-neutral-800 shadow-sm">
-                {p.category}
-              </span>
-            </div>
-          ) : null}
-          {/* Stock badge */}
-          <div className="absolute top-4 right-4">
-            <span className={[
-              "rounded-full border px-3 py-1 text-[11px] font-semibold shadow-sm",
-              out ? "border-red-200 bg-red-50 text-red-700" : "border-green-200 bg-green-50 text-green-700",
-            ].join(" ")}>
-              <span className="inline-flex items-center gap-1">
-                <span className={["inline-block h-2.5 w-2.5 rounded-full", out ? "bg-red-600" : "bg-green-600"].join(" ")} />
-                {out ? "Out of stock" : "In Stock"}
-              </span>
+      <Link to={`/product/${p.id}`} className="block relative overflow-hidden bg-stone-50" style={{ height: "220px" }}>
+        <img
+          src={p.image}
+          alt={p.name}
+          className="h-full w-full object-cover transition-transform duration-300 group-hover:scale-[1.03]"
+          loading="lazy"
+        />
+        {/* Category */}
+        {p.category && (
+          <div className="absolute top-3 left-3">
+            <span className="rounded-full bg-white border border-[#E8E4DE] px-2.5 py-1 text-[10px] font-semibold text-stone-600 shadow-sm">
+              {p.category}
             </span>
           </div>
-          <div className="absolute inset-0 bg-gradient-to-t from-black/10 via-transparent to-transparent pointer-events-none" />
+        )}
+        {/* Stock */}
+        <div className="absolute top-3 right-3">
+          <span className={`rounded-full px-2.5 py-1 text-[10px] font-semibold border ${
+            out ? "bg-red-50 border-red-200 text-red-600" : "bg-emerald-50 border-emerald-200 text-emerald-700"
+          }`}>
+            <span className="inline-flex items-center gap-1">
+              <span className={`inline-block h-1.5 w-1.5 rounded-full ${out ? "bg-red-500" : "bg-emerald-500"}`} />
+              {out ? "Out of stock" : "In stock"}
+            </span>
+          </span>
         </div>
       </Link>
 
-      {/* Body — flex-col so button always sticks to bottom */}
-      <div className="p-5 flex flex-col flex-1">
-        <Link to={`/product/${p.id}`} className="block">
-          <div className="text-base font-semibold text-neutral-950 group-hover:underline leading-snug">
+      {/* Body */}
+      <div className="flex flex-col flex-1 p-5">
+        <Link to={`/product/${p.id}`}>
+          <h3 className="text-[15px] font-semibold text-stone-900 leading-snug group-hover:text-[#1e3a5f] transition-colors">
             {p.name}
-          </div>
+          </h3>
         </Link>
 
-        {/* Stars */}
         {p.reviewCount > 0 && (
-          <div className="mt-1.5">
-            <Stars rating={p.avgRating} count={p.reviewCount} />
-          </div>
+          <div className="mt-1.5"><Stars rating={p.avgRating} count={p.reviewCount} /></div>
         )}
 
-        {/* Description */}
-        <div className="mt-2 text-sm text-neutral-600 leading-relaxed line-clamp-2">
-          {oneLiner}
-        </div>
+        <p className="mt-2 text-[13px] text-stone-500 leading-relaxed line-clamp-2">{desc}</p>
 
-        {/* Pills */}
+        {/* Highlights — set in admin, fallback to defaults */}
         <div className="mt-3 flex flex-wrap gap-1.5">
-          <span className="rounded-full border border-black/10 bg-white px-3 py-1 text-[11px] text-neutral-700">Clean label</span>
-          <span className="rounded-full border border-black/10 bg-white px-3 py-1 text-[11px] text-neutral-700">Lab-tested</span>
-          <span className="rounded-full border border-black/10 bg-white px-3 py-1 text-[11px] text-neutral-700">COD available</span>
+          {(p.highlights && p.highlights.length > 0
+            ? p.highlights
+            : ["Clean label", "Lab-tested", "COD available"]
+          ).map((tag) => (
+            <span key={tag} className="rounded-full border border-[#E8E4DE] bg-stone-50 px-2.5 py-0.5 text-[10px] font-medium text-stone-500">{tag}</span>
+          ))}
         </div>
 
-        {/* Price + View — pushed to bottom with mt-auto */}
+        {/* Price + button — pushed to bottom */}
         <div className="mt-auto pt-4">
-          <div className="flex items-center justify-between mb-3">
+          <div className="flex items-baseline justify-between mb-3">
             <div>
-              <div className="text-xs text-neutral-500">Price</div>
-              <div className="text-xl font-semibold text-neutral-950">{money(p.price)}</div>
+              <span className="text-[11px] text-stone-400 block mb-0.5">
+                {p.variants && p.variants.length > 0 ? "Starting from" : "Price"}
+              </span>
+              <span className="text-lg font-semibold text-stone-900">
+                {p.variants && p.variants.length > 0 ? "From " : ""}{money(p.price)}
+              </span>
             </div>
-            <Link
-              to={`/product/${p.id}`}
-              className="text-sm font-semibold text-neutral-800 hover:text-neutral-950 underline underline-offset-4"
-            >
-              View
+            <Link to={`/product/${p.id}`} className="text-[12px] font-semibold text-[#1e3a5f] hover:underline underline-offset-2">
+              Details →
             </Link>
           </div>
 
-          {/* Add to cart button */}
-          <button
-            onClick={() => onAdd(p)}
-            disabled={out}
-            className={[
-              "w-full rounded-xl px-4 py-2.5 text-sm font-semibold shadow-sm transition-all duration-150",
-              out
-                ? "bg-neutral-100 text-neutral-400 cursor-not-allowed"
-                : added
-                  ? "bg-emerald-500 text-white scale-[1.02] shadow"
-                  : "bg-gradient-to-r from-neutral-200 to-neutral-300 text-neutral-950 hover:shadow hover:scale-[1.01]",
-            ].join(" ")}
-            type="button"
-          >
-            {added ? "Added ✓" : out ? "Out of stock" : "Add to cart"}
-          </button>
+          {/* Variant hint chips on card */}
+          {p.variants && p.variants.length > 0 && (
+            <div className="flex flex-wrap gap-1.5 mb-3">
+              {p.variants.slice(0, 3).map((v) => (
+                <span key={v.id} className="rounded-full border border-[#1e3a5f]/20 bg-[#EFF6FF] px-2.5 py-0.5 text-[10px] font-medium text-[#1e3a5f]">
+                  {v.label}
+                </span>
+              ))}
+              {p.variants.length > 3 && (
+                <span className="rounded-full border border-[#E8E4DE] bg-stone-50 px-2.5 py-0.5 text-[10px] text-stone-400">
+                  +{p.variants.length - 3} more
+                </span>
+              )}
+            </div>
+          )}
+
+          {p.variants && p.variants.length > 0 ? (
+            // Has variants → must pick on detail page
+            <Link
+              to={`/product/${p.id}`}
+              className="block w-full text-center rounded-xl px-4 py-2.5 text-sm font-semibold border border-[#1e3a5f] bg-[#1e3a5f] text-white hover:bg-[#162d4a] shadow-sm hover:shadow transition-all duration-200"
+            >
+              Select option →
+            </Link>
+          ) : (
+            <button
+              onClick={() => onAdd(p)}
+              disabled={out}
+              type="button"
+              className={`w-full rounded-xl px-4 py-2.5 text-sm font-semibold border transition-all duration-200 ${
+                out
+                  ? "border-stone-200 bg-stone-100 text-stone-400 cursor-not-allowed"
+                  : justAdded
+                    ? "border-emerald-300 bg-emerald-50 text-emerald-700"
+                    : "border-[#1e3a5f] bg-[#1e3a5f] text-white hover:bg-[#162d4a] shadow-sm hover:shadow"
+              }`}
+            >
+              {justAdded ? "Added to cart ✓" : out ? "Out of stock" : "Add to cart"}
+            </button>
+          )}
         </div>
       </div>
     </div>
   );
 }
 
-// ── Shop page ───────────────────────────────────────────────────────────────
 export default function Shop() {
   const { addItem } = useCart();
   const [products, setProducts] = useState([]);
@@ -138,7 +150,6 @@ export default function Shop() {
   const [toast, setToast] = useState({ show: false, text: "" });
   const [justAddedId, setJustAddedId] = useState(null);
 
-  // Read ?category= from URL so Home category strip works
   useEffect(() => {
     const params = new URLSearchParams(window.location.search);
     const cat = params.get("category");
@@ -148,97 +159,85 @@ export default function Shop() {
   useEffect(() => {
     let alive = true;
     (async () => {
-      try {
-        setLoading(true);
-        setErr("");
-        const list = await fetchProducts();
-        if (alive) setProducts(list);
-      } catch (e) {
-        if (alive) setErr(e?.message || "Failed to load products");
-      } finally {
-        if (alive) setLoading(false);
-      }
+      try { setLoading(true); const list = await fetchProducts(); if (alive) setProducts(list); }
+      catch (e) { if (alive) setErr(e?.message || "Failed to load"); }
+      finally { if (alive) setLoading(false); }
     })();
     return () => { alive = false; };
   }, []);
 
   const categories = useMemo(() => {
     const set = new Set();
-    (products || []).forEach((p) => {
-      const c = (p?.category || "").trim();
-      if (c) set.add(c);
-    });
-    return ["All", ...Array.from(set).sort((a, b) => a.localeCompare(b))];
+    products.forEach((p) => { const c = (p.category || "").trim(); if (c) set.add(c); });
+    return ["All", ...Array.from(set).sort()];
   }, [products]);
 
   const active = useMemo(() => {
-    let list = (products || []).filter((p) => p?.isActive !== false);
-    if (category && category !== "All") {
-      list = list.filter((p) => String(p?.category || "") === String(category));
-    }
-    const q = String(query || "").trim().toLowerCase();
-    if (q) {
-      list = list.filter((p) => String(p?.name || "").toLowerCase().includes(q));
-    }
+    let list = products.filter((p) => p.isActive !== false);
+    if (category !== "All") list = list.filter((p) => p.category === category);
+    const q = query.trim().toLowerCase();
+    if (q) list = list.filter((p) => p.name.toLowerCase().includes(q));
     return list;
   }, [products, category, query]);
-
-  const showToast = (text) => {
-    setToast({ show: true, text });
-    window.clearTimeout(window.__coreatoms_toast);
-    window.__coreatoms_toast = window.setTimeout(() => setToast({ show: false, text: "" }), 1400);
-  };
 
   const handleAdd = (p) => {
     addItem(p, 1);
     setJustAddedId(p.id);
-    showToast(`${p.name} added to cart`);
-    window.clearTimeout(window.__coreatoms_addedbtn);
-    window.__coreatoms_addedbtn = window.setTimeout(() => setJustAddedId(null), 900);
+    setToast({ show: true, text: `${p.name} added` });
+    window.clearTimeout(window.__ca_toast);
+    window.__ca_toast = setTimeout(() => setToast({ show: false, text: "" }), 1600);
+    window.clearTimeout(window.__ca_btn);
+    window.__ca_btn = setTimeout(() => setJustAddedId(null), 1000);
   };
 
-  if (loading) {
-    return (
-      <div className="mx-auto max-w-6xl px-4 py-10">
-        <div className="text-sm text-neutral-600">Loading products…</div>
-      </div>
-    );
-  }
-
-  if (err) {
-    return (
-      <div className="mx-auto max-w-6xl px-4 py-10">
-        <div className="rounded-2xl border border-neutral-200 bg-white p-6 shadow-sm">
-          <div className="text-base font-semibold text-neutral-950">Could not load products</div>
-          <div className="mt-2 text-sm text-neutral-600">{err}</div>
+  if (loading) return (
+    <div className="grid gap-5 sm:grid-cols-2 lg:grid-cols-3 py-4">
+      {Array.from({ length: 6 }).map((_, i) => (
+        <div key={i} className="rounded-2xl border border-[#E8E4DE] bg-white overflow-hidden animate-pulse">
+          <div className="h-[220px] bg-stone-100" />
+          <div className="p-5 space-y-3">
+            <div className="h-4 bg-stone-100 rounded w-3/4" />
+            <div className="h-3 bg-stone-100 rounded w-full" />
+            <div className="h-3 bg-stone-100 rounded w-2/3" />
+            <div className="h-10 bg-stone-100 rounded-xl mt-4" />
+          </div>
         </div>
-      </div>
-    );
-  }
+      ))}
+    </div>
+  );
 
   return (
-    <div className="mx-auto max-w-6xl px-4 py-10">
-      <div className="mb-6 flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
-        <div>
-          <h1 className="text-2xl font-semibold text-neutral-950">Shop</h1>
-          <p className="mt-1 text-sm text-neutral-600">Premium supplements. COD available (India).</p>
-        </div>
+    <div>
+      {/* Page header */}
+      <div className="mb-8">
+        <p className="section-label">Our Collection</p>
+        <h1 className="mt-2 text-3xl font-semibold tracking-tight text-stone-900">Shop</h1>
+        <p className="mt-2 text-sm text-stone-500">Premium supplements, clean labels, COD available across India.</p>
+      </div>
+
+      {/* Filters */}
+      <div className="mb-8 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
         <div className="flex flex-col gap-2 sm:flex-row sm:items-center">
           <div className="flex items-center gap-2">
-            <div className="text-xs text-neutral-500">Search</div>
+            <svg className="h-4 w-4 text-stone-400 shrink-0" viewBox="0 0 20 20" fill="currentColor">
+              <path fillRule="evenodd" d="M8 4a4 4 0 100 8 4 4 0 000-8zM2 8a6 6 0 1110.89 3.476l4.817 4.817a1 1 0 01-1.414 1.414l-4.816-4.816A6 6 0 012 8z" clipRule="evenodd"/>
+            </svg>
             <input
               value={query}
               onChange={(e) => setQuery(e.target.value)}
-              placeholder="Search products..."
-              className="w-full sm:w-64 rounded-xl border border-neutral-200 bg-white px-3 py-2 text-sm text-neutral-900 focus:ring-2 focus:ring-neutral-300 outline-none"
+              placeholder="Search products…"
+              className="w-full sm:w-60 rounded-xl border border-[#E8E4DE] bg-white px-3 py-2 text-sm text-stone-900 placeholder:text-stone-400 focus:ring-2 focus:ring-[#1e3a5f]/10 focus:border-[#1e3a5f] outline-none transition"
             />
           </div>
+
           <div className="flex items-center gap-2">
-            <div className="text-xs text-neutral-500">Category</div>
+            <svg className="h-4 w-4 text-stone-400 shrink-0" viewBox="0 0 20 20" fill="currentColor">
+              <path fillRule="evenodd" d="M3 3a1 1 0 011-1h12a1 1 0 011 1v3a1 1 0 01-.293.707L13 10.414V17a1 1 0 01-.553.894l-4 2A1 1 0 017 19v-8.586L3.293 6.707A1 1 0 013 6V3z" clipRule="evenodd"/>
+            </svg>
             <select
               value={category}
               onChange={(e) => setCategory(e.target.value)}
-              className="rounded-xl border border-neutral-200 bg-white px-3 py-2 text-sm text-neutral-900 focus:ring-2 focus:ring-neutral-300 outline-none"
+              className="rounded-xl border border-[#E8E4DE] bg-white px-3 py-2 text-sm text-stone-900 focus:ring-2 focus:ring-[#1e3a5f]/10 focus:border-[#1e3a5f] outline-none transition"
             >
               {categories.map((c) => (
                 <option key={c} value={c}>{c}</option>
@@ -246,34 +245,44 @@ export default function Shop() {
             </select>
           </div>
         </div>
+
+        <p className="text-sm text-stone-400">
+          {active.length} product{active.length !== 1 ? "s" : ""}
+        </p>
       </div>
 
-      <div className="grid gap-5 sm:grid-cols-2 lg:grid-cols-3">
-        {active.length === 0 ? (
-          <div className="sm:col-span-2 lg:col-span-3">
-            <div className="rounded-2xl border border-neutral-200 bg-white p-8 text-center shadow-sm">
-              <div className="text-base font-semibold text-neutral-950">No products found</div>
-              <div className="mt-1 text-sm text-neutral-600">Try a different search or category.</div>
-            </div>
-          </div>
-        ) : active.map((p) => (
-          <ProductCard
-            key={p.id}
-            p={p}
-            onAdd={handleAdd}
-            justAdded={justAddedId === p.id}
-          />
-        ))}
-      </div>
+
+      {err && (
+        <div className="card p-6 mb-6 text-sm text-red-600">{err}</div>
+      )}
+
+      {active.length === 0 ? (
+        <div className="card p-12 text-center">
+          <p className="text-base font-semibold text-stone-900">No products found</p>
+          <p className="mt-1 text-sm text-stone-500">Try a different search or category.</p>
+          <button onClick={() => { setCategory("All"); setQuery(""); }} className="btn-ghost mt-5">Reset filters</button>
+        </div>
+      ) : (
+        <div className="grid gap-5 sm:grid-cols-2 lg:grid-cols-3">
+          {active.map((p) => (
+            <ProductCard key={p.id} p={p} onAdd={handleAdd} justAdded={justAddedId === p.id} />
+          ))}
+        </div>
+      )}
 
       {/* Toast */}
-      <div className={[
-        "fixed bottom-5 right-5 z-50 rounded-2xl border border-neutral-200 bg-white px-4 py-3 shadow-lg",
-        "text-sm text-neutral-900 transition-all duration-300",
-        toast.show ? "opacity-100 translate-y-0" : "opacity-0 translate-y-3 pointer-events-none",
-      ].join(" ")}>
-        <div className="font-semibold">Added to cart ✅</div>
-        <div className="text-xs text-neutral-600">{toast.text}</div>
+      <div className={`fixed bottom-6 right-6 z-50 card px-5 py-3.5 transition-all duration-300 ${
+        toast.show ? "opacity-100 translate-y-0" : "opacity-0 translate-y-3 pointer-events-none"
+      }`} style={{ animation: toast.show ? "toastIn 0.2s ease-out" : undefined }}>
+        <div className="flex items-center gap-3">
+          <div className="h-8 w-8 rounded-lg bg-emerald-50 grid place-items-center">
+            <svg className="h-4 w-4 text-emerald-600" viewBox="0 0 20 20" fill="currentColor"><path fillRule="evenodd" d="M16.707 5.293a1 1 0 00-1.414 0L8 12.586 4.707 9.293a1 1 0 00-1.414 1.414l4 4a1 1 0 001.414 0l8-8a1 1 0 000-1.414z" clipRule="evenodd"/></svg>
+          </div>
+          <div>
+            <div className="text-sm font-semibold text-stone-900">Added to cart</div>
+            <div className="text-xs text-stone-500">{toast.text}</div>
+          </div>
+        </div>
       </div>
     </div>
   );

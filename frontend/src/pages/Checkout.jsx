@@ -150,10 +150,21 @@ export default function Checkout() {
     if (!canPlace || loading) return;
     setLoading(true);
     try {
-      const payloadItems = (items || []).map((x) => ({
-        product_id: String(x.id),
-        qty: Number(x.qty || 0),
-      }));
+      // Cart ids for variant items are "productId_variantId" composites.
+      // The RPC expects a pure product UUID + optional variant_id separately.
+      const payloadItems = (items || []).map((x) => {
+        const rawId = String(x.id);
+        const parts = rawId.split("_");
+        // UUID format: 8-4-4-4-12 chars = 36 chars total
+        const isComposite = parts.length === 2 &&
+          parts[0].length === 36 && parts[1].length === 36;
+        return {
+          product_id: isComposite ? parts[0] : rawId,
+          variant_id: isComposite ? parts[1] : null,
+          qty: Number(x.qty || 0),
+          unit_price_inr: Number(x.unitPrice ?? x.price ?? 0),
+        };
+      });
 
       const { error } = await supabase.rpc("place_order_cod", {
         p_user_id: user.id,
@@ -179,271 +190,181 @@ export default function Checkout() {
 
   if (placed) {
     return (
-      <div className="mx-auto max-w-6xl px-4 py-10">
-        <div className="rounded-2xl border border-neutral-200 bg-white p-10 shadow-sm text-center">
-          <div className="mx-auto mb-4 h-14 w-14 rounded-full border-4 border-neutral-200 border-t-neutral-900 animate-spin" />
-          <div className="text-2xl font-semibold text-neutral-950">Order placed 🎉</div>
-          <div className="mt-2 text-sm text-neutral-600">We're confirming your order and preparing it for dispatch.</div>
-          <div className="mt-6 h-2 w-full overflow-hidden rounded-full bg-neutral-100">
-            <div className="h-full w-1/2 bg-neutral-900 animate-[coreatoms_progress_1.2s_ease-in-out_infinite]" />
+      <div className="min-h-[60vh] flex items-center justify-center">
+        <div className="card p-12 text-center max-w-sm w-full">
+          <div className="mx-auto mb-5 h-14 w-14 rounded-full border-4 border-[#E8E4DE] border-t-[#1e3a5f] animate-spin" />
+          <h2 className="text-xl font-semibold text-stone-900">Order placed!</h2>
+          <p className="mt-2 text-sm text-stone-500">We're confirming your order and preparing it for dispatch.</p>
+          <div className="mt-6 h-1.5 w-full rounded-full bg-stone-100 overflow-hidden">
+            <div className="h-full bg-[#1e3a5f] rounded-full animate-[coreatoms_progress_1.2s_ease-in-out_infinite]" />
           </div>
-          <div className="mt-5 text-xs text-neutral-500">Redirecting to My Orders…</div>
+          <p className="mt-4 text-xs text-stone-400">Redirecting to My Orders…</p>
         </div>
       </div>
     );
   }
 
+  const inputCls = "w-full rounded-xl border border-[#E8E4DE] bg-white px-4 py-3 text-sm text-stone-900 placeholder:text-stone-400 outline-none focus:border-[#1e3a5f] focus:ring-2 focus:ring-[#1e3a5f]/10 transition";
+
   return (
-    <div className="mx-auto max-w-6xl px-4 py-10">
-      <div className="mb-6 flex items-center justify-between">
-        <Link to="/cart" className="text-sm text-neutral-700 hover:text-neutral-950 underline">Back to Cart</Link>
-        <div className="text-xs text-neutral-500">Cash on Delivery • India only</div>
+    <div>
+      <div className="mb-8">
+        <Link to="/cart" className="text-sm text-stone-500 hover:text-stone-900 transition-colors">← Back to Cart</Link>
+        <h1 className="mt-3 text-2xl font-semibold tracking-tight text-stone-900">Checkout</h1>
+        <p className="text-sm text-stone-500 mt-1">Cash on Delivery · India only</p>
       </div>
 
       {errorToast && (
-        <div className="mb-6 rounded-2xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700 shadow-sm">
+        <div className="mb-6 rounded-2xl border border-red-200 bg-red-50 px-5 py-3.5 text-sm text-red-700">
           {errorToast}
         </div>
       )}
 
       <div className="grid gap-6 lg:grid-cols-5">
-        {/* ── Left: Address ── */}
-        <div className="card p-6 lg:col-span-3 space-y-5">
-          <div>
-            <div className="text-base font-semibold text-neutral-950">Delivery address</div>
-            <div className="mt-1 text-sm text-neutral-500">Select a saved address or add a new one.</div>
+
+        {/* ── Address panel ── */}
+        <div className="lg:col-span-3 space-y-5">
+          <div className="card p-6">
+            <h2 className="text-base font-semibold text-stone-900">Delivery Address</h2>
+            <p className="text-xs text-stone-400 mt-1">Select a saved address or add a new one.</p>
           </div>
 
-          {/* Saved addresses list */}
+          {/* Saved addresses */}
           {loadingAddresses ? (
-            <div className="text-sm text-neutral-400">Loading saved addresses…</div>
-          ) : savedAddresses.length > 0 ? (
-            <div className="space-y-2">
-              <div className="text-xs font-semibold text-neutral-500 uppercase tracking-wide">Saved addresses</div>
+            <div className="card p-5 text-sm text-stone-400">Loading saved addresses…</div>
+          ) : savedAddresses.length > 0 && (
+            <div className="card p-5 space-y-3">
+              <p className="text-xs font-semibold text-stone-500 uppercase tracking-wide">Saved</p>
               {savedAddresses.map((addr) => (
-                <div
-                  key={addr.id}
-                  onClick={() => selectSavedAddress(addr)}
-                  className={[
-                    "flex items-start gap-3 rounded-xl border p-4 cursor-pointer transition",
+                <div key={addr.id} onClick={() => selectSavedAddress(addr)}
+                  className={`flex items-start gap-3 rounded-xl border p-4 cursor-pointer transition-all ${
                     selectedAddressId === addr.id
-                      ? "border-neutral-900 bg-neutral-50 shadow-sm"
-                      : "border-neutral-200 bg-white hover:border-neutral-400",
-                  ].join(" ")}
+                      ? "border-[#1e3a5f] bg-[#EFF6FF]"
+                      : "border-[#E8E4DE] hover:border-stone-300"
+                  }`}
                 >
-                  {/* Radio dot */}
-                  <div className="mt-0.5 shrink-0">
-                    <div className={["h-4 w-4 rounded-full border-2 flex items-center justify-center transition",
-                      selectedAddressId === addr.id ? "border-neutral-900" : "border-neutral-300"].join(" ")}>
-                      {selectedAddressId === addr.id && (
-                        <div className="h-2 w-2 rounded-full bg-neutral-900" />
-                      )}
-                    </div>
+                  <div className={`mt-0.5 h-4 w-4 rounded-full border-2 flex items-center justify-center shrink-0 transition-colors ${
+                    selectedAddressId === addr.id ? "border-[#1e3a5f]" : "border-stone-300"
+                  }`}>
+                    {selectedAddressId === addr.id && <div className="h-2 w-2 rounded-full bg-[#1e3a5f]" />}
                   </div>
                   <div className="flex-1 min-w-0">
-                    <div className="text-sm font-semibold text-neutral-900">{addr.full_name}</div>
-                    <div className="text-xs text-neutral-500 mt-0.5">
-                      {addr.line1}{addr.line2 ? `, ${addr.line2}` : ""}, {addr.city}, {addr.state} — {addr.pincode}
-                    </div>
-                    <div className="text-xs text-neutral-500">{addr.phone}</div>
+                    <p className="text-sm font-semibold text-stone-900">{addr.full_name}</p>
+                    <p className="text-xs text-stone-500 mt-0.5">{addr.line1}{addr.line2 ? `, ${addr.line2}` : ""}, {addr.city}, {addr.state} — {addr.pincode}</p>
+                    <p className="text-xs text-stone-500">{addr.phone}</p>
                   </div>
-                  <button
-                    type="button"
-                    onClick={(e) => { e.stopPropagation(); deleteAddress(addr.id); }}
-                    className="shrink-0 text-xs text-red-400 hover:text-red-600 transition"
-                    title="Remove address"
-                  >
-                    ✕
-                  </button>
+                  <button type="button" onClick={(e) => { e.stopPropagation(); deleteAddress(addr.id); }}
+                    className="text-xs text-stone-300 hover:text-red-400 transition-colors shrink-0">✕</button>
                 </div>
               ))}
-
-              {/* Add another address */}
-              <button
-                type="button"
-                onClick={startNewAddress}
-                className={[
-                  "w-full rounded-xl border-2 border-dashed px-4 py-3 text-sm font-semibold transition",
+              <button type="button" onClick={startNewAddress}
+                className={`w-full rounded-xl border-2 border-dashed px-4 py-3 text-sm font-medium transition-all ${
                   selectedAddressId === null
-                    ? "border-neutral-900 bg-neutral-50 text-neutral-900"
-                    : "border-neutral-200 text-neutral-500 hover:border-neutral-400 hover:text-neutral-700",
-                ].join(" ")}
+                    ? "border-[#1e3a5f] text-[#1e3a5f] bg-[#EFF6FF]"
+                    : "border-[#E8E4DE] text-stone-400 hover:border-stone-300 hover:text-stone-600"
+                }`}
               >
-                + Add another address
+                + Add a new address
               </button>
             </div>
-          ) : null}
+          )}
 
-          {/* Address form — shown when adding new or no saved addresses */}
+          {/* New address form */}
           {(selectedAddressId === null || savedAddresses.length === 0) && (
-            <div className="space-y-4">
-              {savedAddresses.length > 0 && (
-                <div className="text-xs font-semibold text-neutral-500 uppercase tracking-wide">New address</div>
-              )}
-
-              <Field label="Full name">
-                <input
-                  value={form.fullName}
-                  onChange={(e) => setForm((a) => ({ ...a, fullName: e.target.value }))}
-                  className="w-full rounded-xl border border-neutral-200 bg-white px-4 py-3 text-sm text-neutral-900 focus:ring-2 focus:ring-neutral-300 outline-none"
-                  placeholder="Your name"
-                />
-              </Field>
-
-              <Field label="Phone number (India)">
-                <input
-                  value={form.phone}
-                  onChange={(e) => setForm((a) => ({ ...a, phone: e.target.value }))}
-                  className="w-full rounded-xl border border-neutral-200 bg-white px-4 py-3 text-sm text-neutral-900 focus:ring-2 focus:ring-neutral-300 outline-none"
-                  placeholder="10-digit mobile number"
-                />
-                <div className="mt-1 text-xs text-neutral-500">Example: 9876543210</div>
-              </Field>
-
-              <Field label="Address line 1">
-                <input
-                  value={form.line1}
-                  onChange={(e) => setForm((a) => ({ ...a, line1: e.target.value }))}
-                  className="w-full rounded-xl border border-neutral-200 bg-white px-4 py-3 text-sm text-neutral-900 focus:ring-2 focus:ring-neutral-300 outline-none"
-                  placeholder="House / Flat, Street"
-                />
-              </Field>
-
-              <Field label="Address line 2 (optional)">
-                <input
-                  value={form.line2}
-                  onChange={(e) => setForm((a) => ({ ...a, line2: e.target.value }))}
-                  className="w-full rounded-xl border border-neutral-200 bg-white px-4 py-3 text-sm text-neutral-900 focus:ring-2 focus:ring-neutral-300 outline-none"
-                  placeholder="Landmark, Area"
-                />
-              </Field>
+            <div className="card p-6 space-y-4">
+              {savedAddresses.length > 0 && <p className="text-xs font-semibold text-stone-500 uppercase tracking-wide">New address</p>}
 
               <div className="grid gap-4 sm:grid-cols-2">
-                <Field label="City">
-                  <input
-                    value={form.city}
-                    onChange={(e) => setForm((a) => ({ ...a, city: e.target.value }))}
-                    className="w-full rounded-xl border border-neutral-200 bg-white px-4 py-3 text-sm text-neutral-900 focus:ring-2 focus:ring-neutral-300 outline-none"
-                    placeholder="City"
-                  />
-                </Field>
-                <Field label="State">
-                  <input
-                    value={form.state}
-                    onChange={(e) => setForm((a) => ({ ...a, state: e.target.value }))}
-                    className="w-full rounded-xl border border-neutral-200 bg-white px-4 py-3 text-sm text-neutral-900 focus:ring-2 focus:ring-neutral-300 outline-none"
-                    placeholder="State"
-                  />
-                </Field>
+                <div>
+                  <label className="text-xs font-semibold text-stone-500 block mb-1.5">Full name *</label>
+                  <input value={form.fullName} onChange={(e) => setForm(a => ({...a, fullName: e.target.value}))} placeholder="Your name" className={inputCls} />
+                </div>
+                <div>
+                  <label className="text-xs font-semibold text-stone-500 block mb-1.5">Phone (India) *</label>
+                  <input value={form.phone} onChange={(e) => setForm(a => ({...a, phone: e.target.value}))} placeholder="10-digit mobile" className={inputCls} />
+                </div>
+              </div>
+              <div>
+                <label className="text-xs font-semibold text-stone-500 block mb-1.5">Address line 1 *</label>
+                <input value={form.line1} onChange={(e) => setForm(a => ({...a, line1: e.target.value}))} placeholder="House / Flat, Street" className={inputCls} />
+              </div>
+              <div>
+                <label className="text-xs font-semibold text-stone-500 block mb-1.5">Address line 2 (optional)</label>
+                <input value={form.line2} onChange={(e) => setForm(a => ({...a, line2: e.target.value}))} placeholder="Landmark, Area" className={inputCls} />
+              </div>
+              <div className="grid gap-4 sm:grid-cols-3">
+                <div>
+                  <label className="text-xs font-semibold text-stone-500 block mb-1.5">City *</label>
+                  <input value={form.city} onChange={(e) => setForm(a => ({...a, city: e.target.value}))} placeholder="City" className={inputCls} />
+                </div>
+                <div>
+                  <label className="text-xs font-semibold text-stone-500 block mb-1.5">State *</label>
+                  <input value={form.state} onChange={(e) => setForm(a => ({...a, state: e.target.value}))} placeholder="State" className={inputCls} />
+                </div>
+                <div>
+                  <label className="text-xs font-semibold text-stone-500 block mb-1.5">Pincode *</label>
+                  <input value={form.pincode} onChange={(e) => setForm(a => ({...a, pincode: e.target.value}))} placeholder="6 digits" className={inputCls} />
+                </div>
               </div>
 
-              <Field label="Pincode">
-                <input
-                  value={form.pincode}
-                  onChange={(e) => setForm((a) => ({ ...a, pincode: e.target.value }))}
-                  className="w-full rounded-xl border border-neutral-200 bg-white px-4 py-3 text-sm text-neutral-900 focus:ring-2 focus:ring-neutral-300 outline-none"
-                  placeholder="6-digit pincode"
-                />
-              </Field>
-
-              {/* Save address button */}
               <div className="flex items-center gap-3 pt-1">
-                <button
-                  type="button"
-                  onClick={saveAddress}
-                  disabled={!isValidAddress(form) || savingAddress || addressSaved}
-                  className="rounded-xl border border-neutral-200 bg-white px-4 py-2.5 text-sm font-semibold text-neutral-900 hover:bg-neutral-50 shadow-sm disabled:opacity-40 transition"
-                >
+                <button type="button" onClick={saveAddress} disabled={!isValidAddress(form) || savingAddress || addressSaved}
+                  className={`btn-ghost text-sm py-2 px-4 ${addressSaved ? "border-emerald-300 text-emerald-600" : ""}`}>
                   {savingAddress ? "Saving…" : addressSaved ? "Saved ✓" : "Save address"}
                 </button>
-                {addressSaved && (
-                  <span className="text-xs text-emerald-600 font-medium">Address saved for future orders</span>
-                )}
+                {addressSaved && <span className="text-xs text-emerald-600">Address saved for future orders</span>}
               </div>
             </div>
           )}
 
-          {/* Validation hint */}
-          {!canPlace && (activeAddress.fullName || activeAddress.line1) && (
+          {!canPlace && (form.fullName || form.line1) && (
             <div className="rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-xs text-amber-700">
-              Please fill all required fields: name, valid 10-digit phone, address, city, state, and 6-digit pincode.
+              Fill all required fields — name, valid 10-digit phone, address, city, state, 6-digit pincode.
             </div>
           )}
         </div>
 
-        {/* ── Right: Order Summary ── */}
-        <div className="card p-6 lg:col-span-2">
-          <div className="text-base font-semibold text-neutral-950">Order summary</div>
-          <div className="mt-1 text-sm text-neutral-600">{totalItems} item(s)</div>
-
-          <div className="mt-5 space-y-3">
-            {(items || []).map((x) => (
-              <div key={x.id} className="flex items-center justify-between gap-3">
-                <div className="min-w-0">
-                  <div className="truncate text-sm font-semibold text-neutral-950">{x.name}</div>
-                  <div className="text-xs text-neutral-500">{money(x.unitPrice ?? x.price)} × {x.qty}</div>
+        {/* ── Order summary ── */}
+        <div className="lg:col-span-2">
+          <div className="card p-6 sticky top-24">
+            <h2 className="text-base font-semibold text-stone-900 mb-5">Order Summary</h2>
+            <div className="space-y-3 text-sm">
+              {(items || []).map((x) => (
+                <div key={x.id} className="flex items-start justify-between gap-3">
+                  <div className="min-w-0">
+                    <p className="font-medium text-stone-900 truncate">{x.name}</p>
+                    <p className="text-xs text-stone-400">{money(x.unitPrice ?? x.price)} × {x.qty}</p>
+                  </div>
+                  <span className="font-semibold text-stone-900 shrink-0">{money((Number(x.unitPrice ?? x.price) || 0) * (Number(x.qty) || 0))}</span>
                 </div>
-                <div className="text-sm font-semibold text-neutral-950">
-                  {money((Number(x.unitPrice ?? x.price) || 0) * (Number(x.qty) || 0))}
-                </div>
-              </div>
-            ))}
-          </div>
-
-          <div className="mt-6 border-t border-neutral-200 pt-4 space-y-2 text-sm">
-            <Row label="Subtotal" value={money(subtotal)} />
-            <Row label="Shipping" value="Free" />
-            <div className="flex items-center justify-between text-base font-semibold text-neutral-950 pt-1">
-              <div>Total</div>
-              <div>{money(total)}</div>
+              ))}
             </div>
-          </div>
 
-          <div className="mt-5 flex flex-col gap-3">
-            <button
-              onClick={onPlaceOrder}
-              disabled={!canPlace || loading}
-              className="btn-primary w-full disabled:opacity-50 disabled:hover:shadow-none disabled:cursor-not-allowed"
-            >
-              {loading ? "Placing…" : "Place order (COD)"}
+            <div className="my-5 h-px bg-[#E8E4DE]" />
+
+            <div className="space-y-2 text-sm mb-5">
+              <div className="flex justify-between text-stone-600"><span>Subtotal</span><span className="font-semibold text-stone-900">{money(subtotal)}</span></div>
+              <div className="flex justify-between text-stone-600"><span>Shipping</span><span className="font-semibold text-emerald-600">Free</span></div>
+              <div className="flex justify-between text-base font-semibold text-stone-900 pt-1"><span>Total</span><span>{money(total)}</span></div>
+            </div>
+
+            <button onClick={onPlaceOrder} disabled={!canPlace || loading}
+              className="btn-primary w-full py-3 text-[14px] disabled:opacity-40 disabled:cursor-not-allowed disabled:hover:translate-y-0">
+              {loading ? "Placing order…" : "Place order · COD"}
             </button>
 
-            <button onClick={() => navigate("/cart")} className="btn-ghost w-full">
-              Review cart
-            </button>
-
-            {!canPlace && !activeAddress.fullName && (
-              <div className="rounded-xl border border-neutral-200 bg-neutral-50 px-4 py-3 text-xs text-neutral-600">
-                Select a saved address or fill in a new one above to enable checkout.
-              </div>
+            {!canPlace && !form.fullName && (
+              <p className="mt-3 text-xs text-stone-400 text-center">Select or fill an address above to continue.</p>
             )}
-          </div>
 
-          <div className="mt-6 flex flex-wrap gap-2">
-            <span className="pill">🔒 Secure checkout</span>
-            <span className="pill">📦 Quality packaging</span>
-            <span className="pill">🇮🇳 India only</span>
+            <div className="mt-5 flex flex-wrap gap-x-4 gap-y-1.5 justify-center">
+              {["🔒 Secure checkout", "📦 Quality packing", "🇮🇳 India only"].map((t) => (
+                <span key={t} className="text-[11px] text-stone-400">{t}</span>
+              ))}
+            </div>
           </div>
         </div>
       </div>
-    </div>
-  );
-}
-
-function Field({ label, children }) {
-  return (
-    <div>
-      <div className="text-xs text-neutral-500">{label}</div>
-      <div className="mt-1">{children}</div>
-    </div>
-  );
-}
-
-function Row({ label, value }) {
-  return (
-    <div className="flex items-center justify-between text-neutral-700">
-      <div>{label}</div>
-      <div className="font-semibold text-neutral-950">{value}</div>
     </div>
   );
 }

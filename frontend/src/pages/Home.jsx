@@ -4,139 +4,50 @@ import { useEffect, useState } from "react";
 import { fetchProducts } from "../services/products";
 import { ProductCard } from "./Shop";
 
-// ── Static data ────────────────────────────────────────────────────────────
-
-const WHY_PILLARS = [
-  {
-    icon: "🧪",
-    title: "Clean Labels",
-    desc: "No proprietary blends, no unnecessary fillers. Every ingredient listed clearly with purpose.",
-  },
-  {
-    icon: "🚚",
-    title: "Cash on Delivery",
-    desc: "Order with confidence. Pay only when your package arrives at your door.",
-  },
-  {
-    icon: "⚡",
-    title: "Fast Fulfillment",
-    desc: "Orders dispatched within 24 hours. Delivered across India with live tracking.",
-  },
-  {
-    icon: "🎯",
-    title: "Precision Formulas",
-    desc: "Science-backed dosages. No megadosing, no underdosing — just what your body actually needs.",
-  },
-];
-
-const HOW_STEPS = [
-  {
-    step: "01",
-    title: "Browse",
-    desc: "Explore our range of precision-formulated nutraceuticals. Filter by category or goal.",
-  },
-  {
-    step: "02",
-    title: "Order",
-    desc: "Add to cart and checkout in under a minute. Cash on delivery — no payment needed upfront.",
-  },
-  {
-    step: "03",
-    title: "Delivered",
-    desc: "Your order is packed and dispatched within 24 hours. Delivered fresh to your door.",
-  },
-];
-
-const TESTIMONIALS = [
-  {
-    name: "Arjun M.",
-    location: "Mumbai",
-    rating: 5,
-    text: "Been using the Multivitamin and Fish Oil stack for 3 months. Energy levels are noticeably better and the COD option made it easy to try without any risk.",
-    product: "Multivitamin Man + Fish Oil",
-  },
-  {
-    name: "Priya S.",
-    location: "Bangalore",
-    rating: 5,
-    text: "Finally a supplement brand that doesn't overclaim. The HSN formula actually works — my hair fall reduced significantly within 6 weeks.",
-    product: "HSN for Man & Woman",
-  },
-  {
-    name: "Rahul K.",
-    location: "Delhi",
-    rating: 5,
-    text: "Osteorix Ginger has been a game changer for my post-workout recovery. Joints feel much more comfortable. Clean formula, great packaging.",
-    product: "Osteorix Ginger",
-  },
-  {
-    name: "Sneha T.",
-    location: "Hyderabad",
-    rating: 5,
-    text: "Ordered twice already. The checkout is super smooth and delivery was faster than expected. Love that everything is clearly labeled.",
-    product: "Marine Collagen Powder",
-  },
+const PILLARS = [
+  { icon: "✦", title: "Clean Labels", desc: "No fillers, no hidden ingredients. Every formula is fully disclosed." },
+  { icon: "◈", title: "Lab Tested", desc: "Third-party verified for potency, purity, and safety." },
+  { icon: "⬡", title: "COD Available", desc: "Cash on delivery across India. No prepayment required." },
+  { icon: "⌖", title: "Fast Fulfilment", desc: "Orders dispatched within 24 hours from our facility." },
 ];
 
 const CATEGORIES = [
-  { label: "Multivitamins", emoji: "💊", category: "Multivitamin" },
+  { label: "Multivitamins", emoji: "💊", category: "General Wellness" },
   { label: "Joint Support", emoji: "🦴", category: "Joint Support" },
-  { label: "Bone & Joint", emoji: "🧬", category: "Bone & Joint" },
-  { label: "Hair • Skin • Nails", emoji: "✨", category: "Hair • Skin • Nails" },
-  { label: "Gut Health", emoji: "🌿", category: "Prebiotic" },
+  { label: "Bone Health", emoji: "🧬", category: "Bone Health" },
+  { label: "Hair & Skin", emoji: "✨", category: "HSN" },
+  { label: "Gut Health", emoji: "🌿", category: "Gut Health" },
   { label: "Collagen", emoji: "🔬", category: "Collagen" },
 ];
 
-// ── Helpers ────────────────────────────────────────────────────────────────
-
-function Stars({ count = 5 }) {
-  return (
-    <div className="flex gap-0.5">
-      {Array.from({ length: count }).map((_, i) => (
-        <span key={i} className="text-amber-400 text-sm">★</span>
-      ))}
-    </div>
-  );
-}
-
-// ── Component ──────────────────────────────────────────────────────────────
+const heroImages = [
+  "/hero/hero-1.jpg",
+  "/hero/hero-2.jpg",
+  "/hero/hero-3.jpg",
+  "/hero/hero-4.jpg",
+];
 
 export default function Home() {
   const { addItem } = useCart();
-
-  const heroImages = [
-    "/hero/hero-1.jpg",
-    "/hero/hero-2.jpg",
-    "/hero/hero-3.jpg",
-    "/hero/hero-4.jpg",
-  ];
-
-  const [index, setIndex] = useState(0);
-  const [featuredProducts, setFeaturedProducts] = useState([]);
+  const [products, setProducts] = useState([]);
   const [loadingProducts, setLoadingProducts] = useState(true);
   const [toast, setToast] = useState({ open: false, message: "" });
   const [justAddedId, setJustAddedId] = useState(null);
 
-  // Hero auto-advance
+  // Hero carousel
+  const [heroIndex, setHeroIndex] = useState(0);
   useEffect(() => {
-    const interval = setInterval(() => {
-      setIndex((prev) => (prev + 1) % heroImages.length);
-    }, 3500);
+    const interval = setInterval(() => setHeroIndex((prev) => (prev + 1) % heroImages.length), 3500);
     return () => clearInterval(interval);
   }, []);
 
-  // Featured products via fetchProducts so ratings + images all come through
   useEffect(() => {
     (async () => {
-      setLoadingProducts(true);
       try {
         const list = await fetchProducts();
-        setFeaturedProducts(list.slice(0, 6));
-      } catch (e) {
-        console.error("Home products error:", e);
-      } finally {
-        setLoadingProducts(false);
-      }
+        setProducts(list.slice(0, 6));
+      } catch (e) { console.error(e); }
+      finally { setLoadingProducts(false); }
     })();
   }, []);
 
@@ -144,307 +55,199 @@ export default function Home() {
     addItem(p, 1);
     setJustAddedId(p.id);
     setToast({ open: true, message: `${p.name} added to cart` });
-    window.clearTimeout(window.__coreatoms_home_btn);
-    window.__coreatoms_home_btn = window.setTimeout(() => setJustAddedId(null), 900);
-    window.clearTimeout(window.__coreatoms_home_toast);
-    window.__coreatoms_home_toast = window.setTimeout(() => setToast({ open: false, message: "" }), 1800);
+    window.clearTimeout(window.__ca_home_btn);
+    window.__ca_home_btn = setTimeout(() => setJustAddedId(null), 900);
+    window.clearTimeout(window.__ca_home_toast);
+    window.__ca_home_toast = setTimeout(() => setToast({ open: false, message: "" }), 1800);
   };
 
   return (
     <div className="space-y-24">
 
-      {/* ── HERO ── */}
-      <section className="rounded-3xl border border-black/10 bg-white shadow-[0_30px_80px_-40px_rgba(0,0,0,0.35)] overflow-hidden">
+      {/* ── HERO ──────────────────────────────────────────────────────── */}
+      <section className="rounded-3xl border border-[#E8E4DE] bg-white overflow-hidden shadow-[0_4px_40px_rgba(0,0,0,0.08)]">
         <div className="grid lg:grid-cols-2 gap-0">
 
-          {/* Slider */}
-          <div className="relative overflow-hidden h-[380px] lg:h-[520px]">
+          {/* LEFT — image carousel */}
+          <div className="relative overflow-hidden h-[340px] lg:h-[500px]">
             <div
               className="flex h-full w-full transition-transform duration-700 ease-out"
-              style={{ transform: `translateX(-${index * 100}%)` }}
+              style={{ transform: `translateX(-${heroIndex * 100}%)` }}
             >
               {heroImages.map((src, i) => (
                 <div key={i} className="h-full w-full shrink-0 relative">
                   <img src={src} alt={`Hero ${i + 1}`} className="h-full w-full object-cover" />
-                  <div className="absolute inset-0 bg-gradient-to-r from-white/35 via-white/30 to-transparent" />
+                  <div className="absolute inset-0 bg-gradient-to-r from-white/20 via-transparent to-transparent" />
                 </div>
               ))}
             </div>
-            <div className="absolute bottom-6 left-8 flex gap-2">
+
+            {/* Dot indicators */}
+            <div className="absolute bottom-5 left-6 flex gap-2">
               {heroImages.map((_, i) => (
                 <button
                   key={i}
-                  onClick={() => setIndex(i)}
-                  className={`h-2 rounded-full transition-all ${i === index ? "w-6 bg-neutral-900" : "w-2 bg-neutral-400"}`}
+                  type="button"
+                  onClick={() => setHeroIndex(i)}
+                  className={`h-2 rounded-full transition-all duration-300 ${
+                    i === heroIndex ? "w-6 bg-white shadow" : "w-2 bg-white/50"
+                  }`}
                 />
               ))}
             </div>
+
+            {/* Prev / Next arrows */}
+            <button
+              type="button"
+              onClick={() => setHeroIndex((heroIndex - 1 + heroImages.length) % heroImages.length)}
+              className="absolute left-4 top-1/2 -translate-y-1/2 h-9 w-9 rounded-full bg-white/80 backdrop-blur-sm border border-white/60 shadow flex items-center justify-center text-stone-700 hover:bg-white transition"
+            >
+              <svg className="h-4 w-4" viewBox="0 0 20 20" fill="none" stroke="currentColor" strokeWidth="2.5"><path d="M13 16l-6-6 6-6"/></svg>
+            </button>
+            <button
+              type="button"
+              onClick={() => setHeroIndex((heroIndex + 1) % heroImages.length)}
+              className="absolute right-4 top-1/2 -translate-y-1/2 h-9 w-9 rounded-full bg-white/80 backdrop-blur-sm border border-white/60 shadow flex items-center justify-center text-stone-700 hover:bg-white transition"
+            >
+              <svg className="h-4 w-4" viewBox="0 0 20 20" fill="none" stroke="currentColor" strokeWidth="2.5"><path d="M7 4l6 6-6 6"/></svg>
+            </button>
           </div>
 
-          {/* Copy */}
-          <div className="p-10 lg:p-14 flex flex-col justify-center">
-            <p className="text-xs font-semibold tracking-widest text-neutral-500 uppercase">Core Atoms</p>
-            <h1 className="mt-3 text-4xl lg:text-5xl font-semibold tracking-tight text-neutral-900 leading-tight">
-              Engineered for consistency.
+          {/* RIGHT — copy + CTA */}
+          <div className="flex flex-col justify-center px-10 py-12 lg:px-14 lg:py-16">
+            <div className="section-label mb-4">Core Atoms — Nutraceuticals</div>
+
+            <h1 className="text-4xl lg:text-5xl font-semibold tracking-tight text-stone-900 leading-[1.12]">
+              Engineered for<br />
+              <span className="text-[#1e3a5f]">daily consistency.</span>
             </h1>
-            <p className="mt-6 text-neutral-600 leading-relaxed max-w-lg">
-              Modern nutraceuticals designed for daily momentum. Clean formulas, structured stacks,
-              and a premium experience from checkout to delivery.
+
+            <p className="mt-6 text-[15px] text-stone-500 leading-relaxed max-w-sm">
+              Modern nutraceuticals designed for real routines. Clean formulas, structured stacks, and a premium experience from checkout to delivery.
             </p>
-            <div className="mt-8 flex flex-wrap gap-4">
-              <Link
-                to="/shop"
-                className="inline-flex items-center justify-center rounded-xl px-6 py-3 text-sm font-medium bg-gradient-to-r from-neutral-900 to-neutral-700 text-white shadow-sm hover:shadow-md hover:from-neutral-800 hover:to-neutral-600 transition-all duration-200"
-              >
-                Shop Now
+
+            <div className="mt-8 flex flex-wrap gap-3">
+              <Link to="/shop" className="btn-primary px-6 py-3 text-[14px]">
+                <svg className="h-4 w-4" viewBox="0 0 20 20" fill="currentColor"><path d="M3 3a1 1 0 000 2h1.22l.305 1.222a.997.997 0 00.01.042l1.358 5.43-.893.892C3.74 13.846 4.632 15 6.414 15H15a1 1 0 000-2H6.414l1-1H14a1 1 0 00.894-.553l3-6A1 1 0 0017 5H6.28l-.31-1.243A1 1 0 005 3H3zM16 16.5a1.5 1.5 0 11-3 0 1.5 1.5 0 013 0zM6.5 18a1.5 1.5 0 100-3 1.5 1.5 0 000 3z"/></svg>
+                Shop all products
               </Link>
-              <Link
-                to="/shop"
-                className="inline-flex items-center justify-center rounded-xl px-6 py-3 text-sm font-medium bg-white text-neutral-900 border border-black/10 hover:bg-neutral-50 hover:shadow-sm transition-all duration-200"
-              >
-                View Best Sellers
-              </Link>
+              <Link to="/shop" className="btn-ghost px-6 py-3 text-[14px]">View best sellers →</Link>
             </div>
-            <div className="mt-8 flex items-center gap-6 text-sm text-neutral-500">
-              <span className="flex items-center gap-1.5"><span>✓</span> Clean labels</span>
-              <span className="flex items-center gap-1.5"><span>✓</span> COD available</span>
-              <span className="flex items-center gap-1.5"><span>✓</span> Pan-India delivery</span>
+
+            <div className="mt-10 grid grid-cols-3 gap-3 border-t border-[#E8E4DE] pt-8">
+              {[
+                { icon: "🧪", label: "Clean labels" },
+                { icon: "🚚", label: "COD available" },
+                { icon: "📦", label: "Pan-India delivery" },
+              ].map((t) => (
+                <div key={t.label} className="text-center">
+                  <div className="text-xl mb-1">{t.icon}</div>
+                  <div className="text-[11px] font-medium text-stone-500">{t.label}</div>
+                </div>
+              ))}
             </div>
           </div>
 
         </div>
       </section>
 
-      {/* ── WHY CORE ATOMS ── */}
+      {/* ── PILLARS ───────────────────────────────────────────────────── */}
       <section>
-        <div className="text-center mb-12">
-          <p className="text-xs font-semibold tracking-widest text-neutral-500 uppercase">Why Us</p>
-          <h2 className="mt-2 text-3xl font-semibold text-neutral-900">Built different. By design.</h2>
-          <p className="mt-3 text-neutral-500 max-w-xl mx-auto">
-            We don't cut corners on ingredients, and we don't cut corners on experience.
-            Here's what sets Core Atoms apart.
-          </p>
-        </div>
-        <div className="grid gap-6 sm:grid-cols-2 lg:grid-cols-4">
-          {WHY_PILLARS.map((p) => (
-            <div key={p.title} className="rounded-2xl border border-neutral-200 bg-white p-6 shadow-sm hover:shadow-md transition-shadow">
-              <div className="text-3xl">{p.icon}</div>
-              <div className="mt-4 text-base font-semibold text-neutral-900">{p.title}</div>
-              <div className="mt-2 text-sm text-neutral-500 leading-relaxed">{p.desc}</div>
+        <div className="grid gap-5 sm:grid-cols-2 lg:grid-cols-4">
+          {PILLARS.map((p) => (
+            <div key={p.title} className="group rounded-2xl border border-[#E8E4DE] bg-white p-6 hover:shadow-[0_4px_20px_rgba(0,0,0,0.08)] hover:-translate-y-0.5 transition-all duration-200">
+              <div className="text-[#1e3a5f] text-xl mb-4">{p.icon}</div>
+              <div className="text-sm font-semibold text-stone-900">{p.title}</div>
+              <div className="mt-1.5 text-[13px] text-stone-500 leading-relaxed">{p.desc}</div>
             </div>
           ))}
         </div>
       </section>
 
-      {/* ── FEATURED PRODUCTS ── */}
+      {/* ── FEATURED PRODUCTS ─────────────────────────────────────────── */}
       <section>
-        <div className="flex items-center justify-between mb-10">
+        <div className="flex items-end justify-between mb-8">
           <div>
-            <p className="text-xs font-semibold tracking-widest text-neutral-500 uppercase">Top Picks</p>
-            <h2 className="mt-1 text-3xl font-semibold text-neutral-900">Featured Products</h2>
+            <p className="section-label">Top Picks</p>
+            <h2 className="mt-1.5 text-2xl font-semibold tracking-tight text-stone-900">Featured Products</h2>
           </div>
-          <Link to="/shop" className="text-sm font-medium text-neutral-700 hover:text-neutral-950 hover:underline">
-            View all →
-          </Link>
+          <Link to="/shop" className="text-sm font-semibold text-[#1e3a5f] hover:underline underline-offset-2">View all →</Link>
         </div>
 
         {loadingProducts ? (
           <div className="grid gap-5 sm:grid-cols-2 lg:grid-cols-3">
             {Array.from({ length: 6 }).map((_, i) => (
-              <div key={i} className="rounded-3xl border border-black/10 bg-white overflow-hidden animate-pulse">
-                <div className="h-56 bg-neutral-100" />
+              <div key={i} className="rounded-2xl border border-[#E8E4DE] bg-white overflow-hidden animate-pulse">
+                <div className="h-[220px] bg-stone-100" />
                 <div className="p-5 space-y-3">
-                  <div className="h-4 bg-neutral-100 rounded w-2/3" />
-                  <div className="h-3 bg-neutral-100 rounded w-full" />
-                  <div className="h-3 bg-neutral-100 rounded w-4/5" />
-                  <div className="h-9 bg-neutral-100 rounded-xl mt-4" />
+                  <div className="h-4 bg-stone-100 rounded w-3/4" />
+                  <div className="h-3 bg-stone-100 rounded w-full" />
+                  <div className="h-10 bg-stone-100 rounded-xl mt-4" />
                 </div>
               </div>
             ))}
           </div>
-        ) : featuredProducts.length === 0 ? (
-          <div className="text-sm text-neutral-500">No products found.</div>
         ) : (
           <div className="grid gap-5 sm:grid-cols-2 lg:grid-cols-3">
-            {featuredProducts.map((p) => (
-              <ProductCard
-                key={p.id}
-                p={p}
-                onAdd={handleAdd}
-                justAdded={justAddedId === p.id}
-              />
+            {products.map((p) => (
+              <ProductCard key={p.id} p={p} onAdd={handleAdd} justAdded={justAddedId === p.id} />
             ))}
           </div>
         )}
       </section>
 
-      {/* ── CATEGORY STRIP ── */}
+      {/* ── CATEGORY STRIP ────────────────────────────────────────────── */}
       <section>
         <div className="text-center mb-10">
-          <p className="text-xs font-semibold tracking-widest text-neutral-500 uppercase">Browse by Goal</p>
-          <h2 className="mt-2 text-3xl font-semibold text-neutral-900">Shop by Category</h2>
-          <p className="mt-2 text-sm text-neutral-500">Find the right formula for your goal</p>
+          <p className="section-label">Browse by Goal</p>
+          <h2 className="mt-2 text-2xl font-semibold tracking-tight text-stone-900">Shop by Category</h2>
         </div>
-        <div className="grid grid-cols-2 gap-5 sm:grid-cols-3 lg:grid-cols-6">
+        <div className="grid grid-cols-2 gap-4 sm:grid-cols-3 lg:grid-cols-6">
           {CATEGORIES.map((cat) => (
-            <Link
-              key={cat.category}
-              to={`/shop?category=${encodeURIComponent(cat.category)}`}
-              className="group rounded-3xl border border-black/10 bg-white overflow-hidden shadow-[0_20px_60px_-40px_rgba(0,0,0,0.25)] hover:shadow-[0_30px_80px_-45px_rgba(0,0,0,0.35)] transition-shadow"
+            <Link key={cat.category} to={`/shop?category=${encodeURIComponent(cat.category)}`}
+              className="group flex flex-col items-center gap-3 rounded-2xl border border-[#E8E4DE] bg-white p-5 text-center hover:border-[#1e3a5f]/30 hover:shadow-[0_4px_20px_rgba(0,0,0,0.08)] hover:-translate-y-0.5 transition-all duration-200"
             >
-              <div className="relative h-28 bg-neutral-50 flex items-center justify-center overflow-hidden">
-                <span className="text-5xl transition-transform duration-300 group-hover:scale-110">{cat.emoji}</span>
-                <div className="absolute inset-0 bg-gradient-to-t from-black/10 via-transparent to-transparent pointer-events-none" />
+              <div className="h-12 w-12 rounded-xl bg-[#EFF6FF] flex items-center justify-center text-2xl group-hover:bg-[#1e3a5f]/10 transition-colors">
+                {cat.emoji}
               </div>
-              <div className="p-4">
-                <div className="text-sm font-semibold text-neutral-950 group-hover:underline leading-snug">
-                  {cat.label}
-                </div>
-                <div className="mt-2">
-                  <span className="rounded-full border border-black/10 bg-white px-2.5 py-1 text-[10px] font-medium text-neutral-600">
-                    Shop now →
-                  </span>
-                </div>
-              </div>
+              <span className="text-[12px] font-semibold text-stone-700 group-hover:text-[#1e3a5f] leading-snug transition-colors">
+                {cat.label}
+              </span>
             </Link>
           ))}
         </div>
       </section>
 
-      {/* ── HOW IT WORKS ── */}
-      <section className="rounded-3xl border border-neutral-200 bg-neutral-50 p-10 lg:p-16">
-        <div className="text-center mb-12">
-          <p className="text-xs font-semibold tracking-widest text-neutral-500 uppercase">Simple Process</p>
-          <h2 className="mt-2 text-3xl font-semibold text-neutral-900">How it works</h2>
-          <p className="mt-3 text-neutral-500 max-w-md mx-auto">
-            From discovery to delivery — the Core Atoms experience is designed to be effortless.
-          </p>
-        </div>
-
-        <div className="grid gap-8 sm:grid-cols-3 relative">
-          {/* Connector line — desktop only */}
-          <div className="hidden sm:block absolute top-8 left-[20%] right-[20%] h-px bg-neutral-200" />
-
-          {HOW_STEPS.map((s, i) => (
-            <div key={s.step} className="relative text-center">
-              <div className="mx-auto h-16 w-16 rounded-2xl bg-white border border-neutral-200 shadow-sm flex items-center justify-center">
-                <span className="text-xl font-semibold text-neutral-900">{s.step}</span>
-              </div>
-              <div className="mt-5 text-base font-semibold text-neutral-900">{s.title}</div>
-              <div className="mt-2 text-sm text-neutral-500 leading-relaxed max-w-xs mx-auto">{s.desc}</div>
-              {i < HOW_STEPS.length - 1 && (
-                <div className="hidden sm:block absolute top-8 -right-4 text-neutral-300 text-xl">→</div>
-              )}
-            </div>
-          ))}
-        </div>
-      </section>
-
-      {/* ── TESTIMONIALS ── */}
-      <section>
-        <div className="text-center mb-12">
-          <p className="text-xs font-semibold tracking-widest text-neutral-500 uppercase">Reviews</p>
-          <h2 className="mt-2 text-3xl font-semibold text-neutral-900">What customers say</h2>
-          <p className="mt-3 text-neutral-500">Real people. Real results. No paid reviews.</p>
-        </div>
-
-        <div className="grid gap-6 sm:grid-cols-2 lg:grid-cols-4">
-          {TESTIMONIALS.map((t) => (
-            <div key={t.name} className="rounded-2xl border border-neutral-200 bg-white p-6 shadow-sm flex flex-col gap-4">
-              <Stars count={t.rating} />
-              <p className="text-sm text-neutral-600 leading-relaxed flex-1">"{t.text}"</p>
-              <div className="border-t border-neutral-100 pt-4">
-                <div className="text-sm font-semibold text-neutral-900">{t.name}</div>
-                <div className="text-xs text-neutral-400 mt-0.5">{t.location} • {t.product}</div>
-              </div>
-            </div>
-          ))}
-        </div>
-
-        {/* Trust bar */}
-        <div className="mt-10 rounded-2xl border border-neutral-200 bg-neutral-50 px-8 py-6 flex flex-wrap items-center justify-center gap-10 text-center">
-          <div>
-            <div className="text-2xl font-semibold text-neutral-900">500+</div>
-            <div className="text-xs text-neutral-500 mt-0.5">Happy Customers</div>
-          </div>
-          <div className="h-8 w-px bg-neutral-200 hidden sm:block" />
-          <div>
-            <div className="text-2xl font-semibold text-neutral-900">4.9★</div>
-            <div className="text-xs text-neutral-500 mt-0.5">Average Rating</div>
-          </div>
-          <div className="h-8 w-px bg-neutral-200 hidden sm:block" />
-          <div>
-            <div className="text-2xl font-semibold text-neutral-900">12</div>
-            <div className="text-xs text-neutral-500 mt-0.5">Products</div>
-          </div>
-          <div className="h-8 w-px bg-neutral-200 hidden sm:block" />
-          <div>
-            <div className="text-2xl font-semibold text-neutral-900">24h</div>
-            <div className="text-xs text-neutral-500 mt-0.5">Dispatch Time</div>
-          </div>
-        </div>
-      </section>
-
-      {/* ── BRAND POSITIONING ── */}
-      <section className="rounded-3xl border border-black/10 bg-white p-10 lg:p-14 shadow-[0_20px_60px_-40px_rgba(0,0,0,0.25)] space-y-6">
-        <p className="text-xs font-semibold tracking-widest text-neutral-500 uppercase">Our Philosophy</p>
-        <h2 className="text-3xl font-semibold text-neutral-900">Built like a system, not a trend.</h2>
-        <p className="text-neutral-600 leading-relaxed max-w-2xl">
-          Each Core Atoms formulation is designed around consistency — functional ingredients,
-          simplified stacks, and structured support for real-world routines.
-        </p>
-        <p className="text-neutral-600 leading-relaxed max-w-2xl">
-          No inflated claims. No unnecessary fillers. Just premium precision and daily reliability.
-        </p>
-      </section>
-
-      {/* ── CTA BANNER ── */}
-      <section className="rounded-3xl overflow-hidden bg-neutral-900 relative">
-        <div className="absolute inset-0 bg-[radial-gradient(ellipse_at_top_right,_rgba(255,255,255,0.07)_0%,_transparent_60%)]" />
-        <div className="relative px-10 py-16 lg:py-20 flex flex-col items-center text-center gap-6">
-          <p className="text-xs font-semibold tracking-widest text-neutral-400 uppercase">Ready to start?</p>
-          <h2 className="text-3xl lg:text-4xl font-semibold text-white leading-tight max-w-xl">
-            Your daily stack is waiting.
+      {/* ── BRAND STATEMENT ───────────────────────────────────────────── */}
+      <section className="rounded-3xl border border-[#E8E4DE] bg-white p-12 lg:p-16 text-center">
+        <div className="mx-auto max-w-2xl">
+          <p className="section-label mb-4">Our Philosophy</p>
+          <h2 className="text-2xl lg:text-3xl font-semibold tracking-tight text-stone-900 leading-snug">
+            Built like a system,<br className="hidden sm:block" /> not a trend.
           </h2>
-          <p className="text-neutral-400 max-w-md leading-relaxed">
-            Precision formulas, clean ingredients, cash on delivery. No risk, no compromise.
-            Start building your routine today.
+          <p className="mt-5 text-[15px] text-stone-500 leading-relaxed">
+            Each Core Atoms formulation is designed around consistency — functional ingredients,
+            simplified stacks, and structured support for real-world routines. No inflated claims.
+            No unnecessary fillers. Just premium precision and daily reliability.
           </p>
-          <div className="flex flex-wrap gap-4 justify-center mt-2">
-            <Link
-              to="/shop"
-              className="inline-flex items-center justify-center rounded-xl px-8 py-3.5 text-sm font-semibold bg-white text-neutral-900 hover:bg-neutral-100 shadow-lg hover:shadow-xl transition-all duration-200"
-            >
-              Shop All Products
-            </Link>
-            <Link
-              to="/shop"
-              className="inline-flex items-center justify-center rounded-xl px-8 py-3.5 text-sm font-semibold border border-white/20 text-white hover:bg-white/10 transition-all duration-200"
-            >
-              View Categories
-            </Link>
-          </div>
-          <div className="flex flex-wrap items-center justify-center gap-6 mt-4 text-xs text-neutral-500">
-            <span>✓ No advance payment</span>
-            <span>✓ Pan-India delivery</span>
-            <span>✓ Dispatched in 24 hours</span>
-            <span>✓ Clean ingredient labels</span>
-          </div>
+          <Link to="/shop" className="btn-primary mt-8 inline-flex px-8 py-3">Explore the range</Link>
         </div>
       </section>
 
-      {/* ── TOAST ── */}
-      <div
-        className={[
-          "fixed bottom-5 right-5 z-50 rounded-2xl border border-neutral-200 bg-white px-4 py-3 shadow-lg",
-          "text-sm text-neutral-900 transition-all duration-300",
-          toast.open ? "opacity-100 translate-y-0" : "opacity-0 translate-y-3 pointer-events-none",
-        ].join(" ")}
-      >
-        <div className="font-semibold">Added to cart ✅</div>
-        <div className="text-xs text-neutral-600">{toast.message}</div>
+      {/* ── TOAST ─────────────────────────────────────────────────────── */}
+      <div className={`fixed bottom-6 right-6 z-50 card px-5 py-3.5 transition-all duration-300 ${
+        toast.open ? "opacity-100 translate-y-0" : "opacity-0 translate-y-3 pointer-events-none"
+      }`}>
+        <div className="flex items-center gap-3">
+          <div className="h-8 w-8 rounded-lg bg-emerald-50 grid place-items-center">
+            <svg className="h-4 w-4 text-emerald-600" viewBox="0 0 20 20" fill="currentColor"><path fillRule="evenodd" d="M16.707 5.293a1 1 0 00-1.414 0L8 12.586 4.707 9.293a1 1 0 00-1.414 1.414l4 4a1 1 0 001.414 0l8-8a1 1 0 000-1.414z" clipRule="evenodd"/></svg>
+          </div>
+          <div>
+            <div className="text-sm font-semibold text-stone-900">Added to cart</div>
+            <div className="text-xs text-stone-500">{toast.message}</div>
+          </div>
+        </div>
       </div>
-
     </div>
   );
 }

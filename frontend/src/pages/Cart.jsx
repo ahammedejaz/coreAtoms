@@ -2,143 +2,123 @@ import { Link, useNavigate } from "react-router-dom";
 import { useCart } from "../context/CartContext";
 import { useAuth } from "../context/AuthContext";
 
+const money = (n) => `₹${Number(n || 0).toLocaleString("en-IN")}`;
+
 export default function Cart() {
   const navigate = useNavigate();
   const { isAuthenticated } = useAuth();
   const { items, totalItems, subtotal, updateQty, removeItem, clear } = useCart();
 
-  const money = (n) => `₹${Number(n || 0).toLocaleString("en-IN")}`;
-
-  const handleCheckout = () => {
-    if (!isAuthenticated) return navigate("/login");
-    navigate("/checkout");
-  };
-
   return (
-    <div className="mx-auto max-w-5xl px-4 py-10">
-      <div className="mb-6 flex items-end justify-between">
+    <div>
+      <div className="mb-8 flex items-end justify-between">
         <div>
-          <h1 className="text-2xl font-semibold text-neutral-950">Your Cart</h1>
-          <p className="text-sm text-neutral-600">Adjust quantities and checkout.</p>
+          <p className="section-label">Review & Checkout</p>
+          <h1 className="mt-1.5 text-2xl font-semibold tracking-tight text-stone-900">Your Cart</h1>
         </div>
-        <Link to="/shop" className="text-sm text-neutral-700 hover:text-neutral-950 underline">
-          Continue shopping
-        </Link>
+        <Link to="/shop" className="text-sm text-stone-500 hover:text-stone-900 transition-colors">← Continue shopping</Link>
       </div>
 
       {!items || items.length === 0 ? (
-        <div className="rounded-2xl border border-neutral-200 bg-white p-10 text-center shadow-sm">
-          <div className="text-lg font-medium text-neutral-900">Your cart is empty</div>
-          <p className="mt-2 text-sm text-neutral-600">Add some products to get started.</p>
-          <Link
-            to="/shop"
-            className="mt-6 inline-flex items-center justify-center rounded-xl border border-neutral-200 bg-white px-4 py-2 text-sm text-neutral-900 shadow-sm hover:shadow transition"
-          >
-            Go to Shop
-          </Link>
+        <div className="card p-16 text-center">
+          <div className="mx-auto mb-4 h-16 w-16 rounded-2xl bg-stone-100 flex items-center justify-center">
+            <svg className="h-7 w-7 text-stone-400" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5">
+              <path d="M6 2L3 6v14a2 2 0 002 2h14a2 2 0 002-2V6l-3-4z"/><line x1="3" y1="6" x2="21" y2="6"/><path d="M16 10a4 4 0 01-8 0"/>
+            </svg>
+          </div>
+          <h2 className="text-base font-semibold text-stone-900">Your cart is empty</h2>
+          <p className="mt-1 text-sm text-stone-500">Discover our range of premium supplements.</p>
+          <Link to="/shop" className="btn-primary mt-6 inline-flex">Browse products</Link>
         </div>
       ) : (
         <div className="grid gap-6 lg:grid-cols-3">
-          <div className="lg:col-span-2 space-y-4">
+
+          {/* Items */}
+          <div className="lg:col-span-2 space-y-3">
             {items.map((item) => {
               const lineTotal = (Number(item.unitPrice) || 0) * (Number(item.qty) || 0);
-
               return (
-                <div key={item.id} className="rounded-2xl border border-neutral-200 bg-white p-4 shadow-sm">
+                <div key={item.id} className="card p-5">
                   <div className="flex gap-4">
-                    <div className="h-24 w-24 overflow-hidden rounded-xl border border-neutral-200 bg-neutral-50">
+                    <div className="h-20 w-20 shrink-0 rounded-xl border border-[#E8E4DE] bg-stone-50 overflow-hidden">
                       <img src={item.image} alt={item.name} className="h-full w-full object-cover" loading="lazy" />
                     </div>
-
-                    <div className="flex-1">
+                    <div className="flex-1 min-w-0">
                       <div className="flex items-start justify-between gap-3">
                         <div>
-                          <div className="font-semibold text-neutral-950">{item.name}</div>
-                          {item.category && (
-                            <div className="mt-1 text-xs text-neutral-500">{item.category}</div>
-                          )}
-                          <div className="mt-1 text-sm text-neutral-700">
-                            Unit: <span className="font-semibold text-neutral-900">{money(item.unitPrice)}</span>
-                          </div>
+                          <h3 className="font-semibold text-stone-900 text-[15px] leading-snug">{item.name}</h3>
+                          {item.category && <p className="text-xs text-stone-400 mt-0.5">{item.category}</p>}
+                          <p className="text-sm text-stone-500 mt-1">{money(item.unitPrice)} each</p>
                         </div>
-
-                        <div className="text-right">
-                          <div className="text-sm text-neutral-600">Subtotal</div>
-                          <div className="text-base font-semibold text-neutral-950">{money(lineTotal)}</div>
+                        <div className="text-right shrink-0">
+                          <p className="text-xs text-stone-400">Subtotal</p>
+                          <p className="text-base font-semibold text-stone-900">{money(lineTotal)}</p>
                         </div>
                       </div>
-
-                      <div className="mt-3 flex flex-wrap items-center justify-between gap-3">
-                        <div className="inline-flex items-center gap-2 rounded-xl border border-neutral-200 bg-white px-2 py-1">
-                          <button
-                            className="h-8 w-8 rounded-lg hover:bg-neutral-100 transition"
-                            onClick={() => updateQty(item.id, Math.max(0, (item.qty || 1) - 1))}
-                            type="button"
-                          >
-                            −
-                          </button>
-                          <div className="w-10 text-center text-sm font-semibold text-neutral-900">
-                            {item.qty}
-                          </div>
-                          <button
-                            className="h-8 w-8 rounded-lg hover:bg-neutral-100 transition"
-                            onClick={() => updateQty(item.id, (item.qty || 1) + 1)}
-                            type="button"
-                          >
-                            +
-                          </button>
+                      <div className="mt-3 flex items-center justify-between">
+                        {/* Qty stepper */}
+                        <div className="inline-flex items-center rounded-xl border border-[#E8E4DE] bg-stone-50">
+                          <button type="button" onClick={() => updateQty(item.id, Math.max(0, item.qty - 1))}
+                            className="h-8 w-8 flex items-center justify-center text-stone-600 hover:text-stone-900 hover:bg-stone-100 rounded-l-xl transition">−</button>
+                          <span className="w-10 text-center text-sm font-semibold text-stone-900">{item.qty}</span>
+                          <button type="button" onClick={() => updateQty(item.id, item.qty + 1)}
+                            className="h-8 w-8 flex items-center justify-center text-stone-600 hover:text-stone-900 hover:bg-stone-100 rounded-r-xl transition">+</button>
                         </div>
-
-                        <button
-                          onClick={() => removeItem(item.id)}
-                          className="text-sm text-neutral-700 hover:text-neutral-950 underline"
-                          type="button"
-                        >
-                          Remove
-                        </button>
+                        <button type="button" onClick={() => removeItem(item.id)}
+                          className="text-xs text-stone-400 hover:text-red-500 transition-colors">Remove</button>
                       </div>
                     </div>
                   </div>
                 </div>
               );
             })}
+            <button type="button" onClick={clear} className="text-xs text-stone-400 hover:text-red-500 transition-colors pt-1">
+              Clear entire cart
+            </button>
           </div>
 
-          <div className="rounded-2xl border border-neutral-200 bg-white p-5 shadow-sm h-fit">
-            <div className="text-lg font-semibold text-neutral-950">Summary</div>
+          {/* Summary */}
+          <div>
+            <div className="card p-6 sticky top-24">
+              <h2 className="text-base font-semibold text-stone-900 mb-5">Order Summary</h2>
+              <div className="space-y-3 text-sm">
+                <div className="flex justify-between text-stone-600">
+                  <span>Subtotal ({totalItems} item{totalItems !== 1 ? "s" : ""})</span>
+                  <span className="font-semibold text-stone-900">{money(subtotal)}</span>
+                </div>
+                <div className="flex justify-between text-stone-600">
+                  <span>Shipping</span>
+                  <span className="font-semibold text-emerald-600">Free</span>
+                </div>
+                <div className="flex justify-between text-stone-600">
+                  <span>Payment</span>
+                  <span className="font-semibold text-stone-900">Cash on Delivery</span>
+                </div>
+              </div>
 
-            <div className="mt-4 space-y-2 text-sm">
-              <div className="flex items-center justify-between text-neutral-700">
-                <span>Total items</span>
-                <span className="font-semibold text-neutral-950">{totalItems}</span>
+              <div className="my-5 h-px bg-[#E8E4DE]" />
+
+              <div className="flex justify-between mb-6">
+                <span className="font-semibold text-stone-900">Total</span>
+                <span className="text-xl font-semibold text-stone-900">{money(subtotal)}</span>
               </div>
-              <div className="flex items-center justify-between text-neutral-700">
-                <span>Shipping</span>
-                <span className="font-semibold text-neutral-950">Free</span>
-              </div>
-              <div className="h-px bg-neutral-200 my-3" />
-              <div className="flex items-center justify-between">
-                <span className="text-neutral-700">Total</span>
-                <span className="text-base font-semibold text-neutral-950">{money(subtotal)}</span>
+
+              <button
+                type="button"
+                onClick={() => { if (!isAuthenticated) navigate("/login"); else navigate("/checkout"); }}
+                className="btn-primary w-full py-3 text-[14px]"
+              >
+                Proceed to checkout
+              </button>
+
+              <div className="mt-4 flex flex-wrap gap-2 justify-center">
+                {["🔒 Secure", "📦 Quality packing", "🇮🇳 India only"].map((t) => (
+                  <span key={t} className="text-[11px] text-stone-400">{t}</span>
+                ))}
               </div>
             </div>
-
-            <button
-              onClick={handleCheckout}
-              className="mt-5 w-full rounded-xl bg-gradient-to-r from-neutral-200 to-neutral-300 px-4 py-3 text-sm font-semibold text-neutral-950 shadow-sm hover:shadow hover:scale-[1.01] transition"
-              type="button"
-            >
-              Proceed to Checkout
-            </button>
-
-            <button
-              onClick={clear}
-              className="mt-3 w-full rounded-xl border border-neutral-200 bg-white px-4 py-3 text-sm text-neutral-800 hover:bg-neutral-50 transition"
-              type="button"
-            >
-              Clear cart
-            </button>
           </div>
+
         </div>
       )}
     </div>

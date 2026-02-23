@@ -119,7 +119,13 @@ export default function AdminDashboard() {
     const [pBestFor, setPBestFor] = useState("");
     const [pPairsWellWith, setPPairsWellWith] = useState("");
     const [pRecommendedStack, setPRecommendedStack] = useState("");
+    const [pHighlights, setPHighlights] = useState([]); // e.g. ["Clean label", "Lab-tested"]
+    const [pHighlightInput, setPHighlightInput] = useState("");
     const [pImagePreview, setPImagePreview] = useState(""); // live preview URL
+
+    // -------------------- Variants --------------------
+    const [variants, setVariants] = useState([]); // [{id?, label, price_inr, stock_qty, sku, sort_order, is_active, _dirty}]
+    const [variantErr, setVariantErr] = useState("");
 
     // -------------------- Extra images (product_images table) --------------------
     const [extraImages, setExtraImages] = useState([]); // [{ id, image_url, sort_order }]
@@ -178,7 +184,9 @@ export default function AdminDashboard() {
         about_text,
         best_for,
         pairs_well_with,
-        recommended_stack
+        recommended_stack,
+        highlights,
+        product_variants(id,label,stock_qty,is_active)
       `
             )
             .order("created_at", { ascending: false });
@@ -232,6 +240,10 @@ export default function AdminDashboard() {
         setPBestFor("");
         setPPairsWellWith("");
         setPRecommendedStack("");
+        setPHighlights([]);
+        setPHighlightInput("");
+        setVariants([]);
+        setVariantErr("");
         setProductMsg("");
         if (fileInputRef.current) fileInputRef.current.value = "";
     };
@@ -268,6 +280,18 @@ export default function AdminDashboard() {
         setPBestFor(p.best_for || "");
         setPPairsWellWith(p.pairs_well_with || "");
         setPRecommendedStack(p.recommended_stack || "");
+        setPHighlights(Array.isArray(p.highlights) ? p.highlights : []);
+        setPHighlightInput("");
+        // Load variants
+        setVariantErr("");
+        (async () => {
+            const { data: vData } = await supabase
+                .from("product_variants")
+                .select("id,label,price_inr,stock_qty,sku,sort_order,is_active")
+                .eq("product_id", p.id)
+                .order("sort_order", { ascending: true });
+            setVariants((vData || []).map((v) => ({ ...v, _dirty: false })));
+        })();
         setPFile(null);
         setProductMsg("");
         if (fileInputRef.current) fileInputRef.current.value = "";
@@ -347,6 +371,39 @@ export default function AdminDashboard() {
         await supabase.from("product_images").update({ sort_order: updated[swapIdx].sort_order }).eq("id", updated[swapIdx].id);
     };
 
+    const saveVariants = async (productId) => {
+        setVariantErr("");
+        for (let i = 0; i < variants.length; i++) {
+            const v = variants[i];
+            const label = String(v.label || "").trim();
+            if (!label) continue;
+            const price = Number(v.price_inr);
+            const stock = Number(v.stock_qty ?? 0);
+            if (!Number.isFinite(price) || price < 0) continue;
+
+            const payload = {
+                product_id: productId,
+                label,
+                price_inr: price,
+                stock_qty: stock,
+                sku: String(v.sku || "").trim() || null,
+                sort_order: i,
+                is_active: v.is_active !== false,
+                updated_at: new Date().toISOString(),
+            };
+
+            if (v.id) {
+                // existing row — update
+                const { error } = await supabase.from("product_variants").update(payload).eq("id", v.id);
+                if (error) { setVariantErr(error.message); return; }
+            } else {
+                // new row — insert
+                const { error } = await supabase.from("product_variants").insert({ ...payload });
+                if (error) { setVariantErr(error.message); return; }
+            }
+        }
+    };
+
     const saveProduct = async () => {
         setSavingProduct(true);
         setProductMsg("");
@@ -382,6 +439,7 @@ export default function AdminDashboard() {
                 best_for: String(pBestFor || "").trim() || null,
                 pairs_well_with: String(pPairsWellWith || "").trim() || null,
                 recommended_stack: String(pRecommendedStack || "").trim() || null,
+                highlights: pHighlights.length > 0 ? pHighlights : null,
                 updated_at: new Date().toISOString(),
             };
 
@@ -392,6 +450,7 @@ export default function AdminDashboard() {
                     .eq("id", editingId);
                 if (error) throw new Error(error.message);
                 await uploadAndSaveExtraImages(editingId);
+                await saveVariants(editingId);
                 setProductMsg("Updated ✅");
             } else {
                 const { data: inserted, error } = await supabase
@@ -401,6 +460,7 @@ export default function AdminDashboard() {
                     .single();
                 if (error) throw new Error(error.message);
                 await uploadAndSaveExtraImages(inserted.id);
+                await saveVariants(inserted.id);
                 setProductMsg("Created ✅");
             }
 
@@ -490,6 +550,7 @@ export default function AdminDashboard() {
             qty,
             unit_price_inr,
             line_total_inr,
+            variant_label,
             products (
               name
             )
@@ -565,6 +626,7 @@ export default function AdminDashboard() {
                     return {
                         product_id: it?.product_id,
                         product_name: it?.products?.name || "",
+                        variant_label: it?.variant_label || "",
                         qty: it?.qty,
                         qty_num: Number.isFinite(qtyNum) ? qtyNum : 0,
                         unit_price_inr: it?.unit_price_inr,
@@ -841,11 +903,11 @@ export default function AdminDashboard() {
     return (
         <div className="mx-auto max-w-6xl px-4 py-10">
             <div className="card p-6">
-                <div className="text-xs text-neutral-500">Admin</div>
-                <div className="mt-1 text-2xl font-semibold text-neutral-950">
+                <div className="text-xs text-stone-400">Admin</div>
+                <div className="mt-1 text-2xl font-semibold text-stone-900">
                     Dashboard
                 </div>
-                <div className="mt-2 text-sm text-neutral-600">
+                <div className="mt-2 text-sm text-stone-500">
                     Logged in as{" "}
                     <span className="font-semibold">{profile?.email}</span> • role:{" "}
                     <span className="font-semibold">{profile?.role}</span>
@@ -853,32 +915,32 @@ export default function AdminDashboard() {
 
                 {/* Stats Row */}
                 <div className="mt-6 grid grid-cols-2 gap-3 sm:grid-cols-4 lg:grid-cols-5">
-                    <div className="rounded-2xl border border-neutral-200 bg-white p-4 shadow-sm">
-                        <div className="text-xs text-neutral-500">Total Orders</div>
-                        <div className="mt-1 text-2xl font-semibold text-neutral-950">{stats.totalOrders}</div>
+                    <div className="rounded-2xl border border-[#E8E4DE] bg-white p-4 shadow-sm">
+                        <div className="text-xs text-stone-400">Total Orders</div>
+                        <div className="mt-1 text-2xl font-semibold text-stone-900">{stats.totalOrders}</div>
                     </div>
-                    <div className="rounded-2xl border border-neutral-200 bg-white p-4 shadow-sm">
-                        <div className="text-xs text-neutral-500">Total Revenue</div>
-                        <div className="mt-1 text-2xl font-semibold text-neutral-950">
+                    <div className="rounded-2xl border border-[#E8E4DE] bg-white p-4 shadow-sm">
+                        <div className="text-xs text-stone-400">Total Revenue</div>
+                        <div className="mt-1 text-2xl font-semibold text-stone-900">
                             ₹{stats.totalRevenue.toLocaleString("en-IN")}
                         </div>
                     </div>
-                    <div className="rounded-2xl border border-neutral-200 bg-white p-4 shadow-sm">
-                        <div className="text-xs text-neutral-500">Active Products</div>
-                        <div className="mt-1 text-2xl font-semibold text-neutral-950">{stats.activeProducts}</div>
+                    <div className="rounded-2xl border border-[#E8E4DE] bg-white p-4 shadow-sm">
+                        <div className="text-xs text-stone-400">Active Products</div>
+                        <div className="mt-1 text-2xl font-semibold text-stone-900">{stats.activeProducts}</div>
                     </div>
                     <div className={[
                         "rounded-2xl border p-4 shadow-sm",
                         stats.lowStock > 0
                             ? "border-amber-200 bg-amber-50"
-                            : "border-neutral-200 bg-white",
+                            : "border-[#E8E4DE] bg-white",
                     ].join(" ")}>
-                        <div className={stats.lowStock > 0 ? "text-xs text-amber-600" : "text-xs text-neutral-500"}>
+                        <div className={stats.lowStock > 0 ? "text-xs text-amber-600" : "text-xs text-stone-400"}>
                             Low Stock {stats.lowStock > 0 ? "⚠️" : ""}
                         </div>
                         <div className={[
                             "mt-1 text-2xl font-semibold",
-                            stats.lowStock > 0 ? "text-amber-700" : "text-neutral-950",
+                            stats.lowStock > 0 ? "text-amber-700" : "text-stone-900",
                         ].join(" ")}>
                             {stats.lowStock}
                         </div>
@@ -890,14 +952,14 @@ export default function AdminDashboard() {
                         "rounded-2xl border p-4 shadow-sm",
                         stats.pendingOrders > 0
                             ? "border-blue-200 bg-blue-50"
-                            : "border-neutral-200 bg-white",
+                            : "border-[#E8E4DE] bg-white",
                     ].join(" ")}>
-                        <div className={stats.pendingOrders > 0 ? "text-xs text-blue-600" : "text-xs text-neutral-500"}>
+                        <div className={stats.pendingOrders > 0 ? "text-xs text-blue-600" : "text-xs text-stone-400"}>
                             Pending Orders {stats.pendingOrders > 0 ? "🔔" : ""}
                         </div>
                         <div className={[
                             "mt-1 text-2xl font-semibold",
-                            stats.pendingOrders > 0 ? "text-blue-700" : "text-neutral-950",
+                            stats.pendingOrders > 0 ? "text-blue-700" : "text-stone-900",
                         ].join(" ")}>
                             {stats.pendingOrders}
                         </div>
@@ -915,8 +977,8 @@ export default function AdminDashboard() {
                         className={[
                             "shrink-0 rounded-xl border px-4 py-2 text-sm font-semibold transition",
                             activeTab === "products"
-                                ? "border-neutral-300 bg-neutral-900 text-white shadow-sm"
-                                : "border-neutral-200 bg-white text-neutral-900 hover:bg-neutral-50",
+                                ? "border-stone-300 bg-[#1e3a5f] text-white shadow-sm"
+                                : "border-[#E8E4DE] bg-white text-stone-900 hover:bg-stone-50",
                         ].join(" ")}
                     >
                         Products
@@ -928,15 +990,15 @@ export default function AdminDashboard() {
                         className={[
                             "shrink-0 rounded-xl border px-4 py-2 text-sm font-semibold transition flex items-center gap-2",
                             activeTab === "orders"
-                                ? "border-neutral-300 bg-neutral-900 text-white shadow-sm"
-                                : "border-neutral-200 bg-white text-neutral-900 hover:bg-neutral-50",
+                                ? "border-stone-300 bg-[#1e3a5f] text-white shadow-sm"
+                                : "border-[#E8E4DE] bg-white text-stone-900 hover:bg-stone-50",
                         ].join(" ")}
                     >
                         Orders
                         {stats.pendingOrders > 0 && (
                             <span className={[
                                 "inline-flex h-5 min-w-5 items-center justify-center rounded-full px-1 text-[11px] font-semibold",
-                                activeTab === "orders" ? "bg-white text-neutral-900" : "bg-red-500 text-white",
+                                activeTab === "orders" ? "bg-white text-stone-900" : "bg-red-500 text-white",
                             ].join(" ")}>
                                 {stats.pendingOrders}
                             </span>
@@ -949,8 +1011,8 @@ export default function AdminDashboard() {
                         className={[
                             "shrink-0 rounded-xl border px-4 py-2 text-sm font-semibold transition",
                             activeTab === "settings"
-                                ? "border-neutral-300 bg-neutral-900 text-white shadow-sm"
-                                : "border-neutral-200 bg-white text-neutral-900 hover:bg-neutral-50",
+                                ? "border-stone-300 bg-[#1e3a5f] text-white shadow-sm"
+                                : "border-[#E8E4DE] bg-white text-stone-900 hover:bg-stone-50",
                         ].join(" ")}
                     >
                         Settings
@@ -962,19 +1024,19 @@ export default function AdminDashboard() {
                         className={[
                             "shrink-0 rounded-xl border px-4 py-2 text-sm font-semibold transition flex items-center gap-2",
                             activeTab === "reviews"
-                                ? "border-neutral-300 bg-neutral-900 text-white shadow-sm"
-                                : "border-neutral-200 bg-white text-neutral-900 hover:bg-neutral-50",
+                                ? "border-stone-300 bg-[#1e3a5f] text-white shadow-sm"
+                                : "border-[#E8E4DE] bg-white text-stone-900 hover:bg-stone-50",
                         ].join(" ")}
                     >
                         Reviews
                         {reviews.length > 0 && (
-                            <span className={["inline-flex h-5 min-w-5 items-center justify-center rounded-full px-1 text-[11px] font-semibold", activeTab === "reviews" ? "bg-white text-neutral-900" : "bg-neutral-200 text-neutral-700"].join(" ")}>
+                            <span className={["inline-flex h-5 min-w-5 items-center justify-center rounded-full px-1 text-[11px] font-semibold", activeTab === "reviews" ? "bg-white text-stone-900" : "bg-neutral-200 text-stone-600"].join(" ")}>
                                 {reviews.length}
                             </span>
                         )}
                     </button>
 
-                    <div className="hidden md:block ml-auto text-xs text-neutral-500">
+                    <div className="hidden md:block ml-auto text-xs text-stone-400">
                         {activeTab === "products" && `${products.length} products`}
                         {activeTab === "orders" && `${orders.length} orders`}
                         {activeTab === "settings" && "App settings"}
@@ -985,21 +1047,21 @@ export default function AdminDashboard() {
                     {/* Settings Tab */}
                     {activeTab === "settings" && (
                         <div className="max-w-2xl">
-                            <div className="rounded-2xl border border-neutral-200 bg-white p-5">
-                                <div className="text-base font-semibold text-neutral-950">
+                            <div className="rounded-2xl border border-[#E8E4DE] bg-white p-5">
+                                <div className="text-base font-semibold text-stone-900">
                                     Order settings
                                 </div>
-                                <div className="mt-2 text-sm text-neutral-600">
+                                <div className="mt-2 text-sm text-stone-500">
                                     Set the max number of total items allowed per order (dynamic).
                                 </div>
 
                                 <div className="mt-4">
-                                    <div className="text-xs text-neutral-500">Max items per order</div>
+                                    <div className="text-xs text-stone-400">Max items per order</div>
                                     <input
                                         type="number"
                                         value={maxItems}
                                         onChange={(e) => setMaxItems(e.target.value)}
-                                        className="mt-1 w-full rounded-xl border border-neutral-200 bg-white px-4 py-3 text-sm text-neutral-900 focus:ring-2 focus:ring-neutral-300 outline-none"
+                                        className="mt-1 w-full rounded-xl border border-[#E8E4DE] bg-white px-4 py-3 text-sm text-stone-900 focus:ring-2 focus:ring-[#1e3a5f]/20 outline-none"
                                         min={1}
                                     />
                                 </div>
@@ -1012,7 +1074,7 @@ export default function AdminDashboard() {
                                     >
                                         {saving ? "Saving..." : "Save"}
                                     </button>
-                                    {msg && <div className="text-sm text-neutral-700">{msg}</div>}
+                                    {msg && <div className="text-sm text-stone-600">{msg}</div>}
                                 </div>
                             </div>
                         </div>
@@ -1020,16 +1082,16 @@ export default function AdminDashboard() {
 
                     {/* Products Tab */}
                     {activeTab === "products" && (
-                        <div className="rounded-2xl border border-neutral-200 bg-white p-5">
-                            <div className="text-base font-semibold text-neutral-950">Products</div>
+                        <div className="rounded-2xl border border-[#E8E4DE] bg-white p-5">
+                            <div className="text-base font-semibold text-stone-900">Products</div>
 
                             <div className="mt-4">
                                 <div className="flex items-center justify-between gap-3">
                                     <div>
-                                        <div className="text-sm font-semibold text-neutral-900">
+                                        <div className="text-sm font-semibold text-stone-900">
                                             Products
                                         </div>
-                                        <div className="mt-1 text-xs text-neutral-500">
+                                        <div className="mt-1 text-xs text-stone-400">
                                             Create, edit, delete products. Changes reflect immediately in
                                             Shop and Product Detail.
                                         </div>
@@ -1044,7 +1106,7 @@ export default function AdminDashboard() {
                                         <button
                                             type="button"
                                             onClick={openAddProduct}
-                                            className="rounded-xl bg-gradient-to-r from-neutral-200 to-neutral-300 px-4 py-2 text-sm font-semibold text-neutral-900 shadow-sm hover:shadow"
+                                            className="rounded-xl bg-gradient-to-r from-neutral-200 to-neutral-300 px-4 py-2 text-sm font-semibold text-stone-900 shadow-sm hover:shadow"
                                         >
                                             + Add Product
                                         </button>
@@ -1052,13 +1114,13 @@ export default function AdminDashboard() {
                                 </div>
 
                                 {showProductForm && (
-                                    <div className="mt-4 rounded-2xl border border-neutral-200 bg-white p-4">
+                                    <div className="mt-4 rounded-2xl border border-[#E8E4DE] bg-white p-4">
                                         <div className="flex items-start justify-between gap-3">
                                             <div>
-                                                <div className="text-sm font-semibold text-neutral-900">
+                                                <div className="text-sm font-semibold text-stone-900">
                                                     {editingId ? `Edit Product #${editingId}` : "Add New Product"}
                                                 </div>
-                                                <div className="mt-1 text-xs text-neutral-500">
+                                                <div className="mt-1 text-xs text-stone-400">
                                                     Upload 1 main image (jpg/png/webp).
                                                 </div>
                                             </div>
@@ -1069,7 +1131,7 @@ export default function AdminDashboard() {
                                                     resetProductForm();
                                                     setShowProductForm(false);
                                                 }}
-                                                className="rounded-lg border border-neutral-200 px-3 py-1.5 text-xs text-neutral-700 hover:bg-neutral-50"
+                                                className="rounded-lg border border-[#E8E4DE] px-3 py-1.5 text-xs text-stone-600 hover:bg-stone-50"
                                             >
                                                 Close
                                             </button>
@@ -1078,124 +1140,339 @@ export default function AdminDashboard() {
                                         <div className="mt-4 grid gap-3">
                                             <div className="grid gap-3 md:grid-cols-2">
                                                 <div>
-                                                    <div className="text-xs text-neutral-500">Product name *</div>
+                                                    <div className="text-xs text-stone-400">Product name *</div>
                                                     <input
                                                         type="text"
                                                         value={pName}
                                                         onChange={(e) => setPName(e.target.value)}
-                                                        className="mt-1 w-full rounded-xl border border-neutral-200 bg-white px-3 py-2 text-sm text-neutral-900 focus:ring-2 focus:ring-neutral-300 outline-none"
+                                                        className="mt-1 w-full rounded-xl border border-[#E8E4DE] bg-white px-3 py-2 text-sm text-stone-900 focus:ring-2 focus:ring-[#1e3a5f]/20 outline-none"
                                                     />
                                                 </div>
 
                                                 <div>
-                                                    <div className="text-xs text-neutral-500">SKU</div>
+                                                    <div className={`text-xs flex items-center gap-1.5 ${variants.length > 0 ? "text-stone-300" : "text-stone-400"}`}>
+                                                        SKU
+                                                        {variants.length > 0 && (
+                                                            <span className="text-[10px] bg-amber-50 border border-amber-200 text-amber-600 rounded-full px-2 py-0.5">managed by variants</span>
+                                                        )}
+                                                    </div>
                                                     <input
                                                         type="text"
                                                         value={pSku}
                                                         onChange={(e) => setPSku(e.target.value)}
-                                                        placeholder="e.g. CA-MULTI-001"
-                                                        className="mt-1 w-full rounded-xl border border-neutral-200 bg-white px-3 py-2 text-sm text-neutral-900 focus:ring-2 focus:ring-neutral-300 outline-none"
+                                                        placeholder={variants.length > 0 ? "Set per variant ↑" : "e.g. CA-MULTI-001"}
+                                                        disabled={variants.length > 0}
+                                                        className={`mt-1 w-full rounded-xl border px-3 py-2 text-sm outline-none transition-colors ${
+                                                            variants.length > 0
+                                                                ? "border-stone-200 bg-stone-100 text-stone-300 cursor-not-allowed"
+                                                                : "border-[#E8E4DE] bg-white text-stone-900 focus:ring-2 focus:ring-[#1e3a5f]/20"
+                                                        }`}
                                                     />
                                                 </div>
                                             </div>
 
                                             <div className="grid gap-3 md:grid-cols-2">
                                                 <div>
-                                                    <div className="text-xs text-neutral-500">Category</div>
+                                                    <div className="text-xs text-stone-400">Category</div>
                                                     <input
                                                         type="text"
                                                         value={pCategory}
                                                         onChange={(e) => setPCategory(e.target.value)}
-                                                        className="mt-1 w-full rounded-xl border border-neutral-200 bg-white px-3 py-2 text-sm text-neutral-900 focus:ring-2 focus:ring-neutral-300 outline-none"
+                                                        className="mt-1 w-full rounded-xl border border-[#E8E4DE] bg-white px-3 py-2 text-sm text-stone-900 focus:ring-2 focus:ring-[#1e3a5f]/20 outline-none"
                                                     />
                                                 </div>
                                             </div>
 
                                             <div>
-                                                <div className="text-xs text-neutral-500">Product description</div>
+                                                <div className="text-xs text-stone-400">Product description</div>
                                                 <textarea
                                                     value={pDesc}
                                                     onChange={(e) => setPDesc(e.target.value)}
                                                     rows={4}
-                                                    className="mt-1 w-full rounded-xl border border-neutral-200 bg-white px-3 py-2 text-sm text-neutral-900 focus:ring-2 focus:ring-neutral-300 outline-none"
+                                                    className="mt-1 w-full rounded-xl border border-[#E8E4DE] bg-white px-3 py-2 text-sm text-stone-900 focus:ring-2 focus:ring-[#1e3a5f]/20 outline-none"
                                                 />
                                             </div>
 
                                             {/* Rich detail fields */}
-                                            <div className="rounded-xl border border-neutral-200 bg-neutral-50 p-4 space-y-3">
-                                                <div className="text-xs font-semibold text-neutral-700">Product Detail Page — Rich Info</div>
-                                                <div className="text-xs text-neutral-500">These appear in the "About this product" section on the product page.</div>
+                                            <div className="rounded-xl border border-[#E8E4DE] bg-stone-50 p-4 space-y-3">
+                                                <div className="text-xs font-semibold text-stone-600">Product Detail Page — Rich Info</div>
+                                                <div className="text-xs text-stone-400">These appear in the "About this product" section on the product page.</div>
 
                                                 <div>
-                                                    <div className="text-xs text-neutral-500">About text</div>
+                                                    <div className="text-xs text-stone-400">About text</div>
                                                     <textarea
                                                         value={pAboutText}
                                                         onChange={(e) => setPAboutText(e.target.value)}
                                                         rows={3}
                                                         placeholder="Detailed product description shown on the product page…"
-                                                        className="mt-1 w-full rounded-xl border border-neutral-200 bg-white px-3 py-2 text-sm text-neutral-900 focus:ring-2 focus:ring-neutral-300 outline-none"
+                                                        className="mt-1 w-full rounded-xl border border-[#E8E4DE] bg-white px-3 py-2 text-sm text-stone-900 focus:ring-2 focus:ring-[#1e3a5f]/20 outline-none"
                                                     />
                                                 </div>
 
                                                 <div className="grid gap-3 md:grid-cols-3">
                                                     <div>
-                                                        <div className="text-xs text-neutral-500">Best for</div>
+                                                        <div className="text-xs text-stone-400">Best for</div>
                                                         <input
                                                             type="text"
                                                             value={pBestFor}
                                                             onChange={(e) => setPBestFor(e.target.value)}
                                                             placeholder="e.g. Energy • Performance • Daily wellness"
-                                                            className="mt-1 w-full rounded-xl border border-neutral-200 bg-white px-3 py-2 text-sm text-neutral-900 focus:ring-2 focus:ring-neutral-300 outline-none"
+                                                            className="mt-1 w-full rounded-xl border border-[#E8E4DE] bg-white px-3 py-2 text-sm text-stone-900 focus:ring-2 focus:ring-[#1e3a5f]/20 outline-none"
                                                         />
                                                     </div>
                                                     <div>
-                                                        <div className="text-xs text-neutral-500">Pairs well with</div>
+                                                        <div className="text-xs text-stone-400">Pairs well with</div>
                                                         <input
                                                             type="text"
                                                             value={pPairsWellWith}
                                                             onChange={(e) => setPPairsWellWith(e.target.value)}
                                                             placeholder="e.g. Protein • Omega-3 • Electrolytes"
-                                                            className="mt-1 w-full rounded-xl border border-neutral-200 bg-white px-3 py-2 text-sm text-neutral-900 focus:ring-2 focus:ring-neutral-300 outline-none"
+                                                            className="mt-1 w-full rounded-xl border border-[#E8E4DE] bg-white px-3 py-2 text-sm text-stone-900 focus:ring-2 focus:ring-[#1e3a5f]/20 outline-none"
                                                         />
                                                     </div>
                                                     <div>
-                                                        <div className="text-xs text-neutral-500">Recommended stack</div>
+                                                        <div className="text-xs text-stone-400">Recommended stack</div>
                                                         <input
                                                             type="text"
                                                             value={pRecommendedStack}
                                                             onChange={(e) => setPRecommendedStack(e.target.value)}
                                                             placeholder="e.g. AM: Multi • PM: Collagen"
-                                                            className="mt-1 w-full rounded-xl border border-neutral-200 bg-white px-3 py-2 text-sm text-neutral-900 focus:ring-2 focus:ring-neutral-300 outline-none"
+                                                            className="mt-1 w-full rounded-xl border border-[#E8E4DE] bg-white px-3 py-2 text-sm text-stone-900 focus:ring-2 focus:ring-[#1e3a5f]/20 outline-none"
                                                         />
                                                     </div>
                                                 </div>
                                             </div>
 
+                                            {/* Product Card Highlights */}
+                                            <div className="rounded-xl border border-[#E8E4DE] bg-stone-50 p-4 space-y-3">
+                                                <div>
+                                                    <div className="text-xs font-semibold text-stone-600 flex items-center gap-1.5">
+                                                        <svg className="h-3.5 w-3.5 text-[#1e3a5f]" viewBox="0 0 20 20" fill="currentColor"><path fillRule="evenodd" d="M17.707 9.293a1 1 0 010 1.414l-7 7a1 1 0 01-1.414 0l-7-7A.997.997 0 012 10V5a3 3 0 013-3h5c.256 0 .512.098.707.293l7 7zM5 6a1 1 0 100-2 1 1 0 000 2z" clipRule="evenodd"/></svg>
+                                                        Product Card Highlights
+                                                    </div>
+                                                    <div className="text-[11px] text-stone-400 mt-0.5">
+                                                        These small tags appear on the product card (Shop &amp; Home). If empty, defaults to: Clean label · Lab-tested · COD available.
+                                                    </div>
+                                                </div>
+
+                                                {/* Tag chips */}
+                                                {pHighlights.length > 0 && (
+                                                    <div className="flex flex-wrap gap-2">
+                                                        {pHighlights.map((tag, i) => (
+                                                            <span key={i} className="inline-flex items-center gap-1.5 rounded-full border border-[#E8E4DE] bg-white px-3 py-1 text-[11px] font-medium text-stone-700 shadow-sm">
+                                                                {tag}
+                                                                <button
+                                                                    type="button"
+                                                                    onClick={() => setPHighlights(prev => prev.filter((_, j) => j !== i))}
+                                                                    className="text-stone-400 hover:text-red-500 transition-colors leading-none"
+                                                                    title="Remove"
+                                                                >
+                                                                    ✕
+                                                                </button>
+                                                            </span>
+                                                        ))}
+                                                    </div>
+                                                )}
+
+                                                {/* Add tag input */}
+                                                <div className="flex items-center gap-2">
+                                                    <input
+                                                        type="text"
+                                                        value={pHighlightInput}
+                                                        onChange={(e) => setPHighlightInput(e.target.value)}
+                                                        onKeyDown={(e) => {
+                                                            if ((e.key === "Enter" || e.key === ",") && pHighlightInput.trim()) {
+                                                                e.preventDefault();
+                                                                const val = pHighlightInput.trim().replace(/,$/, "");
+                                                                if (val && !pHighlights.includes(val) && pHighlights.length < 6) {
+                                                                    setPHighlights(prev => [...prev, val]);
+                                                                }
+                                                                setPHighlightInput("");
+                                                            }
+                                                        }}
+                                                        placeholder="Type a highlight, press Enter or comma…"
+                                                        className="flex-1 rounded-xl border border-[#E8E4DE] bg-white px-3 py-2 text-sm text-stone-900 placeholder:text-stone-400 focus:ring-2 focus:ring-[#1e3a5f]/10 focus:border-[#1e3a5f] outline-none transition"
+                                                    />
+                                                    <button
+                                                        type="button"
+                                                        onClick={() => {
+                                                            const val = pHighlightInput.trim().replace(/,$/, "");
+                                                            if (val && !pHighlights.includes(val) && pHighlights.length < 6) {
+                                                                setPHighlights(prev => [...prev, val]);
+                                                            }
+                                                            setPHighlightInput("");
+                                                        }}
+                                                        disabled={!pHighlightInput.trim() || pHighlights.length >= 6}
+                                                        className="rounded-xl border border-[#E8E4DE] bg-white px-3 py-2 text-xs font-semibold text-stone-700 hover:bg-stone-50 disabled:opacity-40 transition"
+                                                    >
+                                                        Add
+                                                    </button>
+                                                </div>
+
+                                                {/* Quick presets */}
+                                                <div className="flex flex-wrap gap-1.5 pt-1">
+                                                    <div className="text-[10px] text-stone-400 w-full">Quick add:</div>
+                                                    {["Clean label", "Lab-tested", "COD available", "Sugar-free", "Vegan", "Gluten-free", "Non-GMO", "GMP certified", "No preservatives"].filter(t => !pHighlights.includes(t)).map(preset => (
+                                                        <button
+                                                            key={preset}
+                                                            type="button"
+                                                            onClick={() => {
+                                                                if (pHighlights.length < 6) setPHighlights(prev => [...prev, preset]);
+                                                            }}
+                                                            className="rounded-full border border-dashed border-stone-300 bg-white px-2.5 py-0.5 text-[10px] text-stone-500 hover:border-[#1e3a5f] hover:text-[#1e3a5f] transition"
+                                                        >
+                                                            + {preset}
+                                                        </button>
+                                                    ))}
+                                                </div>
+                                            </div>
+
+                                            {/* ══ VARIANTS ══ */}
+                                            <div className="rounded-xl border border-[#E8E4DE] bg-stone-50 p-4 space-y-4">
+                                                <div>
+                                                    <div className="text-xs font-semibold text-stone-600 flex items-center gap-1.5">
+                                                        <svg className="h-3.5 w-3.5 text-[#1e3a5f]" viewBox="0 0 20 20" fill="currentColor"><path d="M7 3a1 1 0 000 2h6a1 1 0 100-2H7zM4 7a1 1 0 011-1h10a1 1 0 110 2H5a1 1 0 01-1-1zM2 11a2 2 0 012-2h12a2 2 0 012 2v4a2 2 0 01-2 2H4a2 2 0 01-2-2v-4z"/></svg>
+                                                        Product Variants (optional)
+                                                    </div>
+                                                    <div className="text-[11px] text-stone-400 mt-0.5">
+                                                        Add size / packaging options. Each variant has its own price, stock and SKU. If variants are set, customers must pick one before adding to cart.
+                                                    </div>
+                                                </div>
+
+                                                {/* Existing variant rows */}
+                                                {variants.length > 0 && (
+                                                    <div className="space-y-2">
+                                                        {/* Header */}
+                                                        <div className="hidden sm:grid grid-cols-[1fr_100px_80px_90px_32px] gap-2 text-[10px] font-semibold uppercase tracking-wide text-stone-400 px-1">
+                                                            <span>Label</span><span>Price (₹)</span><span>Stock</span><span>SKU</span><span />
+                                                        </div>
+                                                        {variants.map((v, i) => (
+                                                            <div key={v.id || i} className="grid grid-cols-[1fr_100px_80px_90px_32px] gap-2 items-center bg-white rounded-xl border border-[#E8E4DE] px-3 py-2.5">
+                                                                {/* Label */}
+                                                                <input
+                                                                    value={v.label || ""}
+                                                                    onChange={(e) => setVariants(prev => prev.map((x, j) => j === i ? { ...x, label: e.target.value } : x))}
+                                                                    placeholder="e.g. 60 Capsules"
+                                                                    className="w-full rounded-lg border border-[#E8E4DE] bg-stone-50 px-2.5 py-1.5 text-sm text-stone-900 focus:ring-1 focus:ring-[#1e3a5f]/20 focus:border-[#1e3a5f] outline-none"
+                                                                />
+                                                                {/* Price */}
+                                                                <input
+                                                                    type="number"
+                                                                    value={v.price_inr ?? ""}
+                                                                    onChange={(e) => setVariants(prev => prev.map((x, j) => j === i ? { ...x, price_inr: e.target.value } : x))}
+                                                                    placeholder="Price"
+                                                                    min={0}
+                                                                    className="w-full rounded-lg border border-[#E8E4DE] bg-stone-50 px-2.5 py-1.5 text-sm text-stone-900 focus:ring-1 focus:ring-[#1e3a5f]/20 focus:border-[#1e3a5f] outline-none"
+                                                                />
+                                                                {/* Stock */}
+                                                                <input
+                                                                    type="number"
+                                                                    value={v.stock_qty ?? ""}
+                                                                    onChange={(e) => setVariants(prev => prev.map((x, j) => j === i ? { ...x, stock_qty: e.target.value } : x))}
+                                                                    placeholder="Qty"
+                                                                    min={0}
+                                                                    className="w-full rounded-lg border border-[#E8E4DE] bg-stone-50 px-2.5 py-1.5 text-sm text-stone-900 focus:ring-1 focus:ring-[#1e3a5f]/20 focus:border-[#1e3a5f] outline-none"
+                                                                />
+                                                                {/* SKU */}
+                                                                <input
+                                                                    value={v.sku || ""}
+                                                                    onChange={(e) => setVariants(prev => prev.map((x, j) => j === i ? { ...x, sku: e.target.value } : x))}
+                                                                    placeholder="SKU"
+                                                                    className="w-full rounded-lg border border-[#E8E4DE] bg-stone-50 px-2.5 py-1.5 text-sm text-stone-900 focus:ring-1 focus:ring-[#1e3a5f]/20 focus:border-[#1e3a5f] outline-none"
+                                                                />
+                                                                {/* Delete */}
+                                                                <button
+                                                                    type="button"
+                                                                    onClick={async () => {
+                                                                        if (v.id) {
+                                                                            if (!window.confirm("Remove this variant? Customers will no longer see it.")) return;
+                                                                            await supabase.from("product_variants").delete().eq("id", v.id);
+                                                                        }
+                                                                        setVariants(prev => prev.filter((_, j) => j !== i));
+                                                                    }}
+                                                                    className="h-7 w-7 flex items-center justify-center rounded-lg text-stone-300 hover:text-red-500 hover:bg-red-50 transition"
+                                                                    title="Remove variant"
+                                                                >
+                                                                    <svg className="h-3.5 w-3.5" viewBox="0 0 20 20" fill="currentColor"><path fillRule="evenodd" d="M9 2a1 1 0 00-.894.553L7.382 4H4a1 1 0 000 2v10a2 2 0 002 2h8a2 2 0 002-2V6a1 1 0 100-2h-3.382l-.724-1.447A1 1 0 0011 2H9zM7 8a1 1 0 012 0v6a1 1 0 11-2 0V8zm5-1a1 1 0 00-1 1v6a1 1 0 102 0V8a1 1 0 00-1-1z" clipRule="evenodd"/></svg>
+                                                                </button>
+                                                            </div>
+                                                        ))}
+                                                    </div>
+                                                )}
+
+                                                {/* Add variant button */}
+                                                <button
+                                                    type="button"
+                                                    onClick={() => setVariants(prev => [
+                                                        ...prev,
+                                                        { label: "", price_inr: "", stock_qty: "", sku: "", sort_order: prev.length, is_active: true }
+                                                    ])}
+                                                    className="flex items-center gap-2 rounded-xl border-2 border-dashed border-stone-300 px-4 py-2.5 text-sm font-medium text-stone-500 hover:border-[#1e3a5f] hover:text-[#1e3a5f] transition w-full justify-center"
+                                                >
+                                                    <svg className="h-4 w-4" viewBox="0 0 20 20" fill="currentColor"><path fillRule="evenodd" d="M10 3a1 1 0 011 1v5h5a1 1 0 110 2h-5v5a1 1 0 11-2 0v-5H4a1 1 0 110-2h5V4a1 1 0 011-1z" clipRule="evenodd"/></svg>
+                                                    Add variant
+                                                </button>
+
+                                                {variantErr && (
+                                                    <div className="rounded-xl bg-red-50 border border-red-200 px-3 py-2 text-xs text-red-600">{variantErr}</div>
+                                                )}
+
+                                                {variants.length > 0 && (
+                                                    <div className="flex items-center gap-1.5 text-[11px] text-stone-400 bg-white border border-[#E8E4DE] rounded-xl px-3 py-2">
+                                                        <svg className="h-3.5 w-3.5 text-[#1e3a5f] shrink-0" viewBox="0 0 20 20" fill="currentColor"><path fillRule="evenodd" d="M18 10a8 8 0 11-16 0 8 8 0 0116 0zm-7-4a1 1 0 11-2 0 1 1 0 012 0zM9 9a1 1 0 000 2v3a1 1 0 001 1h1a1 1 0 100-2v-3a1 1 0 00-1-1H9z" clipRule="evenodd"/></svg>
+                                                        Variants are saved when you click <strong className="text-stone-600 ml-1">Save product</strong>. The base product price/stock is used as fallback if no variant is selected.
+                                                    </div>
+                                                )}
+                                            </div>
+
+                                            {/* Price / Stock — disabled when variants handle pricing */}
                                             <div className="grid gap-3 md:grid-cols-3">
                                                 <div>
-                                                    <div className="text-xs text-neutral-500">Price (₹) *</div>
+                                                    <div className={`text-xs flex items-center gap-1.5 ${variants.length > 0 ? "text-stone-300" : "text-stone-400"}`}>
+                                                        Price (₹) *
+                                                        {variants.length > 0 && (
+                                                            <span className="text-[10px] bg-amber-50 border border-amber-200 text-amber-600 rounded-full px-2 py-0.5">managed by variants</span>
+                                                        )}
+                                                    </div>
                                                     <input
                                                         type="number"
                                                         value={pPrice}
                                                         onChange={(e) => setPPrice(e.target.value)}
-                                                        className="mt-1 w-full rounded-xl border border-neutral-200 bg-white px-3 py-2 text-sm text-neutral-900 focus:ring-2 focus:ring-neutral-300 outline-none"
+                                                        disabled={variants.length > 0}
+                                                        className={`mt-1 w-full rounded-xl border px-3 py-2 text-sm outline-none transition-colors ${
+                                                            variants.length > 0
+                                                                ? "border-stone-200 bg-stone-100 text-stone-300 cursor-not-allowed"
+                                                                : "border-[#E8E4DE] bg-white text-stone-900 focus:ring-2 focus:ring-[#1e3a5f]/20"
+                                                        }`}
                                                         min={0}
+                                                        placeholder={variants.length > 0 ? "Set per variant ↑" : ""}
                                                     />
                                                 </div>
 
                                                 <div>
-                                                    <div className="text-xs text-neutral-500">Stock qty *</div>
+                                                    <div className={`text-xs flex items-center gap-1.5 ${variants.length > 0 ? "text-stone-300" : "text-stone-400"}`}>
+                                                        Stock qty *
+                                                        {variants.length > 0 && (
+                                                            <span className="text-[10px] bg-amber-50 border border-amber-200 text-amber-600 rounded-full px-2 py-0.5">managed by variants</span>
+                                                        )}
+                                                    </div>
                                                     <input
                                                         type="number"
                                                         value={pStock}
                                                         onChange={(e) => setPStock(e.target.value)}
-                                                        className="mt-1 w-full rounded-xl border border-neutral-200 bg-white px-3 py-2 text-sm text-neutral-900 focus:ring-2 focus:ring-neutral-300 outline-none"
+                                                        disabled={variants.length > 0}
+                                                        className={`mt-1 w-full rounded-xl border px-3 py-2 text-sm outline-none transition-colors ${
+                                                            variants.length > 0
+                                                                ? "border-stone-200 bg-stone-100 text-stone-300 cursor-not-allowed"
+                                                                : "border-[#E8E4DE] bg-white text-stone-900 focus:ring-2 focus:ring-[#1e3a5f]/20"
+                                                        }`}
                                                         min={0}
+                                                        placeholder={variants.length > 0 ? "Set per variant ↑" : ""}
                                                     />
                                                 </div>
 
                                                 <div className="flex items-end gap-3">
-                                                    <label className="flex items-center gap-2 text-sm text-neutral-800 select-none">
+                                                    <label className="flex items-center gap-2 text-sm text-stone-700 select-none">
                                                         <input
                                                             type="checkbox"
                                                             checked={pActive}
@@ -1209,7 +1486,7 @@ export default function AdminDashboard() {
 
                                             <div className="grid gap-3 md:grid-cols-2">
                                                 <div>
-                                                    <div className="text-xs text-neutral-500">Product image</div>
+                                                    <div className="text-xs text-stone-400">Product image</div>
                                                     <input
                                                         ref={fileInputRef}
                                                         type="file"
@@ -1226,21 +1503,21 @@ export default function AdminDashboard() {
                                                             <img
                                                                 src={pImagePreview}
                                                                 alt="Preview"
-                                                                className="h-20 w-20 rounded-xl border border-neutral-200 object-cover shadow-sm"
+                                                                className="h-20 w-20 rounded-xl border border-[#E8E4DE] object-cover shadow-sm"
                                                             />
-                                                            <div className="text-xs text-neutral-500">
+                                                            <div className="text-xs text-stone-400">
                                                                 {pFile ? "New image selected" : "Current image"}
                                                             </div>
                                                         </div>
                                                     )}
                                                     {!pImagePreview && pImageUrl && (
-                                                        <div className="mt-2 text-xs text-neutral-500">
+                                                        <div className="mt-2 text-xs text-stone-400">
                                                             Current image:
                                                             <a
                                                                 href={pImageUrl}
                                                                 target="_blank"
                                                                 rel="noreferrer"
-                                                                className="ml-1 text-neutral-900 hover:underline"
+                                                                className="ml-1 text-stone-900 hover:underline"
                                                             >
                                                                 View
                                                             </a>
@@ -1253,7 +1530,7 @@ export default function AdminDashboard() {
                                                         type="button"
                                                         onClick={saveProduct}
                                                         disabled={savingProduct}
-                                                        className="w-full rounded-xl bg-gradient-to-r from-neutral-200 to-neutral-300 px-4 py-2.5 text-sm font-semibold text-neutral-900 shadow-sm hover:shadow disabled:opacity-60"
+                                                        className="w-full rounded-xl bg-gradient-to-r from-neutral-200 to-neutral-300 px-4 py-2.5 text-sm font-semibold text-stone-900 shadow-sm hover:shadow disabled:opacity-60"
                                                     >
                                                         {savingProduct
                                                             ? "Saving..."
@@ -1266,7 +1543,7 @@ export default function AdminDashboard() {
                                                         <button
                                                             type="button"
                                                             onClick={() => deleteProduct(editingId)}
-                                                            className="rounded-xl border border-neutral-200 px-4 py-2.5 text-sm hover:bg-neutral-50"
+                                                            className="rounded-xl border border-[#E8E4DE] px-4 py-2.5 text-sm hover:bg-stone-50"
                                                         >
                                                             Delete
                                                         </button>
@@ -1275,22 +1552,22 @@ export default function AdminDashboard() {
                                             </div>
 
                                                 {productMsg && (
-                                                <div className="text-sm text-neutral-700">{productMsg}</div>
+                                                <div className="text-sm text-stone-600">{productMsg}</div>
                                             )}
 
                                             {/* ── Extra Images Gallery ── */}
-                                            <div className="rounded-xl border border-neutral-200 bg-neutral-50 p-4 space-y-3">
+                                            <div className="rounded-xl border border-[#E8E4DE] bg-stone-50 p-4 space-y-3">
                                                 <div className="flex items-center justify-between gap-3">
                                                     <div>
-                                                        <div className="text-xs font-semibold text-neutral-700">Additional Images</div>
-                                                        <div className="text-xs text-neutral-500 mt-0.5">
+                                                        <div className="text-xs font-semibold text-stone-600">Additional Images</div>
+                                                        <div className="text-xs text-stone-400 mt-0.5">
                                                             These appear in the product gallery alongside the main image.
                                                         </div>
                                                     </div>
                                                     <button
                                                         type="button"
                                                         onClick={() => extraFileInputRef.current?.click()}
-                                                        className="shrink-0 rounded-xl border border-neutral-300 bg-white px-3 py-2 text-xs font-semibold text-neutral-900 hover:bg-neutral-50 shadow-sm"
+                                                        className="shrink-0 rounded-xl border border-stone-300 bg-white px-3 py-2 text-xs font-semibold text-stone-900 hover:bg-stone-50 shadow-sm"
                                                     >
                                                         + Add Image
                                                     </button>
@@ -1341,13 +1618,13 @@ export default function AdminDashboard() {
                                                 {extraImages.length > 0 ? (
                                                     <div className="space-y-2">
                                                         {extraImages.map((img, i) => (
-                                                            <div key={img.id} className="flex items-center gap-3 rounded-xl border border-neutral-200 bg-white p-2">
+                                                            <div key={img.id} className="flex items-center gap-3 rounded-xl border border-[#E8E4DE] bg-white p-2">
                                                                 <img
                                                                     src={img.image_url}
                                                                     alt=""
-                                                                    className="h-12 w-12 rounded-lg object-cover border border-neutral-200 shrink-0"
+                                                                    className="h-12 w-12 rounded-lg object-cover border border-[#E8E4DE] shrink-0"
                                                                 />
-                                                                <div className="text-xs text-neutral-500 flex-1 truncate">
+                                                                <div className="text-xs text-stone-400 flex-1 truncate">
                                                                     Image {i + 1}
                                                                 </div>
                                                                 <div className="flex items-center gap-1 shrink-0">
@@ -1355,7 +1632,7 @@ export default function AdminDashboard() {
                                                                         type="button"
                                                                         onClick={() => moveExtraImage(img.id, "up")}
                                                                         disabled={i === 0}
-                                                                        className="h-7 w-7 rounded-lg border border-neutral-200 text-xs text-neutral-600 hover:bg-neutral-50 disabled:opacity-30"
+                                                                        className="h-7 w-7 rounded-lg border border-[#E8E4DE] text-xs text-stone-500 hover:bg-stone-50 disabled:opacity-30"
                                                                         title="Move up"
                                                                     >
                                                                         ↑
@@ -1364,7 +1641,7 @@ export default function AdminDashboard() {
                                                                         type="button"
                                                                         onClick={() => moveExtraImage(img.id, "down")}
                                                                         disabled={i === extraImages.length - 1}
-                                                                        className="h-7 w-7 rounded-lg border border-neutral-200 text-xs text-neutral-600 hover:bg-neutral-50 disabled:opacity-30"
+                                                                        className="h-7 w-7 rounded-lg border border-[#E8E4DE] text-xs text-stone-500 hover:bg-stone-50 disabled:opacity-30"
                                                                         title="Move down"
                                                                     >
                                                                         ↓
@@ -1382,7 +1659,7 @@ export default function AdminDashboard() {
                                                         ))}
                                                     </div>
                                                 ) : extraImageFiles.length === 0 && (
-                                                    <div className="text-xs text-neutral-400 text-center py-3">
+                                                    <div className="text-xs text-stone-400 text-center py-3">
                                                         No additional images yet. Click "+ Add Image" to upload.
                                                     </div>
                                                 )}
@@ -1397,18 +1674,18 @@ export default function AdminDashboard() {
                                         value={productSearch}
                                         onChange={(e) => setProductSearch(e.target.value)}
                                         placeholder="Search by name or category…"
-                                        className="w-full sm:w-72 rounded-xl border border-neutral-200 bg-white px-3 py-2 text-sm text-neutral-900 focus:ring-2 focus:ring-neutral-300 outline-none"
+                                        className="w-full sm:w-72 rounded-xl border border-[#E8E4DE] bg-white px-3 py-2 text-sm text-stone-900 focus:ring-2 focus:ring-[#1e3a5f]/20 outline-none"
                                     />
                                     {productSearch && (
                                         <button
                                             type="button"
                                             onClick={() => setProductSearch("")}
-                                            className="text-xs text-neutral-500 hover:text-neutral-900"
+                                            className="text-xs text-stone-400 hover:text-stone-900"
                                         >
                                             Clear
                                         </button>
                                     )}
-                                    <div className="ml-auto text-xs text-neutral-500">
+                                    <div className="ml-auto text-xs text-stone-400">
                                         {filteredProducts.length} of {products.length} products
                                     </div>
                                 </div>
@@ -1416,11 +1693,11 @@ export default function AdminDashboard() {
                                 {/* List */}
                                 <div className="mt-4">
                                     {loadingProducts ? (
-                                        <div className="text-sm text-neutral-500">Loading products...</div>
+                                        <div className="text-sm text-stone-400">Loading products...</div>
                                     ) : productErr ? (
                                         <div className="text-sm text-red-600">{productErr}</div>
                                     ) : products.length === 0 ? (
-                                        <div className="text-sm text-neutral-500">No products yet.</div>
+                                        <div className="text-sm text-stone-400">No products yet.</div>
                                     ) : (
                                         <div className="mt-2">
                                             {/* Mobile cards */}
@@ -1430,10 +1707,10 @@ export default function AdminDashboard() {
                                                     return (
                                                         <div
                                                             key={p.id}
-                                                            className="rounded-2xl border border-neutral-200 bg-white p-4"
+                                                            className="rounded-2xl border border-[#E8E4DE] bg-white p-4"
                                                         >
                                                             <div className="flex items-start gap-3">
-                                                                <div className="h-14 w-14 rounded-xl bg-neutral-100 overflow-hidden shrink-0">
+                                                                <div className="h-14 w-14 rounded-xl bg-stone-100 overflow-hidden shrink-0">
                                                                     {p.image_url ? (
                                                                         <img
                                                                             src={p.image_url}
@@ -1445,62 +1722,75 @@ export default function AdminDashboard() {
                                                                 </div>
 
                                                                 <div className="min-w-0 flex-1">
-                                                                    <div className="font-semibold text-neutral-900 truncate">
+                                                                    <div className="font-semibold text-stone-900 truncate">
                                                                         {p.name}
                                                                     </div>
-                                                                    <div className="mt-0.5 text-xs text-neutral-500 truncate">
+                                                                    <div className="mt-0.5 text-xs text-stone-400 truncate">
                                                                         {p.category || "—"}
                                                                     </div>
 
                                                                     <div className="mt-3 grid grid-cols-2 gap-2 text-xs">
-                                                                        <div className="rounded-xl border border-neutral-200 bg-white px-3 py-2">
+                                                                        <div className="rounded-xl border border-[#E8E4DE] bg-white px-3 py-2">
                                                                             ₹{Number(p.price_inr || 0).toLocaleString("en-IN")}
                                                                         </div>
-                                                                        <div
-                                                                            className={
-                                                                                out
-                                                                                    ? "rounded-xl border border-neutral-200 bg-white px-3 py-2 text-red-600 font-semibold"
-                                                                                    : Number(p.stock_qty || 0) <= LOW_STOCK_THRESHOLD
-                                                                                    ? "rounded-xl border border-amber-200 bg-amber-50 px-3 py-2 text-amber-700 font-semibold"
-                                                                                    : "rounded-xl border border-neutral-200 bg-white px-3 py-2 text-green-600 font-semibold"
-                                                                            }
-                                                                        >
-                                                                            {inlineStockId === p.id ? (
-                                                                                <div className="flex items-center gap-1">
-                                                                                    <input
-                                                                                        type="number"
-                                                                                        value={inlineStockValue}
-                                                                                        onChange={(e) => setInlineStockValue(e.target.value)}
-                                                                                        className="w-14 rounded-lg border border-neutral-300 px-1.5 py-0.5 text-xs text-neutral-900 outline-none"
-                                                                                        min={0}
-                                                                                        autoFocus
-                                                                                    />
-                                                                                    <button type="button" onClick={() => saveInlineStock(p.id)} className="text-[10px] font-semibold text-neutral-900">Save</button>
-                                                                                    <button type="button" onClick={() => { setInlineStockId(null); setInlineStockValue(""); }} className="text-[10px] text-neutral-500">✕</button>
-                                                                                </div>
-                                                                            ) : (
-                                                                                <button type="button" onClick={() => { setInlineStockId(p.id); setInlineStockValue(String(p.stock_qty || 0)); }} className="w-full text-left">
-                                                                                    {out
-                                                                                        ? `Out of stock (0)`
-                                                                                        : Number(p.stock_qty || 0) <= LOW_STOCK_THRESHOLD
-                                                                                        ? `Low stock ⚠️ (${Number(p.stock_qty || 0)})`
-                                                                                        : `In stock (${Number(p.stock_qty || 0)})`} ✏️
-                                                                                </button>
-                                                                            )}
+                                                                        <div className="rounded-xl border border-[#E8E4DE] bg-white px-3 py-2 text-xs">
+                                                                            {(() => {
+                                                                                const activeVariants = (p.product_variants || []).filter(v => v.is_active !== false);
+                                                                                if (activeVariants.length > 0) {
+                                                                                    return (
+                                                                                        <div className="space-y-1">
+                                                                                            {activeVariants.map((v) => {
+                                                                                                const vOut = Number(v.stock_qty || 0) <= 0;
+                                                                                                const vLow = !vOut && Number(v.stock_qty || 0) <= LOW_STOCK_THRESHOLD;
+                                                                                                return (
+                                                                                                    <div key={v.id} className="flex items-center justify-between gap-1">
+                                                                                                        <span className="text-stone-500 truncate">{v.label}</span>
+                                                                                                        <span className={`font-semibold shrink-0 ${vOut ? "text-red-600" : vLow ? "text-amber-600" : "text-emerald-600"}`}>
+                                                                                                            {vOut ? "0" : Number(v.stock_qty || 0)}{vLow && " ⚠️"}
+                                                                                                        </span>
+                                                                                                    </div>
+                                                                                                );
+                                                                                            })}
+                                                                                        </div>
+                                                                                    );
+                                                                                }
+                                                                                return inlineStockId === p.id ? (
+                                                                                    <div className="flex items-center gap-1">
+                                                                                        <input
+                                                                                            type="number"
+                                                                                            value={inlineStockValue}
+                                                                                            onChange={(e) => setInlineStockValue(e.target.value)}
+                                                                                            className="w-14 rounded-lg border border-stone-300 px-1.5 py-0.5 text-xs text-stone-900 outline-none"
+                                                                                            min={0}
+                                                                                            autoFocus
+                                                                                        />
+                                                                                        <button type="button" onClick={() => saveInlineStock(p.id)} className="text-[10px] font-semibold text-stone-900">Save</button>
+                                                                                        <button type="button" onClick={() => { setInlineStockId(null); setInlineStockValue(""); }} className="text-[10px] text-stone-400">✕</button>
+                                                                                    </div>
+                                                                                ) : (
+                                                                                    <button type="button" onClick={() => { setInlineStockId(p.id); setInlineStockValue(String(p.stock_qty || 0)); }} className={`w-full text-left font-semibold ${out ? "text-red-600" : Number(p.stock_qty || 0) <= LOW_STOCK_THRESHOLD ? "text-amber-600" : "text-emerald-600"}`}>
+                                                                                        {out
+                                                                                            ? `Out of stock (0)`
+                                                                                            : Number(p.stock_qty || 0) <= LOW_STOCK_THRESHOLD
+                                                                                            ? `Low stock ⚠️ (${Number(p.stock_qty || 0)})`
+                                                                                            : `In stock (${Number(p.stock_qty || 0)})`} ✏️
+                                                                                    </button>
+                                                                                );
+                                                                            })()}
                                                                         </div>
                                                                     </div>
 
                                                                     <div className="mt-3 flex items-center justify-between gap-2">
-                                                                        <div className="text-xs text-neutral-500">
+                                                                        <div className="text-xs text-stone-400">
                                                                             Active:{" "}
-                                                                            <span className="font-semibold text-neutral-900">
+                                                                            <span className="font-semibold text-stone-900">
                                         {p.is_active ? "Yes" : "No"}
                                       </span>
                                                                         </div>
                                                                         <button
                                                                             type="button"
                                                                             onClick={() => openEditProduct(p)}
-                                                                            className="rounded-xl border border-neutral-200 bg-white px-3 py-2 text-xs font-semibold text-neutral-900 hover:bg-neutral-50"
+                                                                            className="rounded-xl border border-[#E8E4DE] bg-white px-3 py-2 text-xs font-semibold text-stone-900 hover:bg-stone-50"
                                                                         >
                                                                             Edit
                                                                         </button>
@@ -1508,7 +1798,7 @@ export default function AdminDashboard() {
                                                                 </div>
                                                             </div>
 
-                                                            <div className="mt-3 text-[11px] text-neutral-500">
+                                                            <div className="mt-3 text-[11px] text-stone-400">
                                                                 Created:{" "}
                                                                 {p.created_at ? new Date(p.created_at).toLocaleString() : "—"}
                                                             </div>
@@ -1521,7 +1811,7 @@ export default function AdminDashboard() {
                                             <div className="hidden md:block overflow-x-auto">
                                                 <table className="w-full table-fixed text-sm">
                                                     <thead>
-                                                    <tr className="text-left text-neutral-500 border-b">
+                                                    <tr className="text-left text-stone-400 border-b">
                                                         <th className="py-2 pr-4 w-[40%]">Product</th>
                                                         <th className="py-2 pr-4 w-[14%]">Price</th>
                                                         <th className="py-2 pr-4 w-[14%]">Stock</th>
@@ -1538,7 +1828,7 @@ export default function AdminDashboard() {
                                                             <tr key={p.id} className="border-b align-top">
                                                                 <td className="py-2 pr-4">
                                                                     <div className="flex items-center gap-3">
-                                                                        <div className="h-10 w-10 rounded-lg bg-neutral-100 overflow-hidden shrink-0">
+                                                                        <div className="h-10 w-10 rounded-lg bg-stone-100 overflow-hidden shrink-0">
                                                                             {p.image_url ? (
                                                                                 <img
                                                                                     src={p.image_url}
@@ -1549,10 +1839,10 @@ export default function AdminDashboard() {
                                                                             ) : null}
                                                                         </div>
                                                                         <div>
-                                                                            <div className="font-semibold text-neutral-900">
+                                                                            <div className="font-semibold text-stone-900">
                                                                                 {p.name}
                                                                             </div>
-                                                                            <div className="text-xs text-neutral-500">
+                                                                            <div className="text-xs text-stone-400">
                                                                                 {p.category || "—"}
                                                                             </div>
                                                                         </div>
@@ -1564,53 +1854,78 @@ export default function AdminDashboard() {
                                                                 </td>
 
                                                                 <td className="py-2 pr-4">
-                                                                    {inlineStockId === p.id ? (
-                                                                        <div className="flex items-center gap-1">
-                                                                            <input
-                                                                                type="number"
-                                                                                value={inlineStockValue}
-                                                                                onChange={(e) => setInlineStockValue(e.target.value)}
-                                                                                onKeyDown={(e) => {
-                                                                                    if (e.key === "Enter") saveInlineStock(p.id);
-                                                                                    if (e.key === "Escape") { setInlineStockId(null); setInlineStockValue(""); }
-                                                                                }}
-                                                                                className="w-16 rounded-lg border border-neutral-300 px-2 py-1 text-xs focus:ring-2 focus:ring-neutral-300 outline-none"
-                                                                                min={0}
-                                                                                autoFocus
-                                                                            />
+                                                                    {(() => {
+                                                                        const activeVariants = (p.product_variants || []).filter(v => v.is_active !== false);
+                                                                        if (activeVariants.length > 0) {
+                                                                            // Has variants — show per-variant stock, no inline edit
+                                                                            return (
+                                                                                <div className="space-y-1">
+                                                                                    {activeVariants.map((v) => {
+                                                                                        const vOut = Number(v.stock_qty || 0) <= 0;
+                                                                                        const vLow = !vOut && Number(v.stock_qty || 0) <= LOW_STOCK_THRESHOLD;
+                                                                                        return (
+                                                                                            <div key={v.id} className="flex items-center gap-1.5">
+                                                                                                <span className="text-[11px] text-stone-500 truncate max-w-[80px]">{v.label}</span>
+                                                                                                <span className={`text-[11px] font-semibold ${vOut ? "text-red-600" : vLow ? "text-amber-600" : "text-emerald-600"}`}>
+                                                                                                    {vOut ? "0" : Number(v.stock_qty || 0)}
+                                                                                                    {vLow && " ⚠️"}
+                                                                                                </span>
+                                                                                            </div>
+                                                                                        );
+                                                                                    })}
+                                                                                    <div className="text-[10px] text-stone-400 mt-0.5">Edit to update stock</div>
+                                                                                </div>
+                                                                            );
+                                                                        }
+                                                                        // No variants — standard inline edit
+                                                                        return inlineStockId === p.id ? (
+                                                                            <div className="flex items-center gap-1">
+                                                                                <input
+                                                                                    type="number"
+                                                                                    value={inlineStockValue}
+                                                                                    onChange={(e) => setInlineStockValue(e.target.value)}
+                                                                                    onKeyDown={(e) => {
+                                                                                        if (e.key === "Enter") saveInlineStock(p.id);
+                                                                                        if (e.key === "Escape") { setInlineStockId(null); setInlineStockValue(""); }
+                                                                                    }}
+                                                                                    className="w-16 rounded-lg border border-stone-300 px-2 py-1 text-xs focus:ring-2 focus:ring-[#1e3a5f]/20 outline-none"
+                                                                                    min={0}
+                                                                                    autoFocus
+                                                                                />
+                                                                                <button
+                                                                                    type="button"
+                                                                                    onClick={() => saveInlineStock(p.id)}
+                                                                                    disabled={savingInlineStock}
+                                                                                    className="rounded-lg bg-[#1e3a5f] px-2 py-1 text-[10px] font-semibold text-white hover:bg-[#162d4a] disabled:opacity-50"
+                                                                                >
+                                                                                    {savingInlineStock ? "…" : "Save"}
+                                                                                </button>
+                                                                                <button
+                                                                                    type="button"
+                                                                                    onClick={() => { setInlineStockId(null); setInlineStockValue(""); }}
+                                                                                    className="rounded-lg border border-[#E8E4DE] px-2 py-1 text-[10px] text-stone-500 hover:bg-stone-50"
+                                                                                >
+                                                                                    ✕
+                                                                                </button>
+                                                                            </div>
+                                                                        ) : (
                                                                             <button
                                                                                 type="button"
-                                                                                onClick={() => saveInlineStock(p.id)}
-                                                                                disabled={savingInlineStock}
-                                                                                className="rounded-lg bg-neutral-900 px-2 py-1 text-[10px] font-semibold text-white hover:bg-neutral-700 disabled:opacity-50"
+                                                                                onClick={() => { setInlineStockId(p.id); setInlineStockValue(String(p.stock_qty || 0)); }}
+                                                                                className="group flex items-center gap-1.5 rounded-lg px-2 py-1 hover:bg-stone-100 transition"
+                                                                                title="Click to edit stock"
                                                                             >
-                                                                                {savingInlineStock ? "…" : "Save"}
+                                                                                <span className={out ? "text-red-600 font-semibold" : "text-green-600 font-semibold"}>
+                                                                                    {out ? "Out of stock" : "In stock"}
+                                                                                </span>
+                                                                                <span className="text-xs text-stone-400">({Number(p.stock_qty || 0)})</span>
+                                                                                {!out && Number(p.stock_qty || 0) <= LOW_STOCK_THRESHOLD && (
+                                                                                    <span className="inline-flex items-center rounded-full bg-amber-100 px-2 py-0.5 text-[10px] font-semibold text-amber-700">Low ⚠️</span>
+                                                                                )}
+                                                                                <span className="hidden group-hover:inline text-[10px] text-stone-400 ml-1">✏️</span>
                                                                             </button>
-                                                                            <button
-                                                                                type="button"
-                                                                                onClick={() => { setInlineStockId(null); setInlineStockValue(""); }}
-                                                                                className="rounded-lg border border-neutral-200 px-2 py-1 text-[10px] text-neutral-600 hover:bg-neutral-50"
-                                                                            >
-                                                                                ✕
-                                                                            </button>
-                                                                        </div>
-                                                                    ) : (
-                                                                        <button
-                                                                            type="button"
-                                                                            onClick={() => { setInlineStockId(p.id); setInlineStockValue(String(p.stock_qty || 0)); }}
-                                                                            className="group flex items-center gap-1.5 rounded-lg px-2 py-1 hover:bg-neutral-100 transition"
-                                                                            title="Click to edit stock"
-                                                                        >
-                                                                            <span className={out ? "text-red-600 font-semibold" : "text-green-600 font-semibold"}>
-                                                                                {out ? "Out of stock" : "In stock"}
-                                                                            </span>
-                                                                            <span className="text-xs text-neutral-500">({Number(p.stock_qty || 0)})</span>
-                                                                            {!out && Number(p.stock_qty || 0) <= LOW_STOCK_THRESHOLD && (
-                                                                                <span className="inline-flex items-center rounded-full bg-amber-100 px-2 py-0.5 text-[10px] font-semibold text-amber-700">Low ⚠️</span>
-                                                                            )}
-                                                                            <span className="hidden group-hover:inline text-[10px] text-neutral-400 ml-1">✏️</span>
-                                                                        </button>
-                                                                    )}
+                                                                        );
+                                                                    })()}
                                                                 </td>
 
                                                                 <td className="py-2 pr-4">
@@ -1618,14 +1933,14 @@ export default function AdminDashboard() {
                                         className={
                                             p.is_active
                                                 ? "text-green-600 font-semibold"
-                                                : "text-neutral-500 font-semibold"
+                                                : "text-stone-400 font-semibold"
                                         }
                                     >
                                       {p.is_active ? "Yes" : "No"}
                                     </span>
                                                                 </td>
 
-                                                                <td className="py-2 pr-4 text-xs text-neutral-500">
+                                                                <td className="py-2 pr-4 text-xs text-stone-400">
                                                                     {p.created_at
                                                                         ? new Date(p.created_at).toLocaleString()
                                                                         : "—"}
@@ -1635,7 +1950,7 @@ export default function AdminDashboard() {
                                                                     <button
                                                                         type="button"
                                                                         onClick={() => openEditProduct(p)}
-                                                                        className="rounded-lg border border-neutral-200 px-3 py-1.5 text-xs hover:bg-neutral-50"
+                                                                        className="rounded-lg border border-[#E8E4DE] px-3 py-1.5 text-xs hover:bg-stone-50"
                                                                     >
                                                                         Edit
                                                                     </button>
@@ -1655,34 +1970,34 @@ export default function AdminDashboard() {
 
                     {/* Orders Tab */}
                     {activeTab === "orders" && (
-                        <div className="rounded-2xl border border-neutral-200 bg-white p-5">
-                            <div className="text-base font-semibold text-neutral-950">Orders</div>
+                        <div className="rounded-2xl border border-[#E8E4DE] bg-white p-5">
+                            <div className="text-base font-semibold text-stone-900">Orders</div>
 
                             <div className="mt-4">
-                                <div className="text-sm font-semibold text-neutral-900">
+                                <div className="text-sm font-semibold text-stone-900">
                                     Orders Management
                                 </div>
 
                                 {/* Filter Bar */}
                                 <div className="mt-3 grid gap-3 md:grid-cols-4">
                                     <div>
-                                        <div className="text-xs text-neutral-500">
+                                        <div className="text-xs text-stone-400">
                                             Search (Order ID / User)
                                         </div>
                                         <input
                                             value={orderSearch}
                                             onChange={(e) => setOrderSearch(e.target.value)}
                                             placeholder="Search by order id, user id, name, or email..."
-                                            className="mt-1 w-full rounded-xl border border-neutral-200 bg-white px-3 py-2 text-sm text-neutral-900 focus:ring-2 focus:ring-neutral-300 outline-none"
+                                            className="mt-1 w-full rounded-xl border border-[#E8E4DE] bg-white px-3 py-2 text-sm text-stone-900 focus:ring-2 focus:ring-[#1e3a5f]/20 outline-none"
                                         />
                                     </div>
 
                                     <div>
-                                        <div className="text-xs text-neutral-500">Status</div>
+                                        <div className="text-xs text-stone-400">Status</div>
                                         <select
                                             value={orderStatusFilter}
                                             onChange={(e) => setOrderStatusFilter(e.target.value)}
-                                            className="mt-1 w-full rounded-xl border border-neutral-200 bg-white px-3 py-2 text-sm text-neutral-900 focus:ring-2 focus:ring-neutral-300 outline-none"
+                                            className="mt-1 w-full rounded-xl border border-[#E8E4DE] bg-white px-3 py-2 text-sm text-stone-900 focus:ring-2 focus:ring-[#1e3a5f]/20 outline-none"
                                         >
                                             <option value="All">All</option>
                                             <option value="placed">Placed</option>
@@ -1694,33 +2009,33 @@ export default function AdminDashboard() {
                                     </div>
 
                                     <div>
-                                        <div className="text-xs text-neutral-500">From</div>
+                                        <div className="text-xs text-stone-400">From</div>
                                         <input
                                             type="date"
                                             value={orderDateFrom}
                                             onChange={(e) => setOrderDateFrom(e.target.value)}
-                                            className="mt-1 w-full rounded-xl border border-neutral-200 bg-white px-3 py-2 text-sm text-neutral-900 focus:ring-2 focus:ring-neutral-300 outline-none"
+                                            className="mt-1 w-full rounded-xl border border-[#E8E4DE] bg-white px-3 py-2 text-sm text-stone-900 focus:ring-2 focus:ring-[#1e3a5f]/20 outline-none"
                                         />
                                     </div>
 
                                     <div>
-                                        <div className="text-xs text-neutral-500">To</div>
+                                        <div className="text-xs text-stone-400">To</div>
                                         <input
                                             type="date"
                                             value={orderDateTo}
                                             onChange={(e) => setOrderDateTo(e.target.value)}
-                                            className="mt-1 w-full rounded-xl border border-neutral-200 bg-white px-3 py-2 text-sm text-neutral-900 focus:ring-2 focus:ring-neutral-300 outline-none"
+                                            className="mt-1 w-full rounded-xl border border-[#E8E4DE] bg-white px-3 py-2 text-sm text-stone-900 focus:ring-2 focus:ring-[#1e3a5f]/20 outline-none"
                                         />
                                     </div>
                                 </div>
 
                                 <div className="mt-3 flex flex-wrap items-center justify-between gap-2">
-                                    <div className="text-xs text-neutral-500">
+                                    <div className="text-xs text-stone-400">
                                         Showing{" "}
-                                        <span className="font-semibold text-neutral-900">{filteredOrders.length}</span>{" "}
+                                        <span className="font-semibold text-stone-900">{filteredOrders.length}</span>{" "}
                                         of {orders.length}
                                         {selectedOrderIds.size > 0 && (
-                                            <span className="ml-2 font-semibold text-neutral-900">
+                                            <span className="ml-2 font-semibold text-stone-900">
                                                 • {selectedOrderIds.size} selected
                                             </span>
                                         )}
@@ -1736,7 +2051,7 @@ export default function AdminDashboard() {
                                                 <select
                                                     value={bulkStatus}
                                                     onChange={(e) => setBulkStatus(e.target.value)}
-                                                    className="rounded-lg border border-blue-200 bg-white px-2 py-1 text-xs text-neutral-900 outline-none"
+                                                    className="rounded-lg border border-blue-200 bg-white px-2 py-1 text-xs text-stone-900 outline-none"
                                                 >
                                                     <option value="">Set status…</option>
                                                     {STATUS_OPTIONS.map((s) => (
@@ -1766,11 +2081,11 @@ export default function AdminDashboard() {
                                             type="button"
                                             onClick={exportOrdersCSV}
                                             disabled={filteredOrders.length === 0}
-                                            className="rounded-xl border border-neutral-200 bg-white px-3 py-2 text-xs font-semibold text-neutral-900 hover:bg-neutral-50 disabled:opacity-40 flex items-center gap-1.5"
+                                            className="rounded-xl border border-[#E8E4DE] bg-white px-3 py-2 text-xs font-semibold text-stone-900 hover:bg-stone-50 disabled:opacity-40 flex items-center gap-1.5"
                                         >
                                             ↓ Export CSV
                                             {filteredOrders.length > 0 && (
-                                                <span className="text-neutral-500">({filteredOrders.length})</span>
+                                                <span className="text-stone-400">({filteredOrders.length})</span>
                                             )}
                                         </button>
 
@@ -1784,7 +2099,7 @@ export default function AdminDashboard() {
                                                 setSelectedOrderIds(new Set());
                                                 setBulkStatus("");
                                             }}
-                                            className="rounded-xl border border-neutral-200 bg-white px-3 py-2 text-xs font-semibold text-neutral-900 hover:bg-neutral-50"
+                                            className="rounded-xl border border-[#E8E4DE] bg-white px-3 py-2 text-xs font-semibold text-stone-900 hover:bg-stone-50"
                                         >
                                             Clear filters
                                         </button>
@@ -1794,9 +2109,9 @@ export default function AdminDashboard() {
                                 {orderErr && <div className="mt-3 text-sm text-red-600">{orderErr}</div>}
 
                                 {loadingOrders ? (
-                                    <div className="mt-4 text-sm text-neutral-500">Loading orders...</div>
+                                    <div className="mt-4 text-sm text-stone-400">Loading orders...</div>
                                 ) : filteredOrders.length === 0 ? (
-                                    <div className="mt-4 text-sm text-neutral-500">No orders yet.</div>
+                                    <div className="mt-4 text-sm text-stone-400">No orders yet.</div>
                                 ) : (
                                     <div className="mt-3">
                                         {/* Mobile cards */}
@@ -1828,7 +2143,7 @@ export default function AdminDashboard() {
                                                 const isOpen = expandedOrderIds.has(o.id);
 
                                                 return (
-                                                    <div key={o.id} className={["rounded-2xl border p-4", selectedOrderIds.has(o.id) ? "border-blue-300 bg-blue-50/50" : "border-neutral-200 bg-white"].join(" ")}>
+                                                    <div key={o.id} className={["rounded-2xl border p-4", selectedOrderIds.has(o.id) ? "border-blue-300 bg-blue-50/50" : "border-[#E8E4DE] bg-white"].join(" ")}>
                                                         <div className="flex items-start justify-between gap-3">
                                                             <div className="flex items-start gap-2 min-w-0">
                                                                 <input
@@ -1838,9 +2153,9 @@ export default function AdminDashboard() {
                                                                     className="mt-0.5 h-4 w-4 rounded shrink-0"
                                                                 />
                                                                 <div className="min-w-0">
-                                                                    <div className="text-sm font-semibold text-neutral-900">#{o.id}</div>
-                                                                    <div className="mt-1 text-xs text-neutral-600 truncate">{customerLine}</div>
-                                                                    <div className="mt-2 text-sm font-semibold text-neutral-900">
+                                                                    <div className="text-sm font-semibold text-stone-900">#{o.id}</div>
+                                                                    <div className="mt-1 text-xs text-stone-500 truncate">{customerLine}</div>
+                                                                    <div className="mt-2 text-sm font-semibold text-stone-900">
                                                                         ₹{Number(o.computed_total_inr ?? 0).toLocaleString("en-IN")}
                                                                     </div>
                                                                 </div>
@@ -1848,7 +2163,7 @@ export default function AdminDashboard() {
 
                                                             <div className="shrink-0 flex flex-col items-end gap-2">
                                                                 <span className={badge}>{st || "—"}</span>
-                                                                <div className="text-[11px] text-neutral-500">
+                                                                <div className="text-[11px] text-stone-400">
                                                                     {o.created_at ? new Date(o.created_at).toLocaleString() : "—"}
                                                                 </div>
                                                             </div>
@@ -1858,7 +2173,7 @@ export default function AdminDashboard() {
                                                             <select
                                                                 value={st}
                                                                 onChange={(e) => updateOrderStatus(o.id, e.target.value)}
-                                                                className="w-full rounded-xl border border-neutral-200 bg-white px-3 py-2 text-xs"
+                                                                className="w-full rounded-xl border border-[#E8E4DE] bg-white px-3 py-2 text-xs"
                                                             >
                                                                 <option value="placed">Placed</option>
                                                                 <option value="processing">Processing</option>
@@ -1870,33 +2185,33 @@ export default function AdminDashboard() {
                                                             <button
                                                                 type="button"
                                                                 onClick={() => toggleOrderExpanded(o.id)}
-                                                                className="w-full rounded-xl border border-neutral-200 bg-white px-3 py-2 text-xs font-semibold text-neutral-900 hover:bg-neutral-50"
+                                                                className="w-full rounded-xl border border-[#E8E4DE] bg-white px-3 py-2 text-xs font-semibold text-stone-900 hover:bg-stone-50"
                                                             >
                                                                 {isOpen ? "Hide details" : "View details"}
                                                             </button>
                                                         </div>
 
                                                         {isOpen && (
-                                                            <div className="mt-3 rounded-2xl border border-neutral-200 bg-neutral-50/50 p-3">
+                                                            <div className="mt-3 rounded-2xl border border-[#E8E4DE] bg-stone-50/50 p-3">
                                                                 <div className="grid gap-3">
-                                                                    <div className="rounded-xl border border-neutral-200 bg-white p-3">
-                                                                        <div className="text-xs font-semibold text-neutral-500">Customer</div>
-                                                                        <div className="mt-2 text-sm text-neutral-900">
+                                                                    <div className="rounded-xl border border-[#E8E4DE] bg-white p-3">
+                                                                        <div className="text-xs font-semibold text-stone-400">Customer</div>
+                                                                        <div className="mt-2 text-sm text-stone-900">
                                                                             <div className="font-semibold">
                                                                                 {o.shipping_name || o.user_full_name || "(No name)"}
                                                                             </div>
-                                                                            <div className="mt-1 text-xs text-neutral-600">
+                                                                            <div className="mt-1 text-xs text-stone-500">
                                                                                 Email: {o.user_email || "(No email)"}
                                                                             </div>
-                                                                            <div className="mt-1 text-xs text-neutral-600">
+                                                                            <div className="mt-1 text-xs text-stone-500">
                                                                                 Phone: {o.shipping_phone || "(No phone)"}
                                                                             </div>
                                                                         </div>
                                                                     </div>
 
-                                                                    <div className="rounded-xl border border-neutral-200 bg-white p-3">
-                                                                        <div className="text-xs font-semibold text-neutral-500">Shipping Address</div>
-                                                                        <div className="mt-2 text-xs text-neutral-700 leading-relaxed">
+                                                                    <div className="rounded-xl border border-[#E8E4DE] bg-white p-3">
+                                                                        <div className="text-xs font-semibold text-stone-400">Shipping Address</div>
+                                                                        <div className="mt-2 text-xs text-stone-600 leading-relaxed">
                                                                             {[
                                                                                 o.shipping_address_1,
                                                                                 o.shipping_address_2,
@@ -1911,11 +2226,11 @@ export default function AdminDashboard() {
                                                                         </div>
                                                                     </div>
 
-                                                                    <div className="rounded-xl border border-neutral-200 bg-white p-3">
-                                                                        <div className="text-xs font-semibold text-neutral-500">Items</div>
+                                                                    <div className="rounded-xl border border-[#E8E4DE] bg-white p-3">
+                                                                        <div className="text-xs font-semibold text-stone-400">Items</div>
                                                                         <div className="mt-2 space-y-2">
                                                                             {(o.order_items_detailed || []).length === 0 ? (
-                                                                                <div className="text-xs text-neutral-600">
+                                                                                <div className="text-xs text-stone-500">
                                                                                     No items found for this order.
                                                                                 </div>
                                                                             ) : (
@@ -1925,23 +2240,29 @@ export default function AdminDashboard() {
                                                                                         className="flex items-start justify-between gap-3 text-xs"
                                                                                     >
                                                                                         <div className="min-w-0">
-                                                                                            <div className="font-semibold text-neutral-900 truncate">
+                                                                                            <div className="font-semibold text-stone-900 truncate">
                                                                                                 {it.product_name || `Product #${it.product_id}`}
                                                                                             </div>
-                                                                                            <div className="text-neutral-600">
+                                                                                            {it.variant_label && (
+                                                                                                <span className="inline-flex items-center gap-1 mt-1 rounded-full bg-[#EFF6FF] border border-[#1e3a5f]/15 px-2 py-0.5 text-[10px] font-medium text-[#1e3a5f]">
+                                                                                                    <svg className="h-2.5 w-2.5 shrink-0" viewBox="0 0 20 20" fill="currentColor"><path d="M7 3a1 1 0 000 2h6a1 1 0 100-2H7zM4 7a1 1 0 011-1h10a1 1 0 110 2H5a1 1 0 01-1-1zM2 11a2 2 0 012-2h12a2 2 0 012 2v4a2 2 0 01-2 2H4a2 2 0 01-2-2v-4z"/></svg>
+                                                                                                    {it.variant_label}
+                                                                                                </span>
+                                                                                            )}
+                                                                                            <div className="text-stone-500 mt-0.5">
                                                                                                 Qty: {Number(it.qty_num || 0)}
                                                                                             </div>
                                                                                         </div>
-                                                                                        <div className="shrink-0 text-neutral-900 font-semibold">
+                                                                                        <div className="shrink-0 text-stone-900 font-semibold">
                                                                                             ₹{Number(it.line_total_num || 0).toLocaleString("en-IN")}
                                                                                         </div>
                                                                                     </div>
                                                                                 ))
                                                                             )}
 
-                                                                            <div className="pt-2 mt-2 border-t border-neutral-200 flex items-center justify-between text-xs">
-                                                                                <div className="text-neutral-600">Order Total</div>
-                                                                                <div className="font-semibold text-neutral-900">
+                                                                            <div className="pt-2 mt-2 border-t border-[#E8E4DE] flex items-center justify-between text-xs">
+                                                                                <div className="text-stone-500">Order Total</div>
+                                                                                <div className="font-semibold text-stone-900">
                                                                                     ₹{Number(o.computed_total_inr ?? 0).toLocaleString("en-IN")}
                                                                                 </div>
                                                                             </div>
@@ -1959,7 +2280,7 @@ export default function AdminDashboard() {
                                         <div className="hidden md:block overflow-x-auto">
                                             <table className="w-full table-fixed text-sm">
                                                 <thead>
-                                                <tr className="text-left text-neutral-500 border-b">
+                                                <tr className="text-left text-stone-400 border-b">
                                                     <th className="py-2 pr-2 w-[4%]">
                                                         <input
                                                             type="checkbox"
@@ -2013,11 +2334,11 @@ export default function AdminDashboard() {
                                                                         className="h-4 w-4 rounded"
                                                                     />
                                                                 </td>
-                                                                <td className="py-2 pr-4 text-xs font-semibold text-neutral-900 break-all">
+                                                                <td className="py-2 pr-4 text-xs font-semibold text-stone-900 break-all">
                                                                     #{o.id}
                                                                 </td>
 
-                                                                <td className="py-2 pr-4 text-xs text-neutral-600 break-all">
+                                                                <td className="py-2 pr-4 text-xs text-stone-500 break-all">
                                                                     {customerCell}
                                                                 </td>
 
@@ -2029,7 +2350,7 @@ export default function AdminDashboard() {
                                                                     <span className={badge}>{st || "—"}</span>
                                                                 </td>
 
-                                                                <td className="py-2 pr-4 text-xs text-neutral-500">
+                                                                <td className="py-2 pr-4 text-xs text-stone-400">
                                                                     {o.created_at ? new Date(o.created_at).toLocaleString() : "—"}
                                                                 </td>
 
@@ -2038,7 +2359,7 @@ export default function AdminDashboard() {
                                                                         <select
                                                                             value={st}
                                                                             onChange={(e) => updateOrderStatus(o.id, e.target.value)}
-                                                                            className="w-full rounded-lg border border-neutral-200 bg-white px-2 py-1.5 text-xs"
+                                                                            className="w-full rounded-lg border border-[#E8E4DE] bg-white px-2 py-1.5 text-xs"
                                                                         >
                                                                             <option value="placed">Placed</option>
                                                                             <option value="processing">Processing</option>
@@ -2050,7 +2371,7 @@ export default function AdminDashboard() {
                                                                         <button
                                                                             type="button"
                                                                             onClick={() => toggleOrderExpanded(o.id)}
-                                                                            className="w-full rounded-lg border border-neutral-200 bg-white px-2 py-1.5 text-xs font-semibold text-neutral-900 hover:bg-neutral-50"
+                                                                            className="w-full rounded-lg border border-[#E8E4DE] bg-white px-2 py-1.5 text-xs font-semibold text-stone-900 hover:bg-stone-50"
                                                                         >
                                                                             {expandedOrderIds.has(o.id) ? "Hide details" : "View details"}
                                                                         </button>
@@ -2059,30 +2380,30 @@ export default function AdminDashboard() {
                                                             </tr>
 
                                                             {expandedOrderIds.has(o.id) && (
-                                                                <tr className="border-b bg-neutral-50/50">
+                                                                <tr className="border-b bg-stone-50/50">
                                                                     <td colSpan={6} className="py-3 px-2">
                                                                         <div className="grid gap-4 md:grid-cols-3">
                                                                             {/* Customer */}
-                                                                            <div className="rounded-xl border border-neutral-200 bg-white p-4">
-                                                                                <div className="text-xs font-semibold text-neutral-500">Customer</div>
-                                                                                <div className="mt-2 text-sm text-neutral-900">
+                                                                            <div className="rounded-xl border border-[#E8E4DE] bg-white p-4">
+                                                                                <div className="text-xs font-semibold text-stone-400">Customer</div>
+                                                                                <div className="mt-2 text-sm text-stone-900">
                                                                                     <div className="font-semibold">
                                                                                         {o.shipping_name || o.user_full_name || "(No name)"}
                                                                                     </div>
-                                                                                    <div className="mt-1 text-xs text-neutral-600">
+                                                                                    <div className="mt-1 text-xs text-stone-500">
                                                                                         Email: {o.user_email || "(No email)"}
                                                                                     </div>
-                                                                                    <div className="mt-1 text-xs text-neutral-600">
+                                                                                    <div className="mt-1 text-xs text-stone-500">
                                                                                         Phone: {o.shipping_phone || "(No phone)"}
                                                                                     </div>
                                                                                 </div>
                                                                             </div>
 
                                                                             {/* Address */}
-                                                                            <div className="rounded-xl border border-neutral-200 bg-white p-4">
-                                                                                <div className="text-xs font-semibold text-neutral-500">Shipping Address</div>
-                                                                                <div className="mt-2 text-sm text-neutral-900">
-                                                                                    <div className="text-xs text-neutral-700 leading-relaxed">
+                                                                            <div className="rounded-xl border border-[#E8E4DE] bg-white p-4">
+                                                                                <div className="text-xs font-semibold text-stone-400">Shipping Address</div>
+                                                                                <div className="mt-2 text-sm text-stone-900">
+                                                                                    <div className="text-xs text-stone-600 leading-relaxed">
                                                                                         {[
                                                                                             o.shipping_address_1,
                                                                                             o.shipping_address_2,
@@ -2099,11 +2420,11 @@ export default function AdminDashboard() {
                                                                             </div>
 
                                                                             {/* Items */}
-                                                                            <div className="rounded-xl border border-neutral-200 bg-white p-4">
-                                                                                <div className="text-xs font-semibold text-neutral-500">Items</div>
+                                                                            <div className="rounded-xl border border-[#E8E4DE] bg-white p-4">
+                                                                                <div className="text-xs font-semibold text-stone-400">Items</div>
                                                                                 <div className="mt-2 space-y-2">
                                                                                     {(o.order_items_detailed || []).length === 0 ? (
-                                                                                        <div className="text-xs text-neutral-600">
+                                                                                        <div className="text-xs text-stone-500">
                                                                                             No items found for this order.
                                                                                         </div>
                                                                                     ) : (
@@ -2112,24 +2433,30 @@ export default function AdminDashboard() {
                                                                                                 key={it.product_id || idx}
                                                                                                 className="flex items-start justify-between gap-3 text-xs"
                                                                                             >
-                                                                                                <div className="min-w-0">
-                                                                                                    <div className="font-semibold text-neutral-900 truncate">
-                                                                                                        {it.product_name || `Product #${it.product_id}`}
-                                                                                                    </div>
-                                                                                                    <div className="text-neutral-600">
-                                                                                                        Qty: {Number(it.qty_num || 0)}
-                                                                                                    </div>
-                                                                                                </div>
-                                                                                                <div className="shrink-0 text-neutral-900 font-semibold">
+                                                                                <div className="min-w-0">
+                                                                                    <div className="font-semibold text-stone-900 truncate">
+                                                                                        {it.product_name || `Product #${it.product_id}`}
+                                                                                    </div>
+                                                                                    {it.variant_label && (
+                                                                                        <span className="inline-flex items-center gap-1 mt-1 rounded-full bg-[#EFF6FF] border border-[#1e3a5f]/15 px-2 py-0.5 text-[10px] font-medium text-[#1e3a5f]">
+                                                                                            <svg className="h-2.5 w-2.5 shrink-0" viewBox="0 0 20 20" fill="currentColor"><path d="M7 3a1 1 0 000 2h6a1 1 0 100-2H7zM4 7a1 1 0 011-1h10a1 1 0 110 2H5a1 1 0 01-1-1zM2 11a2 2 0 012-2h12a2 2 0 012 2v4a2 2 0 01-2 2H4a2 2 0 01-2-2v-4z"/></svg>
+                                                                                            {it.variant_label}
+                                                                                        </span>
+                                                                                    )}
+                                                                                    <div className="text-stone-500 mt-0.5">
+                                                                                        Qty: {Number(it.qty_num || 0)}
+                                                                                    </div>
+                                                                                </div>
+                                                                                                <div className="shrink-0 text-stone-900 font-semibold">
                                                                                                     ₹{Number(it.line_total_num || 0).toLocaleString("en-IN")}
                                                                                                 </div>
                                                                                             </div>
                                                                                         ))
                                                                                     )}
 
-                                                                                    <div className="pt-2 mt-2 border-t border-neutral-200 flex items-center justify-between text-xs">
-                                                                                        <div className="text-neutral-600">Order Total</div>
-                                                                                        <div className="font-semibold text-neutral-900">
+                                                                                    <div className="pt-2 mt-2 border-t border-[#E8E4DE] flex items-center justify-between text-xs">
+                                                                                        <div className="text-stone-500">Order Total</div>
+                                                                                        <div className="font-semibold text-stone-900">
                                                                                             ₹{Number(o.computed_total_inr ?? 0).toLocaleString("en-IN")}
                                                                                         </div>
                                                                                     </div>
@@ -2152,30 +2479,30 @@ export default function AdminDashboard() {
                     )}
                     {/* Reviews Tab */}
                     {activeTab === "reviews" && (
-                        <div className="rounded-2xl border border-neutral-200 bg-white p-5">
-                            <div className="text-base font-semibold text-neutral-950">Customer Reviews</div>
-                            <div className="mt-1 text-xs text-neutral-500">View and moderate customer reviews. You can delete bogus reviews but cannot modify them.</div>
+                        <div className="rounded-2xl border border-[#E8E4DE] bg-white p-5">
+                            <div className="text-base font-semibold text-stone-900">Customer Reviews</div>
+                            <div className="mt-1 text-xs text-stone-400">View and moderate customer reviews. You can delete bogus reviews but cannot modify them.</div>
 
                             <div className="mt-4 flex items-center gap-3">
                                 <input
                                     value={reviewSearch}
                                     onChange={(e) => setReviewSearch(e.target.value)}
                                     placeholder="Search by product, customer, or review text…"
-                                    className="w-full sm:w-80 rounded-xl border border-neutral-200 bg-white px-3 py-2 text-sm text-neutral-900 focus:ring-2 focus:ring-neutral-300 outline-none"
+                                    className="w-full sm:w-80 rounded-xl border border-[#E8E4DE] bg-white px-3 py-2 text-sm text-stone-900 focus:ring-2 focus:ring-[#1e3a5f]/20 outline-none"
                                 />
                                 {reviewSearch && (
-                                    <button type="button" onClick={() => setReviewSearch("")} className="text-xs text-neutral-500 hover:text-neutral-900">Clear</button>
+                                    <button type="button" onClick={() => setReviewSearch("")} className="text-xs text-stone-400 hover:text-stone-900">Clear</button>
                                 )}
-                                <div className="ml-auto text-xs text-neutral-500">{filteredReviews.length} of {reviews.length} reviews</div>
-                                <button type="button" onClick={loadReviews} className="rounded-xl border border-neutral-200 bg-white px-3 py-2 text-xs font-semibold text-neutral-900 hover:bg-neutral-50">Refresh</button>
+                                <div className="ml-auto text-xs text-stone-400">{filteredReviews.length} of {reviews.length} reviews</div>
+                                <button type="button" onClick={loadReviews} className="rounded-xl border border-[#E8E4DE] bg-white px-3 py-2 text-xs font-semibold text-stone-900 hover:bg-stone-50">Refresh</button>
                             </div>
 
                             {reviewErr && <div className="mt-3 text-sm text-red-600">{reviewErr}</div>}
 
                             {loadingReviews ? (
-                                <div className="mt-4 text-sm text-neutral-500">Loading reviews…</div>
+                                <div className="mt-4 text-sm text-stone-400">Loading reviews…</div>
                             ) : filteredReviews.length === 0 ? (
-                                <div className="mt-6 rounded-xl border border-neutral-200 bg-neutral-50 p-6 text-center text-sm text-neutral-500">
+                                <div className="mt-6 rounded-xl border border-[#E8E4DE] bg-stone-50 p-6 text-center text-sm text-stone-400">
                                     No reviews yet.
                                 </div>
                             ) : (
@@ -2183,7 +2510,7 @@ export default function AdminDashboard() {
                                     {filteredReviews.map((r) => {
                                         const stars = Number(r.rating || 0);
                                         return (
-                                            <div key={r.id} className="rounded-2xl border border-neutral-200 bg-white p-4">
+                                            <div key={r.id} className="rounded-2xl border border-[#E8E4DE] bg-white p-4">
                                                 <div className="flex items-start justify-between gap-3">
                                                     <div className="min-w-0 flex-1">
                                                         {/* Stars + product */}
@@ -2193,20 +2520,20 @@ export default function AdminDashboard() {
                                                                     <span key={i} className={`text-sm ${i <= stars ? "text-amber-400" : "text-neutral-200"}`}>★</span>
                                                                 ))}
                                                             </div>
-                                                            <span className="text-xs font-semibold text-neutral-700">{r.products?.name || "Unknown product"}</span>
+                                                            <span className="text-xs font-semibold text-stone-600">{r.products?.name || "Unknown product"}</span>
                                                             <span className="inline-flex items-center rounded-full bg-emerald-50 border border-emerald-200 px-2 py-0.5 text-[10px] font-semibold text-emerald-700">Verified</span>
                                                         </div>
 
                                                         {/* Reviewer + date */}
-                                                        <div className="mt-1 text-xs text-neutral-500">
+                                                        <div className="mt-1 text-xs text-stone-400">
                                                             {r._profile?.full_name || "Anonymous"} • {r._profile?.email || ""} • {r.created_at ? new Date(r.created_at).toLocaleDateString("en-IN", { day: "numeric", month: "short", year: "numeric" }) : ""}
                                                         </div>
 
                                                         {/* Title */}
-                                                        {r.title && <div className="mt-2 text-sm font-semibold text-neutral-900">{r.title}</div>}
+                                                        {r.title && <div className="mt-2 text-sm font-semibold text-stone-900">{r.title}</div>}
 
                                                         {/* Body */}
-                                                        {r.body && <div className="mt-1 text-sm text-neutral-700 leading-relaxed">{r.body}</div>}
+                                                        {r.body && <div className="mt-1 text-sm text-stone-600 leading-relaxed">{r.body}</div>}
                                                     </div>
 
                                                     <button

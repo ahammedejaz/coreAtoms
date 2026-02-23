@@ -21,13 +21,38 @@ export function mapDbProduct(p) {
     ? Math.round((reviews.reduce((s, r) => s + Number(r.rating || 0), 0) / reviewCount) * 10) / 10
     : null;
 
+  // Map variants — sorted by sort_order
+  const variants = Array.isArray(p.product_variants)
+    ? [...p.product_variants]
+        .filter((v) => v.is_active !== false)
+        .sort((a, b) => (a.sort_order ?? 0) - (b.sort_order ?? 0))
+        .map((v) => ({
+          id: v.id,
+          label: v.label,
+          price: Number(v.price_inr ?? 0),
+          stockQty: Number(v.stock_qty ?? 0),
+          sku: v.sku ?? "",
+          sortOrder: v.sort_order ?? 0,
+          isActive: v.is_active ?? true,
+        }))
+    : [];
+
+  // Price displayed on card:
+  //   - if variants exist → lowest variant price (shop card shows "From ₹X")
+  //   - otherwise → base product price
+  const basePrice = Number(p.price_inr ?? 0);
+  const displayPrice = variants.length > 0
+    ? Math.min(...variants.map((v) => v.price))
+    : basePrice;
+
   return {
     id: p.id,
     name: p.name,
     sku: p.sku ?? "",
     category: p.category ?? "",
     description: p.description ?? "",
-    price: Number(p.price_inr ?? 0),
+    price: displayPrice,
+    basePrice,
     stockQty: Number(p.stock_qty ?? 0),
     image: primaryImage,
     images: allImages,
@@ -38,13 +63,15 @@ export function mapDbProduct(p) {
     bestFor: p.best_for ?? "",
     pairsWellWith: p.pairs_well_with ?? "",
     recommendedStack: p.recommended_stack ?? "",
+    highlights: Array.isArray(p.highlights) ? p.highlights : [],
+    variants,
     reviewCount,
     avgRating,
   };
 }
 
 const PRODUCT_FIELDS =
-  "id,name,sku,category,description,price_inr,stock_qty,image_url,is_active,created_at,updated_at,about_text,best_for,pairs_well_with,recommended_stack,product_images(id,image_url,sort_order),product_reviews(rating)";
+  "id,name,sku,category,description,price_inr,stock_qty,image_url,is_active,created_at,updated_at,about_text,best_for,pairs_well_with,recommended_stack,highlights,product_images(id,image_url,sort_order),product_reviews(rating),product_variants(id,label,price_inr,stock_qty,sku,sort_order,is_active)";
 
 export async function fetchProducts() {
   const { data, error } = await supabase
@@ -58,11 +85,10 @@ export async function fetchProducts() {
 }
 
 export async function fetchProductById(id) {
-  // Fetch product + images + reviews — NO profiles join (causes schema cache error)
   const { data, error } = await supabase
     .from("products")
     .select(
-      "id,name,sku,category,description,price_inr,stock_qty,image_url,is_active,created_at,updated_at,about_text,best_for,pairs_well_with,recommended_stack,product_images(id,image_url,sort_order),product_reviews(id,rating,title,body,created_at,user_id,order_id)"
+      "id,name,sku,category,description,price_inr,stock_qty,image_url,is_active,created_at,updated_at,about_text,best_for,pairs_well_with,recommended_stack,highlights,product_images(id,image_url,sort_order),product_reviews(id,rating,title,body,created_at,user_id,order_id),product_variants(id,label,price_inr,stock_qty,sku,sort_order,is_active)"
     )
     .eq("id", id)
     .maybeSingle();
@@ -73,7 +99,6 @@ export async function fetchProductById(id) {
   const product = mapDbProduct(data);
   const rawReviews = Array.isArray(data.product_reviews) ? data.product_reviews : [];
 
-  // Fetch reviewer names in a separate query to avoid FK schema issue
   const userIds = [...new Set(rawReviews.map((r) => r.user_id).filter(Boolean))];
   const nameMap = {};
   if (userIds.length > 0) {

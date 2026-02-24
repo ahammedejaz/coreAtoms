@@ -1,9 +1,20 @@
+/**
+ * Home.jsx — Marketing-focused landing page.
+ *
+ * Fetches homepage settings (hero images, copy, pillars, categories, philosophy)
+ * and featured products from Supabase in parallel. All sections are admin-
+ * configurable via the `app_settings` table.
+ *
+ * @module pages/Home
+ */
 import { Link } from "react-router-dom";
 import { useCart } from "../context/CartContext";
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { fetchProducts } from "../services/products";
 import { supabase } from "../services/supabase/client";
 import { ProductCard } from "./Shop";
+import useDocumentTitle from "../hooks/useDocumentTitle";
+import { SkeletonGrid } from "../components/Skeleton";
 
 // ── Defaults (shown if admin hasn't saved yet) ────────────────────────────────
 const DEFAULT_HERO_IMAGES = [
@@ -24,19 +35,19 @@ const DEFAULT_HERO_COPY = {
 };
 
 const DEFAULT_PILLARS = [
-  { icon: "✦", title: "Clean Labels",    desc: "No fillers, no hidden ingredients. Every formula is fully disclosed." },
-  { icon: "◈", title: "Lab Tested",      desc: "Third-party verified for potency, purity, and safety." },
-  { icon: "⬡", title: "COD Available",   desc: "Cash on delivery across India. No prepayment required." },
+  { icon: "✦", title: "Clean Labels", desc: "No fillers, no hidden ingredients. Every formula is fully disclosed." },
+  { icon: "◈", title: "Lab Tested", desc: "Third-party verified for potency, purity, and safety." },
+  { icon: "⬡", title: "COD Available", desc: "Cash on delivery across India. No prepayment required." },
   { icon: "⌖", title: "Fast Fulfilment", desc: "Orders dispatched within 24 hours from our facility." },
 ];
 
 const DEFAULT_CATEGORIES = [
   { label: "Multivitamins", emoji: "💊", category: "General Wellness" },
-  { label: "Joint Support",  emoji: "🦴", category: "Joint Support" },
-  { label: "Bone Health",    emoji: "🧬", category: "Bone Health" },
-  { label: "Hair & Skin",    emoji: "✨", category: "HSN" },
-  { label: "Gut Health",     emoji: "🌿", category: "Gut Health" },
-  { label: "Collagen",       emoji: "🔬", category: "Collagen" },
+  { label: "Joint Support", emoji: "🦴", category: "Joint Support" },
+  { label: "Bone Health", emoji: "🧬", category: "Bone Health" },
+  { label: "Hair & Skin", emoji: "✨", category: "HSN" },
+  { label: "Gut Health", emoji: "🌿", category: "Gut Health" },
+  { label: "Collagen", emoji: "🔬", category: "Collagen" },
 ];
 
 const DEFAULT_PHILOSOPHY = {
@@ -47,20 +58,21 @@ const DEFAULT_PHILOSOPHY = {
 };
 
 export default function Home() {
+  useDocumentTitle("Core Atoms | Nutraceuticals");
   const { addItem } = useCart();
 
-  const [products, setProducts]             = useState([]);
+  const [products, setProducts] = useState([]);
   const [loadingProducts, setLoadingProducts] = useState(true);
-  const [toast, setToast]                   = useState({ open: false, message: "" });
-  const [justAddedId, setJustAddedId]       = useState(null);
+  const [toast, setToast] = useState({ open: false, message: "" });
+  const [justAddedId, setJustAddedId] = useState(null);
 
   // Settings state
   const [heroImages, setHeroImages] = useState(
     DEFAULT_HERO_IMAGES.map((url) => ({ url, position: "50% 50%" }))
   );
-  const [heroIndex, setHeroIndex]   = useState(0);
-  const [heroCopy, setHeroCopy]     = useState(DEFAULT_HERO_COPY);
-  const [pillars, setPillars]       = useState(DEFAULT_PILLARS);
+  const [heroIndex, setHeroIndex] = useState(0);
+  const [heroCopy, setHeroCopy] = useState(DEFAULT_HERO_COPY);
+  const [pillars, setPillars] = useState(DEFAULT_PILLARS);
   const [categories, setCategories] = useState(DEFAULT_CATEGORIES);
   const [philosophy, setPhilosophy] = useState(DEFAULT_PHILOSOPHY);
 
@@ -145,14 +157,27 @@ export default function Home() {
 
   useEffect(() => { setHeroIndex(0); }, [heroImages]);
 
+  /** Refs for toast / button feedback timers (avoid polluting `window`). */
+  const btnTimerRef = useRef(null);
+  const toastTimerRef = useRef(null);
+
+  /** Cleanup timers on unmount. */
+  useEffect(() => {
+    return () => {
+      clearTimeout(btnTimerRef.current);
+      clearTimeout(toastTimerRef.current);
+    };
+  }, []);
+
+  /** Handles adding a product to cart with toast + button feedback. */
   const handleAdd = (p) => {
     addItem(p, 1);
     setJustAddedId(p.id);
     setToast({ open: true, message: `${p.name} added to cart` });
-    window.clearTimeout(window.__ca_home_btn);
-    window.__ca_home_btn = setTimeout(() => setJustAddedId(null), 900);
-    window.clearTimeout(window.__ca_home_toast);
-    window.__ca_home_toast = setTimeout(() => setToast({ open: false, message: "" }), 1800);
+    clearTimeout(btnTimerRef.current);
+    btnTimerRef.current = setTimeout(() => setJustAddedId(null), 900);
+    clearTimeout(toastTimerRef.current);
+    toastTimerRef.current = setTimeout(() => setToast({ open: false, message: "" }), 1800);
   };
 
   const trust = heroCopy.trustIcons || DEFAULT_HERO_COPY.trustIcons;
@@ -199,13 +224,13 @@ export default function Home() {
                   onClick={() => setHeroIndex((heroIndex - 1 + heroImages.length) % heroImages.length)}
                   className="absolute left-4 top-1/2 -translate-y-1/2 h-9 w-9 rounded-full bg-white/80 backdrop-blur-sm border border-white/60 shadow flex items-center justify-center text-stone-700 hover:bg-white transition"
                   style={{ zIndex: 10 }}>
-                  <svg className="h-4 w-4" viewBox="0 0 20 20" fill="none" stroke="currentColor" strokeWidth="2.5"><path d="M13 16l-6-6 6-6"/></svg>
+                  <svg className="h-4 w-4" viewBox="0 0 20 20" fill="none" stroke="currentColor" strokeWidth="2.5"><path d="M13 16l-6-6 6-6" /></svg>
                 </button>
                 <button type="button"
                   onClick={() => setHeroIndex((heroIndex + 1) % heroImages.length)}
                   className="absolute right-4 top-1/2 -translate-y-1/2 h-9 w-9 rounded-full bg-white/80 backdrop-blur-sm border border-white/60 shadow flex items-center justify-center text-stone-700 hover:bg-white transition"
                   style={{ zIndex: 10 }}>
-                  <svg className="h-4 w-4" viewBox="0 0 20 20" fill="none" stroke="currentColor" strokeWidth="2.5"><path d="M7 4l6 6-6 6"/></svg>
+                  <svg className="h-4 w-4" viewBox="0 0 20 20" fill="none" stroke="currentColor" strokeWidth="2.5"><path d="M7 4l6 6-6 6" /></svg>
                 </button>
               </div>
             )}
@@ -221,7 +246,7 @@ export default function Home() {
             <p className="mt-6 text-[15px] text-stone-500 leading-relaxed max-w-sm">{heroCopy.body}</p>
             <div className="mt-8 flex flex-wrap gap-3">
               <Link to="/shop" className="btn-primary px-6 py-3 text-[14px]">
-                <svg className="h-4 w-4" viewBox="0 0 20 20" fill="currentColor"><path d="M3 3a1 1 0 000 2h1.22l.305 1.222a.997.997 0 00.01.042l1.358 5.43-.893.892C3.74 13.846 4.632 15 6.414 15H15a1 1 0 000-2H6.414l1-1H14a1 1 0 00.894-.553l3-6A1 1 0 0017 5H6.28l-.31-1.243A1 1 0 005 3H3zM16 16.5a1.5 1.5 0 11-3 0 1.5 1.5 0 013 0zM6.5 18a1.5 1.5 0 100-3 1.5 1.5 0 000 3z"/></svg>
+                <svg className="h-4 w-4" viewBox="0 0 20 20" fill="currentColor"><path d="M3 3a1 1 0 000 2h1.22l.305 1.222a.997.997 0 00.01.042l1.358 5.43-.893.892C3.74 13.846 4.632 15 6.414 15H15a1 1 0 000-2H6.414l1-1H14a1 1 0 00.894-.553l3-6A1 1 0 0017 5H6.28l-.31-1.243A1 1 0 005 3H3zM16 16.5a1.5 1.5 0 11-3 0 1.5 1.5 0 013 0zM6.5 18a1.5 1.5 0 100-3 1.5 1.5 0 000 3z" /></svg>
                 {heroCopy.primaryCta || "Shop all products"}
               </Link>
               <Link to="/shop" className="btn-ghost px-6 py-3 text-[14px]">
@@ -263,18 +288,7 @@ export default function Home() {
           <Link to="/shop" className="text-sm font-semibold text-[#1e3a5f] hover:underline underline-offset-2">View all →</Link>
         </div>
         {loadingProducts ? (
-          <div className="grid gap-5 sm:grid-cols-2 lg:grid-cols-3">
-            {Array.from({ length: 6 }).map((_, i) => (
-              <div key={i} className="rounded-2xl border border-[#E8E4DE] bg-white overflow-hidden animate-pulse">
-                <div className="h-[220px] bg-stone-100" />
-                <div className="p-5 space-y-3">
-                  <div className="h-4 bg-stone-100 rounded w-3/4" />
-                  <div className="h-3 bg-stone-100 rounded w-full" />
-                  <div className="h-10 bg-stone-100 rounded-xl mt-4" />
-                </div>
-              </div>
-            ))}
-          </div>
+          <SkeletonGrid count={6} />
         ) : (
           <div className="grid gap-5 sm:grid-cols-2 lg:grid-cols-3">
             {products.map((p) => (
@@ -285,7 +299,7 @@ export default function Home() {
       </section>
 
       {/* ── SHOP BY CATEGORY ──────────────────────────────────────────────── */}
-      <section>
+      < section >
         <div className="text-center mb-10">
           <p className="section-label">Browse by Goal</p>
           <h2 className="mt-2 text-2xl font-semibold tracking-tight text-stone-900">Shop by Category</h2>
@@ -299,10 +313,10 @@ export default function Home() {
             </Link>
           ))}
         </div>
-      </section>
+      </section >
 
       {/* ── PHILOSOPHY ────────────────────────────────────────────────────── */}
-      <section className="rounded-3xl border border-[#E8E4DE] bg-white p-12 lg:p-16 text-center">
+      < section className="rounded-3xl border border-[#E8E4DE] bg-white p-12 lg:p-16 text-center" >
         <div className="mx-auto max-w-2xl">
           <p className="section-label mb-4">{philosophy.label || "Our Philosophy"}</p>
           <h2 className="text-2xl lg:text-3xl font-semibold tracking-tight text-stone-900 leading-snug whitespace-pre-line">
@@ -315,22 +329,21 @@ export default function Home() {
             {philosophy.cta || "Explore the range"}
           </Link>
         </div>
-      </section>
+      </section >
 
       {/* ── TOAST ─────────────────────────────────────────────────────────── */}
-      <div className={`fixed bottom-6 right-6 z-50 card px-5 py-3.5 transition-all duration-300 ${
-        toast.open ? "opacity-100 translate-y-0" : "opacity-0 translate-y-3 pointer-events-none"
-      }`}>
+      < div className={`fixed bottom-6 right-6 z-50 card px-5 py-3.5 transition-all duration-300 ${toast.open ? "opacity-100 translate-y-0" : "opacity-0 translate-y-3 pointer-events-none"
+        }`}>
         <div className="flex items-center gap-3">
           <div className="h-8 w-8 rounded-lg bg-emerald-50 grid place-items-center">
-            <svg className="h-4 w-4 text-emerald-600" viewBox="0 0 20 20" fill="currentColor"><path fillRule="evenodd" d="M16.707 5.293a1 1 0 00-1.414 0L8 12.586 4.707 9.293a1 1 0 00-1.414 1.414l4 4a1 1 0 001.414 0l8-8a1 1 0 000-1.414z" clipRule="evenodd"/></svg>
+            <svg className="h-4 w-4 text-emerald-600" viewBox="0 0 20 20" fill="currentColor"><path fillRule="evenodd" d="M16.707 5.293a1 1 0 00-1.414 0L8 12.586 4.707 9.293a1 1 0 00-1.414 1.414l4 4a1 1 0 001.414 0l8-8a1 1 0 000-1.414z" clipRule="evenodd" /></svg>
           </div>
           <div>
             <div className="text-sm font-semibold text-stone-900">Added to cart</div>
             <div className="text-xs text-stone-500">{toast.message}</div>
           </div>
         </div>
-      </div>
-    </div>
+      </div >
+    </div >
   );
 }

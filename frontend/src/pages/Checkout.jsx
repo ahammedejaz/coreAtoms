@@ -1,8 +1,18 @@
-import { useMemo, useState, useEffect, useCallback } from "react";
+/**
+ * Checkout.jsx — Complete checkout flow with saved addresses + COD order placement.
+ *
+ * Loads the user's saved addresses from Supabase, allows picking one or entering
+ * a new address, validates form fields (Indian phone + 6-digit pincode), and
+ * places the order via the `place_order_cod` RPC.
+ *
+ * @module pages/Checkout
+ */
+import { useState, useEffect, useCallback } from "react";
 import { Link, useNavigate } from "react-router-dom";
 import { useAuth } from "../context/AuthContext";
 import { useCart } from "../context/CartContext";
 import { supabase } from "../services/supabase/client";
+import useDocumentTitle from "../hooks/useDocumentTitle";
 
 const money = (n) => `₹${Number(n || 0).toLocaleString("en-IN")}`;
 
@@ -28,6 +38,7 @@ function isValidAddress(a) {
 }
 
 export default function Checkout() {
+  useDocumentTitle("Checkout | Core Atoms");
   const navigate = useNavigate();
   const { user } = useAuth();
   const { items, subtotal, totalItems, clear } = useCart();
@@ -76,7 +87,7 @@ export default function Checkout() {
       });
     }
     setLoadingAddresses(false);
-  }, [user?.id]);
+  }, [user?.id, selectedAddressId]);
 
   useEffect(() => { loadAddresses(); }, [loadAddresses]);
 
@@ -237,15 +248,13 @@ export default function Checkout() {
               <p className="text-xs font-semibold text-stone-500 uppercase tracking-wide">Saved</p>
               {savedAddresses.map((addr) => (
                 <div key={addr.id} onClick={() => selectSavedAddress(addr)}
-                  className={`flex items-start gap-3 rounded-xl border p-4 cursor-pointer transition-all ${
-                    selectedAddressId === addr.id
-                      ? "border-[#1e3a5f] bg-[#EFF6FF]"
-                      : "border-[#E8E4DE] hover:border-stone-300"
-                  }`}
+                  className={`flex items-start gap-3 rounded-xl border p-4 cursor-pointer transition-all ${selectedAddressId === addr.id
+                    ? "border-[#1e3a5f] bg-[#EFF6FF]"
+                    : "border-[#E8E4DE] hover:border-stone-300"
+                    }`}
                 >
-                  <div className={`mt-0.5 h-4 w-4 rounded-full border-2 flex items-center justify-center shrink-0 transition-colors ${
-                    selectedAddressId === addr.id ? "border-[#1e3a5f]" : "border-stone-300"
-                  }`}>
+                  <div className={`mt-0.5 h-4 w-4 rounded-full border-2 flex items-center justify-center shrink-0 transition-colors ${selectedAddressId === addr.id ? "border-[#1e3a5f]" : "border-stone-300"
+                    }`}>
                     {selectedAddressId === addr.id && <div className="h-2 w-2 rounded-full bg-[#1e3a5f]" />}
                   </div>
                   <div className="flex-1 min-w-0">
@@ -258,11 +267,10 @@ export default function Checkout() {
                 </div>
               ))}
               <button type="button" onClick={startNewAddress}
-                className={`w-full rounded-xl border-2 border-dashed px-4 py-3 text-sm font-medium transition-all ${
-                  selectedAddressId === null
-                    ? "border-[#1e3a5f] text-[#1e3a5f] bg-[#EFF6FF]"
-                    : "border-[#E8E4DE] text-stone-400 hover:border-stone-300 hover:text-stone-600"
-                }`}
+                className={`w-full rounded-xl border-2 border-dashed px-4 py-3 text-sm font-medium transition-all ${selectedAddressId === null
+                  ? "border-[#1e3a5f] text-[#1e3a5f] bg-[#EFF6FF]"
+                  : "border-[#E8E4DE] text-stone-400 hover:border-stone-300 hover:text-stone-600"
+                  }`}
               >
                 + Add a new address
               </button>
@@ -277,33 +285,33 @@ export default function Checkout() {
               <div className="grid gap-4 sm:grid-cols-2">
                 <div>
                   <label className="text-xs font-semibold text-stone-500 block mb-1.5">Full name *</label>
-                  <input value={form.fullName} onChange={(e) => setForm(a => ({...a, fullName: e.target.value}))} placeholder="Your name" className={inputCls} />
+                  <input value={form.fullName} onChange={(e) => setForm(a => ({ ...a, fullName: e.target.value }))} placeholder="Your name" className={inputCls} />
                 </div>
                 <div>
                   <label className="text-xs font-semibold text-stone-500 block mb-1.5">Phone (India) *</label>
-                  <input value={form.phone} onChange={(e) => setForm(a => ({...a, phone: e.target.value}))} placeholder="10-digit mobile" className={inputCls} />
+                  <input value={form.phone} onChange={(e) => setForm(a => ({ ...a, phone: e.target.value }))} placeholder="10-digit mobile" className={inputCls} />
                 </div>
               </div>
               <div>
                 <label className="text-xs font-semibold text-stone-500 block mb-1.5">Address line 1 *</label>
-                <input value={form.line1} onChange={(e) => setForm(a => ({...a, line1: e.target.value}))} placeholder="House / Flat, Street" className={inputCls} />
+                <input value={form.line1} onChange={(e) => setForm(a => ({ ...a, line1: e.target.value }))} placeholder="House / Flat, Street" className={inputCls} />
               </div>
               <div>
                 <label className="text-xs font-semibold text-stone-500 block mb-1.5">Address line 2 (optional)</label>
-                <input value={form.line2} onChange={(e) => setForm(a => ({...a, line2: e.target.value}))} placeholder="Landmark, Area" className={inputCls} />
+                <input value={form.line2} onChange={(e) => setForm(a => ({ ...a, line2: e.target.value }))} placeholder="Landmark, Area" className={inputCls} />
               </div>
               <div className="grid gap-4 sm:grid-cols-3">
                 <div>
                   <label className="text-xs font-semibold text-stone-500 block mb-1.5">City *</label>
-                  <input value={form.city} onChange={(e) => setForm(a => ({...a, city: e.target.value}))} placeholder="City" className={inputCls} />
+                  <input value={form.city} onChange={(e) => setForm(a => ({ ...a, city: e.target.value }))} placeholder="City" className={inputCls} />
                 </div>
                 <div>
                   <label className="text-xs font-semibold text-stone-500 block mb-1.5">State *</label>
-                  <input value={form.state} onChange={(e) => setForm(a => ({...a, state: e.target.value}))} placeholder="State" className={inputCls} />
+                  <input value={form.state} onChange={(e) => setForm(a => ({ ...a, state: e.target.value }))} placeholder="State" className={inputCls} />
                 </div>
                 <div>
                   <label className="text-xs font-semibold text-stone-500 block mb-1.5">Pincode *</label>
-                  <input value={form.pincode} onChange={(e) => setForm(a => ({...a, pincode: e.target.value}))} placeholder="6 digits" className={inputCls} />
+                  <input value={form.pincode} onChange={(e) => setForm(a => ({ ...a, pincode: e.target.value }))} placeholder="6 digits" className={inputCls} />
                 </div>
               </div>
 

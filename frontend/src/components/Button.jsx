@@ -1,3 +1,16 @@
+/**
+ * Button.jsx — Reusable button component with variant support.
+ *
+ * Variants:
+ * - `"primary"` — gradient gray background (default)
+ * - `"outline"` — white with border
+ * - `"ghost"`   — transparent, hover gray
+ *
+ * Falls back to `primary` if an unknown variant is passed.
+ *
+ * @param {{ className?: string, variant?: "primary"|"outline"|"ghost" }} props
+ * @module components/Button
+ */
 export default function Button({ className = "", variant = "primary", ...props }) {
   const base =
     "inline-flex items-center justify-center rounded-xl px-5 py-3 text-sm font-semibold transition-all duration-200 transform active:scale-[0.98]";

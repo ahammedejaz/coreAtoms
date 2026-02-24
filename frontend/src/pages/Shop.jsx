@@ -1,7 +1,20 @@
-import { useEffect, useMemo, useState } from "react";
-import { Link } from "react-router-dom";
+/**
+ * Shop.jsx — Product listing page with search, category filter, and add-to-cart.
+ *
+ * Fetches all active products from Supabase and displays them in a responsive
+ * grid. Includes a search bar, category filter dropdown, skeleton loading
+ * states, and an inline toast notification on add-to-cart.
+ *
+ * Also exports the `ProductCard` and `Stars` sub-components used by `Home.jsx`.
+ *
+ * @module pages/Shop
+ */
+import { useEffect, useMemo, useRef, useState } from "react";
+import { Link, useSearchParams } from "react-router-dom";
 import { fetchProducts } from "../services/products";
 import { useCart } from "../context/CartContext";
+import useDebounce from "../hooks/useDebounce";
+import useDocumentTitle from "../hooks/useDocumentTitle";
 
 const money = (n) => `₹${Number(n || 0).toLocaleString("en-IN")}`;
 
@@ -9,7 +22,7 @@ export function Stars({ rating, count }) {
   if (!count) return null;
   return (
     <div className="flex items-center gap-1">
-      {[1,2,3,4,5].map((i) => (
+      {[1, 2, 3, 4, 5].map((i) => (
         <span key={i} className={`text-[13px] leading-none ${i <= Math.round(rating) ? "text-amber-400" : "text-stone-200"}`}>★</span>
       ))}
       <span className="text-[11px] text-stone-400 ml-0.5">{Number(rating).toFixed(1)} ({count})</span>
@@ -44,9 +57,8 @@ export function ProductCard({ p, onAdd, justAdded }) {
         )}
         {/* Stock */}
         <div className="absolute top-3 right-3">
-          <span className={`rounded-full px-2.5 py-1 text-[10px] font-semibold border ${
-            out ? "bg-red-50 border-red-200 text-red-600" : "bg-emerald-50 border-emerald-200 text-emerald-700"
-          }`}>
+          <span className={`rounded-full px-2.5 py-1 text-[10px] font-semibold border ${out ? "bg-red-50 border-red-200 text-red-600" : "bg-emerald-50 border-emerald-200 text-emerald-700"
+            }`}>
             <span className="inline-flex items-center gap-1">
               <span className={`inline-block h-1.5 w-1.5 rounded-full ${out ? "bg-red-500" : "bg-emerald-500"}`} />
               {out ? "Out of stock" : "In stock"}
@@ -128,13 +140,12 @@ export function ProductCard({ p, onAdd, justAdded }) {
               onClick={() => onAdd(p)}
               disabled={out}
               type="button"
-              className={`w-full rounded-xl px-4 py-2.5 text-sm font-semibold border transition-all duration-200 ${
-                out
-                  ? "border-stone-200 bg-stone-100 text-stone-400 cursor-not-allowed"
-                  : justAdded
-                    ? "border-emerald-300 bg-emerald-50 text-emerald-700"
-                    : "border-[#1e3a5f] bg-[#1e3a5f] text-white hover:bg-[#162d4a] shadow-sm hover:shadow"
-              }`}
+              className={`w-full rounded-xl px-4 py-2.5 text-sm font-semibold border transition-all duration-200 ${out
+                ? "border-stone-200 bg-stone-100 text-stone-400 cursor-not-allowed"
+                : justAdded
+                  ? "border-emerald-300 bg-emerald-50 text-emerald-700"
+                  : "border-[#1e3a5f] bg-[#1e3a5f] text-white hover:bg-[#162d4a] shadow-sm hover:shadow"
+                }`}
             >
               {justAdded ? "Added to cart ✓" : out ? "Out of stock" : "Add to cart"}
             </button>
@@ -146,20 +157,34 @@ export function ProductCard({ p, onAdd, justAdded }) {
 }
 
 export default function Shop() {
+  useDocumentTitle("Shop | Core Atoms");
   const { addItem } = useCart();
+  const [searchParams, setSearchParams] = useSearchParams();
   const [products, setProducts] = useState([]);
   const [loading, setLoading] = useState(true);
   const [err, setErr] = useState("");
-  const [category, setCategory] = useState("All");
-  const [query, setQuery] = useState("");
+
+  // URL-synced filters — survive refresh and are shareable
+  const category = searchParams.get("category") || "All";
+  const query = searchParams.get("q") || "";
+  const setCategory = (cat) => {
+    setSearchParams((prev) => {
+      if (cat === "All") prev.delete("category"); else prev.set("category", cat);
+      return prev;
+    });
+  };
+  const setQuery = (q) => {
+    setSearchParams((prev) => {
+      if (!q.trim()) prev.delete("q"); else prev.set("q", q);
+      return prev;
+    });
+  };
+
+  // Debounce search for performance
+  const debouncedQuery = useDebounce(query, 300);
+
   const [toast, setToast] = useState({ show: false, text: "" });
   const [justAddedId, setJustAddedId] = useState(null);
-
-  useEffect(() => {
-    const params = new URLSearchParams(window.location.search);
-    const cat = params.get("category");
-    if (cat) setCategory(cat);
-  }, []);
 
   useEffect(() => {
     let alive = true;
@@ -180,19 +205,32 @@ export default function Shop() {
   const active = useMemo(() => {
     let list = products.filter((p) => p.isActive !== false);
     if (category !== "All") list = list.filter((p) => p.category === category);
-    const q = query.trim().toLowerCase();
+    const q = debouncedQuery.trim().toLowerCase();
     if (q) list = list.filter((p) => p.name.toLowerCase().includes(q));
     return list;
-  }, [products, category, query]);
+  }, [products, category, debouncedQuery]);
 
+  /** Refs for toast/button timers so we can clear them without polluting `window`. */
+  const toastTimerRef = useRef(null);
+  const btnTimerRef = useRef(null);
+
+  /** Cleanup timers on unmount. */
+  useEffect(() => {
+    return () => {
+      clearTimeout(toastTimerRef.current);
+      clearTimeout(btnTimerRef.current);
+    };
+  }, []);
+
+  /** Handles adding a product to cart with toast + button feedback. */
   const handleAdd = (p) => {
     addItem(p, 1);
     setJustAddedId(p.id);
     setToast({ show: true, text: `${p.name} added` });
-    window.clearTimeout(window.__ca_toast);
-    window.__ca_toast = setTimeout(() => setToast({ show: false, text: "" }), 1600);
-    window.clearTimeout(window.__ca_btn);
-    window.__ca_btn = setTimeout(() => setJustAddedId(null), 1000);
+    clearTimeout(toastTimerRef.current);
+    toastTimerRef.current = setTimeout(() => setToast({ show: false, text: "" }), 1600);
+    clearTimeout(btnTimerRef.current);
+    btnTimerRef.current = setTimeout(() => setJustAddedId(null), 1000);
   };
 
   if (loading) return (
@@ -225,7 +263,7 @@ export default function Shop() {
         <div className="flex flex-col gap-2 sm:flex-row sm:items-center">
           <div className="flex items-center gap-2">
             <svg className="h-4 w-4 text-stone-400 shrink-0" viewBox="0 0 20 20" fill="currentColor">
-              <path fillRule="evenodd" d="M8 4a4 4 0 100 8 4 4 0 000-8zM2 8a6 6 0 1110.89 3.476l4.817 4.817a1 1 0 01-1.414 1.414l-4.816-4.816A6 6 0 012 8z" clipRule="evenodd"/>
+              <path fillRule="evenodd" d="M8 4a4 4 0 100 8 4 4 0 000-8zM2 8a6 6 0 1110.89 3.476l4.817 4.817a1 1 0 01-1.414 1.414l-4.816-4.816A6 6 0 012 8z" clipRule="evenodd" />
             </svg>
             <input
               value={query}
@@ -237,7 +275,7 @@ export default function Shop() {
 
           <div className="flex items-center gap-2">
             <svg className="h-4 w-4 text-stone-400 shrink-0" viewBox="0 0 20 20" fill="currentColor">
-              <path fillRule="evenodd" d="M3 3a1 1 0 011-1h12a1 1 0 011 1v3a1 1 0 01-.293.707L13 10.414V17a1 1 0 01-.553.894l-4 2A1 1 0 017 19v-8.586L3.293 6.707A1 1 0 013 6V3z" clipRule="evenodd"/>
+              <path fillRule="evenodd" d="M3 3a1 1 0 011-1h12a1 1 0 011 1v3a1 1 0 01-.293.707L13 10.414V17a1 1 0 01-.553.894l-4 2A1 1 0 017 19v-8.586L3.293 6.707A1 1 0 013 6V3z" clipRule="evenodd" />
             </svg>
             <select
               value={category}
@@ -276,12 +314,11 @@ export default function Shop() {
       )}
 
       {/* Toast */}
-      <div className={`fixed bottom-6 right-6 z-50 card px-5 py-3.5 transition-all duration-300 ${
-        toast.show ? "opacity-100 translate-y-0" : "opacity-0 translate-y-3 pointer-events-none"
-      }`} style={{ animation: toast.show ? "toastIn 0.2s ease-out" : undefined }}>
+      <div className={`fixed bottom-6 right-6 z-50 card px-5 py-3.5 transition-all duration-300 ${toast.show ? "opacity-100 translate-y-0" : "opacity-0 translate-y-3 pointer-events-none"
+        }`} style={{ animation: toast.show ? "toastIn 0.2s ease-out" : undefined }}>
         <div className="flex items-center gap-3">
           <div className="h-8 w-8 rounded-lg bg-emerald-50 grid place-items-center">
-            <svg className="h-4 w-4 text-emerald-600" viewBox="0 0 20 20" fill="currentColor"><path fillRule="evenodd" d="M16.707 5.293a1 1 0 00-1.414 0L8 12.586 4.707 9.293a1 1 0 00-1.414 1.414l4 4a1 1 0 001.414 0l8-8a1 1 0 000-1.414z" clipRule="evenodd"/></svg>
+            <svg className="h-4 w-4 text-emerald-600" viewBox="0 0 20 20" fill="currentColor"><path fillRule="evenodd" d="M16.707 5.293a1 1 0 00-1.414 0L8 12.586 4.707 9.293a1 1 0 00-1.414 1.414l4 4a1 1 0 001.414 0l8-8a1 1 0 000-1.414z" clipRule="evenodd" /></svg>
           </div>
           <div>
             <div className="text-sm font-semibold text-stone-900">Added to cart</div>

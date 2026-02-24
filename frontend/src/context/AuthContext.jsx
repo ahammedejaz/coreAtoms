@@ -1,3 +1,22 @@
+/**
+ * AuthContext.jsx — Authentication state provider.
+ *
+ * Manages Supabase auth sessions, fetches user profiles with retry logic,
+ * and exposes authentication info + `signOut` via the `useAuth()` hook.
+ *
+ * ### Exposed via `useAuth()`:
+ * | Property          | Type       | Description |
+ * |-------------------|------------|-------------|
+ * | `loading`         | `boolean`  | `true` while the initial session is being resolved |
+ * | `session`         | `object?`  | Raw Supabase session (or `null`) |
+ * | `user`            | `object?`  | Supabase user object (or `null`) |
+ * | `profile`         | `object?`  | Row from `profiles` table (id, email, full_name, role) |
+ * | `isAuthenticated` | `boolean`  | `true` if a user session exists |
+ * | `isAdmin`         | `boolean`  | `true` if `profile.role === "admin"` |
+ * | `signOut`         | `Function` | Signs the user out and clears profile |
+ *
+ * @module context/AuthContext
+ */
 import React, { createContext, useContext, useEffect, useMemo, useState } from "react";
 import { supabase } from "../services/supabase/client";
 

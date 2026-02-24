@@ -1,3 +1,12 @@
+/**
+ * Toast.jsx — Reusable toast notification component.
+ *
+ * Displays a floating notification with variant-based styling (success,
+ * error, info, warning). Auto-dismisses after `toast.duration` ms (default 3 s).
+ *
+ * @param {{ toast: { open, variant?, title?, message?, duration? }, onClose: Function }} props
+ * @module components/Toast
+ */
 import { useEffect } from "react";
 
 export default function Toast({ toast, onClose }) {

@@ -1,4 +1,26 @@
+/**
+ * AppRoutes.jsx — Application route definitions.
+ *
+ * Uses `createBrowserRouter` (react-router v7 data router). All routes live
+ * inside a `MainLayout` shell that renders `<Navbar>` + `<Outlet>` + `<Footer>`.
+ *
+ * ### Route Map:
+ * | Path            | Component       | Guard          |
+ * |-----------------|-----------------|----------------|
+ * | `/`             | `HomeRoute`     | admin redirect  |
+ * | `/shop`         | `Shop`          | public          |
+ * | `/cart`         | `Cart`          | public          |
+ * | `/product/:id`  | `ProductDetail` | public          |
+ * | `/login`        | `Login`         | public          |
+ * | `/orders`       | `MyOrders`      | `ProtectedRoute`|
+ * | `/checkout`     | `Checkout`      | `ProtectedRoute`|
+ * | `/admin`        | `AdminDashboard`| `AdminRoute`    |
+ * | `*`             | `NotFound`      | —               |
+ *
+ * @module routes/AppRoutes
+ */
 import { createBrowserRouter, Navigate } from "react-router-dom";
+import React, { Suspense } from "react";
 import MainLayout from "../layouts/MainLayout";
 
 import Home from "../pages/Home";
@@ -8,9 +30,11 @@ import ProductDetail from "../pages/ProductDetail";
 import Login from "../pages/Login";
 import MyOrders from "../pages/MyOrders";
 import Checkout from "../pages/Checkout";
-import AdminDashboard from "../pages/AdminDashboard.jsx";
 import NotFound from "../pages/NotFound";
 import ErrorPage from "../pages/ErrorPage";
+
+/** Lazy-loaded admin — keeps admin code out of the main bundle for customers. */
+const AdminDashboard = React.lazy(() => import("../pages/AdminDashboard.jsx"));
 
 import ProtectedRoute from "./ProtectedRoute";
 import AdminRoute from "./AdminRoute";
@@ -56,7 +80,9 @@ export const router = createBrowserRouter([
         path: "admin",
         element: (
           <AdminRoute>
-            <AdminDashboard />
+            <Suspense fallback={<div className="py-20 text-center text-sm text-stone-400 animate-pulse">Loading admin…</div>}>
+              <AdminDashboard />
+            </Suspense>
           </AdminRoute>
         ),
       },

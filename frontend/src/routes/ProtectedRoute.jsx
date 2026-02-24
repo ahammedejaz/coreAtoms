@@ -1,3 +1,11 @@
+/**
+ * ProtectedRoute.jsx — Route guard that requires authentication.
+ *
+ * Redirects to `/login` if the user is not signed in. Shows a loading
+ * indicator while the auth state is being resolved.
+ *
+ * @module routes/ProtectedRoute
+ */
 import { Navigate } from "react-router-dom";
 import { useAuth } from "../context/AuthContext";
 

@@ -1,3 +1,12 @@
+/**
+ * ProductCard.jsx — Simple product card used by `ProductGrid`.
+ *
+ * Displays product image, name, category, price, description, and
+ * "Add to Cart" / "View" action buttons. Uses the `Button` component.
+ *
+ * @param {{ product: object, onAddToCart: Function }} props
+ * @module components/ProductCard
+ */
 import Button from "./Button";
 import { Link } from "react-router-dom";
 
@@ -13,6 +22,8 @@ export default function ProductCard({ product, onAddToCart }) {
           alt={product.name}
           className="relative z-10 h-full w-full object-cover group-hover:scale-[1.04] transition-transform duration-500"
           loading="lazy"
+          decoding="async"
+          sizes="(max-width: 640px) 100vw, (max-width: 1024px) 50vw, 33vw"
         />
       </div>
 

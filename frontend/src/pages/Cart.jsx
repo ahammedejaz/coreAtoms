@@ -1,10 +1,20 @@
+/**
+ * Cart.jsx — Shopping cart page.
+ *
+ * Displays cart items with quantity steppers, line totals, order summary,
+ * and a "Proceed to checkout" CTA. Redirects to `/login` if unauthenticated.
+ *
+ * @module pages/Cart
+ */
 import { Link, useNavigate } from "react-router-dom";
 import { useCart } from "../context/CartContext";
 import { useAuth } from "../context/AuthContext";
+import useDocumentTitle from "../hooks/useDocumentTitle";
 
 const money = (n) => `₹${Number(n || 0).toLocaleString("en-IN")}`;
 
 export default function Cart() {
+  useDocumentTitle("Cart | Core Atoms");
   const navigate = useNavigate();
   const { isAuthenticated } = useAuth();
   const { items, totalItems, subtotal, updateQty, removeItem, clear } = useCart();
@@ -23,7 +33,7 @@ export default function Cart() {
         <div className="card p-16 text-center">
           <div className="mx-auto mb-4 h-16 w-16 rounded-2xl bg-stone-100 flex items-center justify-center">
             <svg className="h-7 w-7 text-stone-400" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5">
-              <path d="M6 2L3 6v14a2 2 0 002 2h14a2 2 0 002-2V6l-3-4z"/><line x1="3" y1="6" x2="21" y2="6"/><path d="M16 10a4 4 0 01-8 0"/>
+              <path d="M6 2L3 6v14a2 2 0 002 2h14a2 2 0 002-2V6l-3-4z" /><line x1="3" y1="6" x2="21" y2="6" /><path d="M16 10a4 4 0 01-8 0" />
             </svg>
           </div>
           <h2 className="text-base font-semibold text-stone-900">Your cart is empty</h2>

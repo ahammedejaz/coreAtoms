@@ -1,3 +1,13 @@
+/**
+ * AdminSettingsCard.jsx — Inline card for editing the "max items per order" setting.
+ *
+ * Reads the current value from Supabase via `getMaxItemsPerOrder()`, lets
+ * the admin edit it, and saves via `setMaxItemsPerOrder()`. After saving,
+ * calls `refreshMaxItems()` on the CartContext so the limit takes effect
+ * immediately for all users.
+ *
+ * @module components/AdminSettingsCard
+ */
 import { useEffect, useState } from "react";
 import { getMaxItemsPerOrder, setMaxItemsPerOrder } from "../services/api/settings";
 import { useCart } from "../context/CartContext";

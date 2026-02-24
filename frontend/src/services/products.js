@@ -1,3 +1,17 @@
+/**
+ * products.js — Product data service.
+ *
+ * Fetches products from the Supabase `products` table with related data
+ * (images, reviews, variants) and maps snake_case DB rows to camelCase
+ * frontend objects via `mapDbProduct()`.
+ *
+ * ### Key functions:
+ * - `fetchProducts()` — all active products (for Shop/Home pages)
+ * - `fetchProductById(id)` — single product with full reviews + reviewer names
+ * - `mapDbProduct(row)` — raw DB row → frontend product object
+ *
+ * @module services/products
+ */
 import { supabase } from "./supabase/client";
 
 export function mapDbProduct(p) {
@@ -5,9 +19,9 @@ export function mapDbProduct(p) {
 
   const extraImages = Array.isArray(p.product_images)
     ? [...p.product_images]
-        .sort((a, b) => (a.sort_order ?? 0) - (b.sort_order ?? 0))
-        .map((img) => img.image_url)
-        .filter(Boolean)
+      .sort((a, b) => (a.sort_order ?? 0) - (b.sort_order ?? 0))
+      .map((img) => img.image_url)
+      .filter(Boolean)
     : [];
 
   const primaryImage = p.image_url ?? "";
@@ -24,17 +38,17 @@ export function mapDbProduct(p) {
   // Map variants — sorted by sort_order
   const variants = Array.isArray(p.product_variants)
     ? [...p.product_variants]
-        .filter((v) => v.is_active !== false)
-        .sort((a, b) => (a.sort_order ?? 0) - (b.sort_order ?? 0))
-        .map((v) => ({
-          id: v.id,
-          label: v.label,
-          price: Number(v.price_inr ?? 0),
-          stockQty: Number(v.stock_qty ?? 0),
-          sku: v.sku ?? "",
-          sortOrder: v.sort_order ?? 0,
-          isActive: v.is_active ?? true,
-        }))
+      .filter((v) => v.is_active !== false)
+      .sort((a, b) => (a.sort_order ?? 0) - (b.sort_order ?? 0))
+      .map((v) => ({
+        id: v.id,
+        label: v.label,
+        price: Number(v.price_inr ?? 0),
+        stockQty: Number(v.stock_qty ?? 0),
+        sku: v.sku ?? "",
+        sortOrder: v.sort_order ?? 0,
+        isActive: v.is_active ?? true,
+      }))
     : [];
 
   // Price displayed on card:

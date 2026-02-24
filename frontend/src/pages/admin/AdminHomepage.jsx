@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import { supabase } from "../../services/supabase/client";
+import ImagePositionAdjuster from "../../components/ImagePositionAdjuster";
 
-// ── Defaults ──────────────────────────────────────────────────────────────────
 const DEFAULT_COPY = {
     headline: "Engineered for",
     headlineAccent: "daily consistency.",
@@ -16,19 +16,19 @@ const DEFAULT_COPY = {
 };
 
 const DEFAULT_PILLARS = [
-    { icon: "✦", title: "Clean Labels",    desc: "No fillers, no hidden ingredients. Every formula is fully disclosed." },
-    { icon: "◈", title: "Lab Tested",      desc: "Third-party verified for potency, purity, and safety." },
-    { icon: "⬡", title: "COD Available",   desc: "Cash on delivery across India. No prepayment required." },
+    { icon: "✦", title: "Clean Labels", desc: "No fillers, no hidden ingredients. Every formula is fully disclosed." },
+    { icon: "◈", title: "Lab Tested", desc: "Third-party verified for potency, purity, and safety." },
+    { icon: "⬡", title: "COD Available", desc: "Cash on delivery across India. No prepayment required." },
     { icon: "⌖", title: "Fast Fulfilment", desc: "Orders dispatched within 24 hours from our facility." },
 ];
 
 const DEFAULT_CATEGORIES = [
     { label: "Multivitamins", emoji: "💊", category: "General Wellness" },
-    { label: "Joint Support",  emoji: "🦴", category: "Joint Support" },
-    { label: "Bone Health",    emoji: "🧬", category: "Bone Health" },
-    { label: "Hair & Skin",    emoji: "✨", category: "HSN" },
-    { label: "Gut Health",     emoji: "🌿", category: "Gut Health" },
-    { label: "Collagen",       emoji: "🔬", category: "Collagen" },
+    { label: "Joint Support", emoji: "🦴", category: "Joint Support" },
+    { label: "Bone Health", emoji: "🧬", category: "Bone Health" },
+    { label: "Hair & Skin", emoji: "✨", category: "HSN" },
+    { label: "Gut Health", emoji: "🌿", category: "Gut Health" },
+    { label: "Collagen", emoji: "🔬", category: "Collagen" },
 ];
 
 const DEFAULT_PHILOSOPHY = {
@@ -51,135 +51,29 @@ function SectionHeader({ step, title, desc }) {
     );
 }
 
-// ── Image Position Adjuster Modal ─────────────────────────────────────────────
-function ImagePositionAdjuster({ img, onSave, onClose }) {
-    const containerRef = useRef(null);
-    const [pos, setPos] = useState(() => {
-        if (img.position) {
-            const parts = img.position.split(" ");
-            return { x: parseFloat(parts[0]) || 50, y: parseFloat(parts[1]) || 50 };
-        }
-        return { x: 50, y: 50 };
-    });
-    const dragging = useRef(false);
-    const lastMouse = useRef(null);
-
-    useEffect(() => {
-        const onMouseMove = (e) => {
-            if (!dragging.current || !containerRef.current) return;
-            const rect = containerRef.current.getBoundingClientRect();
-            const dx = e.clientX - lastMouse.current.x;
-            const dy = e.clientY - lastMouse.current.y;
-            lastMouse.current = { x: e.clientX, y: e.clientY };
-            setPos((p) => ({
-                x: Math.max(0, Math.min(100, p.x - (dx / rect.width) * 100)),
-                y: Math.max(0, Math.min(100, p.y - (dy / rect.height) * 100)),
-            }));
-        };
-        const onMouseUp = () => { dragging.current = false; };
-        window.addEventListener("mousemove", onMouseMove);
-        window.addEventListener("mouseup", onMouseUp);
-        return () => { window.removeEventListener("mousemove", onMouseMove); window.removeEventListener("mouseup", onMouseUp); };
-    }, []);
-
-    useEffect(() => {
-        const onTouchMove = (e) => {
-            if (!dragging.current || !containerRef.current) return;
-            const rect = containerRef.current.getBoundingClientRect();
-            const dx = e.touches[0].clientX - lastMouse.current.x;
-            const dy = e.touches[0].clientY - lastMouse.current.y;
-            lastMouse.current = { x: e.touches[0].clientX, y: e.touches[0].clientY };
-            setPos((p) => ({
-                x: Math.max(0, Math.min(100, p.x - (dx / rect.width) * 100)),
-                y: Math.max(0, Math.min(100, p.y - (dy / rect.height) * 100)),
-            }));
-            e.preventDefault();
-        };
-        const onTouchEnd = () => { dragging.current = false; };
-        window.addEventListener("touchmove", onTouchMove, { passive: false });
-        window.addEventListener("touchend", onTouchEnd);
-        return () => { window.removeEventListener("touchmove", onTouchMove); window.removeEventListener("touchend", onTouchEnd); };
-    }, []);
-
-    const posStr = `${Math.round(pos.x)}% ${Math.round(pos.y)}%`;
-
-    return (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm p-4">
-            <div className="bg-white rounded-2xl shadow-2xl w-full max-w-xl overflow-hidden">
-                <div className="flex items-center justify-between px-5 py-4 border-b border-[#E8E4DE]">
-                    <div>
-                        <div className="text-sm font-semibold text-stone-900">Adjust Image Position</div>
-                        <div className="text-xs text-stone-400 mt-0.5">Drag the image to set what's visible in the carousel frame</div>
-                    </div>
-                    <button type="button" onClick={onClose} className="h-7 w-7 rounded-full border border-[#E8E4DE] flex items-center justify-center text-stone-400 hover:text-stone-700">
-                        <svg className="h-3.5 w-3.5" viewBox="0 0 20 20" fill="currentColor"><path fillRule="evenodd" d="M4.293 4.293a1 1 0 011.414 0L10 8.586l4.293-4.293a1 1 0 111.414 1.414L11.414 10l4.293 4.293a1 1 0 01-1.414 1.414L10 11.414l-4.293 4.293a1 1 0 01-1.414-1.414L8.586 10 4.293 5.707a1 1 0 010-1.414z" clipRule="evenodd"/></svg>
-                    </button>
-                </div>
-                <div className="p-5">
-                    <div ref={containerRef}
-                        className="relative overflow-hidden rounded-xl border-2 border-[#1e3a5f]/30 select-none"
-                        style={{ aspectRatio: "2/1", cursor: "grab" }}
-                        onMouseDown={(e) => { dragging.current = true; lastMouse.current = { x: e.clientX, y: e.clientY }; e.preventDefault(); }}
-                        onTouchStart={(e) => { dragging.current = true; lastMouse.current = { x: e.touches[0].clientX, y: e.touches[0].clientY }; }}
-                    >
-                        <img src={img._preview || img.url} alt="Position preview"
-                            className="absolute inset-0 w-full h-full pointer-events-none"
-                            style={{ objectFit: "cover", objectPosition: posStr }} draggable={false} />
-                        <div className="absolute inset-0 pointer-events-none" style={{
-                            backgroundImage: "linear-gradient(rgba(255,255,255,0.15) 1px, transparent 1px), linear-gradient(90deg, rgba(255,255,255,0.15) 1px, transparent 1px)",
-                            backgroundSize: "33.33% 33.33%",
-                        }} />
-                        <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
-                            <div className="h-5 w-5 rounded-full border-2 border-white/80 shadow-[0_0_0_1px_rgba(0,0,0,0.3)]" />
-                        </div>
-                        <div className="absolute bottom-2 left-0 right-0 text-center pointer-events-none">
-                            <span className="inline-flex items-center gap-1 rounded-full bg-black/40 backdrop-blur-sm px-3 py-1 text-[10px] text-white font-medium">✦ Drag to reposition</span>
-                        </div>
-                    </div>
-                    <div className="mt-3 flex items-center justify-between">
-                        <div className="text-xs text-stone-400">Position: <span className="font-mono text-stone-700">{posStr}</span></div>
-                        <button type="button" onClick={() => setPos({ x: 50, y: 50 })} className="text-xs text-[#1e3a5f] hover:underline">Reset to center</button>
-                    </div>
-                    <div className="mt-3 flex flex-wrap gap-2">
-                        {[{ label: "Top", pos: { x: 50, y: 15 } }, { label: "Center", pos: { x: 50, y: 50 } }, { label: "Bottom", pos: { x: 50, y: 85 } }, { label: "Left", pos: { x: 20, y: 50 } }, { label: "Right", pos: { x: 80, y: 50 } }]
-                            .map(({ label, pos: p }) => (
-                                <button key={label} type="button" onClick={() => setPos(p)}
-                                    className="rounded-lg border border-[#E8E4DE] bg-stone-50 px-2.5 py-1 text-xs text-stone-600 hover:border-[#1e3a5f]/40 hover:bg-[#EFF6FF] transition">{label}</button>
-                            ))}
-                    </div>
-                </div>
-                <div className="flex items-center justify-end gap-3 px-5 py-4 border-t border-[#E8E4DE]">
-                    <button type="button" onClick={onClose} className="rounded-xl border border-[#E8E4DE] px-4 py-2 text-sm text-stone-600 hover:bg-stone-50">Cancel</button>
-                    <button type="button" onClick={() => { onSave(posStr); onClose(); }}
-                        className="rounded-xl bg-[#1e3a5f] px-5 py-2 text-sm font-semibold text-white hover:bg-[#16304f] transition">Apply position</button>
-                </div>
-            </div>
-        </div>
-    );
-}
 
 // ── Main Component ────────────────────────────────────────────────────────────
 export default function AdminHomepage({ products = [] }) {
     // ── Logo ─────────────────────────────────────────────────────────────────
-    const [logoUrl, setLogoUrl]             = useState("");
-    const [logoFile, setLogoFile]           = useState(null);
-    const [logoPreview, setLogoPreview]     = useState("");
+    const [logoUrl, setLogoUrl] = useState("");
+    const [logoFile, setLogoFile] = useState(null);
+    const [logoPreview, setLogoPreview] = useState("");
     const [logoUploading, setLogoUploading] = useState(false);
-    const [logoErr, setLogoErr]             = useState("");
+    const [logoErr, setLogoErr] = useState("");
 
     // ── Hero images ──────────────────────────────────────────────────────────
-    const [images, setImages]             = useState([]);
+    const [images, setImages] = useState([]);
     const [imgUploading, setImgUploading] = useState(false);
-    const [imgErr, setImgErr]             = useState("");
+    const [imgErr, setImgErr] = useState("");
     const [adjustingIdx, setAdjustingIdx] = useState(null);
 
     // ── Hero copy ────────────────────────────────────────────────────────────
-    const [headline, setHeadline]       = useState(DEFAULT_COPY.headline);
-    const [accent, setAccent]           = useState(DEFAULT_COPY.headlineAccent);
-    const [body, setBody]               = useState(DEFAULT_COPY.body);
-    const [primaryCta, setPrimaryCta]   = useState(DEFAULT_COPY.primaryCta);
+    const [headline, setHeadline] = useState(DEFAULT_COPY.headline);
+    const [accent, setAccent] = useState(DEFAULT_COPY.headlineAccent);
+    const [body, setBody] = useState(DEFAULT_COPY.body);
+    const [primaryCta, setPrimaryCta] = useState(DEFAULT_COPY.primaryCta);
     const [secondaryCta, setSecondaryCta] = useState(DEFAULT_COPY.secondaryCta);
-    const [trust, setTrust]             = useState(DEFAULT_COPY.trustIcons);
+    const [trust, setTrust] = useState(DEFAULT_COPY.trustIcons);
 
     // ── Pillars ──────────────────────────────────────────────────────────────
     const [pillars, setPillars] = useState(DEFAULT_PILLARS);
@@ -193,12 +87,12 @@ export default function AdminHomepage({ products = [] }) {
     // ── Philosophy ───────────────────────────────────────────────────────────
     const [philoLabel, setPhiloLabel] = useState(DEFAULT_PHILOSOPHY.label);
     const [philoHeading, setPhiloHeading] = useState(DEFAULT_PHILOSOPHY.heading);
-    const [philoBody, setPhiloBody]   = useState(DEFAULT_PHILOSOPHY.body);
-    const [philoCta, setPhiloCta]     = useState(DEFAULT_PHILOSOPHY.cta);
+    const [philoBody, setPhiloBody] = useState(DEFAULT_PHILOSOPHY.body);
+    const [philoCta, setPhiloCta] = useState(DEFAULT_PHILOSOPHY.cta);
 
     // ── UI ───────────────────────────────────────────────────────────────────
     const [saving, setSaving] = useState(false);
-    const [msg, setMsg]       = useState("");
+    const [msg, setMsg] = useState("");
     const [loading, setLoading] = useState(true);
 
     // ── Load ─────────────────────────────────────────────────────────────────
@@ -391,17 +285,17 @@ export default function AdminHomepage({ products = [] }) {
                                     ⊹ Adjust
                                 </button>
                                 <div className="flex items-center gap-1.5">
-                                    {i > 0 && <button type="button" onClick={() => { const a=[...images]; [a[i-1],a[i]]=[a[i],a[i-1]]; setImages(a); }} className="h-7 w-7 rounded-full bg-white/90 flex items-center justify-center text-stone-700 hover:bg-white shadow text-sm">←</button>}
-                                    {i < images.length - 1 && <button type="button" onClick={() => { const a=[...images]; [a[i],a[i+1]]=[a[i+1],a[i]]; setImages(a); }} className="h-7 w-7 rounded-full bg-white/90 flex items-center justify-center text-stone-700 hover:bg-white shadow text-sm">→</button>}
-                                    <button type="button" onClick={() => setImages((p) => p.filter((_,j) => j !== i))} className="h-7 w-7 rounded-full bg-red-500 flex items-center justify-center text-white hover:bg-red-600 shadow">
-                                        <svg className="h-3 w-3" viewBox="0 0 20 20" fill="currentColor"><path fillRule="evenodd" d="M4.293 4.293a1 1 0 011.414 0L10 8.586l4.293-4.293a1 1 0 111.414 1.414L11.414 10l4.293 4.293a1 1 0 01-1.414 1.414L10 11.414l-4.293 4.293a1 1 0 01-1.414-1.414L8.586 10 4.293 5.707a1 1 0 010-1.414z" clipRule="evenodd"/></svg>
+                                    {i > 0 && <button type="button" onClick={() => { const a = [...images];[a[i - 1], a[i]] = [a[i], a[i - 1]]; setImages(a); }} className="h-7 w-7 rounded-full bg-white/90 flex items-center justify-center text-stone-700 hover:bg-white shadow text-sm">←</button>}
+                                    {i < images.length - 1 && <button type="button" onClick={() => { const a = [...images];[a[i], a[i + 1]] = [a[i + 1], a[i]]; setImages(a); }} className="h-7 w-7 rounded-full bg-white/90 flex items-center justify-center text-stone-700 hover:bg-white shadow text-sm">→</button>}
+                                    <button type="button" onClick={() => setImages((p) => p.filter((_, j) => j !== i))} className="h-7 w-7 rounded-full bg-red-500 flex items-center justify-center text-white hover:bg-red-600 shadow">
+                                        <svg className="h-3 w-3" viewBox="0 0 20 20" fill="currentColor"><path fillRule="evenodd" d="M4.293 4.293a1 1 0 011.414 0L10 8.586l4.293-4.293a1 1 0 111.414 1.414L11.414 10l4.293 4.293a1 1 0 01-1.414 1.414L10 11.414l-4.293 4.293a1 1 0 01-1.414-1.414L8.586 10 4.293 5.707a1 1 0 010-1.414z" clipRule="evenodd" /></svg>
                                     </button>
                                 </div>
                             </div>
                         </div>
                     ))}
                     <label className="relative rounded-xl border-2 border-dashed border-stone-300 bg-stone-50 hover:border-[#1e3a5f] hover:bg-[#EFF6FF] cursor-pointer transition-colors flex flex-col items-center justify-center gap-2 text-stone-400 hover:text-[#1e3a5f]" style={{ aspectRatio: "4/3" }}>
-                        <svg className="h-6 w-6" viewBox="0 0 20 20" fill="currentColor"><path fillRule="evenodd" d="M10 3a1 1 0 011 1v5h5a1 1 0 110 2h-5v5a1 1 0 11-2 0v-5H4a1 1 0 110-2h5V4a1 1 0 011-1z" clipRule="evenodd"/></svg>
+                        <svg className="h-6 w-6" viewBox="0 0 20 20" fill="currentColor"><path fillRule="evenodd" d="M10 3a1 1 0 011 1v5h5a1 1 0 110 2h-5v5a1 1 0 11-2 0v-5H4a1 1 0 110-2h5V4a1 1 0 011-1z" clipRule="evenodd" /></svg>
                         <span className="text-[11px] font-medium text-center px-2">Add image</span>
                         <input type="file" accept="image/*" multiple className="hidden"
                             onChange={(e) => { const files = Array.from(e.target.files || []); setImages((p) => [...p, ...files.map((f) => ({ url: "", position: "50% 50%", _file: f, _preview: URL.createObjectURL(f), _key: `new_${Date.now()}_${Math.random()}` }))]); e.target.value = ""; }} />
@@ -444,8 +338,8 @@ export default function AdminHomepage({ products = [] }) {
                         <div className="grid gap-2 sm:grid-cols-3">
                             {trust.map((t, i) => (
                                 <div key={i} className="flex items-center gap-2 rounded-xl border border-[#E8E4DE] bg-stone-50 px-3 py-2">
-                                    <input value={t.icon} onChange={(e) => setTrust((p) => p.map((x,j) => j===i ? {...x,icon:e.target.value} : x))} className="w-10 text-center rounded-lg border border-[#E8E4DE] bg-white px-1 py-1 text-base outline-none" />
-                                    <input value={t.label} onChange={(e) => setTrust((p) => p.map((x,j) => j===i ? {...x,label:e.target.value} : x))} className="flex-1 rounded-lg border border-[#E8E4DE] bg-white px-2 py-1 text-xs text-stone-900 outline-none" placeholder="Label" />
+                                    <input value={t.icon} onChange={(e) => setTrust((p) => p.map((x, j) => j === i ? { ...x, icon: e.target.value } : x))} className="w-10 text-center rounded-lg border border-[#E8E4DE] bg-white px-1 py-1 text-base outline-none" />
+                                    <input value={t.label} onChange={(e) => setTrust((p) => p.map((x, j) => j === i ? { ...x, label: e.target.value } : x))} className="flex-1 rounded-lg border border-[#E8E4DE] bg-white px-2 py-1 text-xs text-stone-900 outline-none" placeholder="Label" />
                                 </div>
                             ))}
                         </div>
@@ -459,7 +353,7 @@ export default function AdminHomepage({ products = [] }) {
                             <span className="rounded-xl bg-[#1e3a5f] text-white px-4 py-1.5 text-xs font-semibold">{primaryCta}</span>
                             <span className="rounded-xl border border-[#E8E4DE] bg-white text-stone-700 px-4 py-1.5 text-xs font-semibold">{secondaryCta} →</span>
                         </div>
-                        <div className="mt-4 flex gap-5">{trust.slice(0,3).map((t) => (<div key={t.label} className="text-center"><div className="text-lg">{t.icon}</div><div className="text-[10px] text-stone-500 mt-0.5">{t.label}</div></div>))}</div>
+                        <div className="mt-4 flex gap-5">{trust.slice(0, 3).map((t) => (<div key={t.label} className="text-center"><div className="text-lg">{t.icon}</div><div className="text-[10px] text-stone-500 mt-0.5">{t.label}</div></div>))}</div>
                     </div>
                 </div>
             </div>
@@ -470,13 +364,13 @@ export default function AdminHomepage({ products = [] }) {
                 <div className="space-y-3">
                     {pillars.map((p, i) => (
                         <div key={i} className="grid gap-2 sm:grid-cols-[48px_1fr_2fr_32px] items-center rounded-xl border border-[#E8E4DE] bg-stone-50 px-3 py-2.5">
-                            <input value={p.icon} onChange={(e) => setPillars((prev) => prev.map((x,j) => j===i ? {...x,icon:e.target.value} : x))}
+                            <input value={p.icon} onChange={(e) => setPillars((prev) => prev.map((x, j) => j === i ? { ...x, icon: e.target.value } : x))}
                                 className="w-10 text-center rounded-lg border border-[#E8E4DE] bg-white px-1 py-1.5 text-lg outline-none" title="Icon/emoji" />
-                            <input value={p.title} onChange={(e) => setPillars((prev) => prev.map((x,j) => j===i ? {...x,title:e.target.value} : x))}
+                            <input value={p.title} onChange={(e) => setPillars((prev) => prev.map((x, j) => j === i ? { ...x, title: e.target.value } : x))}
                                 className="rounded-lg border border-[#E8E4DE] bg-white px-2 py-1.5 text-sm font-semibold text-stone-900 outline-none" placeholder="Title" />
-                            <input value={p.desc} onChange={(e) => setPillars((prev) => prev.map((x,j) => j===i ? {...x,desc:e.target.value} : x))}
+                            <input value={p.desc} onChange={(e) => setPillars((prev) => prev.map((x, j) => j === i ? { ...x, desc: e.target.value } : x))}
                                 className="rounded-lg border border-[#E8E4DE] bg-white px-2 py-1.5 text-xs text-stone-600 outline-none" placeholder="Description" />
-                            <button type="button" onClick={() => setPillars((prev) => prev.filter((_,j) => j !== i))}
+                            <button type="button" onClick={() => setPillars((prev) => prev.filter((_, j) => j !== i))}
                                 className="h-7 w-7 rounded-lg border border-red-200 bg-red-50 text-red-400 hover:bg-red-100 flex items-center justify-center text-xs">✕</button>
                         </div>
                     ))}
@@ -506,8 +400,8 @@ export default function AdminHomepage({ products = [] }) {
                                             <div className="text-xs text-stone-400">{p.category} · ₹{Number(p.price_inr || 0).toLocaleString("en-IN")}</div>
                                         </div>
                                         <div className="flex gap-1 shrink-0">
-                                            <button type="button" disabled={i === 0} onClick={() => setFeaturedIds((p) => { const a=[...p]; [a[i-1],a[i]]=[a[i],a[i-1]]; return a; })} className="h-6 w-6 rounded-lg border border-[#E8E4DE] bg-white text-stone-400 hover:text-stone-700 disabled:opacity-30 text-xs flex items-center justify-center">↑</button>
-                                            <button type="button" disabled={i === featuredIds.length - 1} onClick={() => setFeaturedIds((p) => { const a=[...p]; [a[i],a[i+1]]=[a[i+1],a[i]]; return a; })} className="h-6 w-6 rounded-lg border border-[#E8E4DE] bg-white text-stone-400 hover:text-stone-700 disabled:opacity-30 text-xs flex items-center justify-center">↓</button>
+                                            <button type="button" disabled={i === 0} onClick={() => setFeaturedIds((p) => { const a = [...p];[a[i - 1], a[i]] = [a[i], a[i - 1]]; return a; })} className="h-6 w-6 rounded-lg border border-[#E8E4DE] bg-white text-stone-400 hover:text-stone-700 disabled:opacity-30 text-xs flex items-center justify-center">↑</button>
+                                            <button type="button" disabled={i === featuredIds.length - 1} onClick={() => setFeaturedIds((p) => { const a = [...p];[a[i], a[i + 1]] = [a[i + 1], a[i]]; return a; })} className="h-6 w-6 rounded-lg border border-[#E8E4DE] bg-white text-stone-400 hover:text-stone-700 disabled:opacity-30 text-xs flex items-center justify-center">↓</button>
                                             <button type="button" onClick={() => setFeaturedIds((p) => p.filter((x) => x !== pid))} className="h-6 w-6 rounded-lg border border-red-200 bg-red-50 text-red-500 hover:bg-red-100 text-xs flex items-center justify-center">✕</button>
                                         </div>
                                     </div>
@@ -529,7 +423,7 @@ export default function AdminHomepage({ products = [] }) {
                                     <div className="text-sm font-semibold text-stone-800 truncate group-hover:text-[#1e3a5f]">{p.name}</div>
                                     <div className="text-xs text-stone-400">{p.category} · ₹{Number(p.price_inr || 0).toLocaleString("en-IN")}</div>
                                 </div>
-                                <svg className="h-4 w-4 text-stone-300 group-hover:text-[#1e3a5f] shrink-0 transition" viewBox="0 0 20 20" fill="currentColor"><path fillRule="evenodd" d="M10 3a1 1 0 011 1v5h5a1 1 0 110 2h-5v5a1 1 0 11-2 0v-5H4a1 1 0 110-2h5V4a1 1 0 011-1z" clipRule="evenodd"/></svg>
+                                <svg className="h-4 w-4 text-stone-300 group-hover:text-[#1e3a5f] shrink-0 transition" viewBox="0 0 20 20" fill="currentColor"><path fillRule="evenodd" d="M10 3a1 1 0 011 1v5h5a1 1 0 110 2h-5v5a1 1 0 11-2 0v-5H4a1 1 0 110-2h5V4a1 1 0 011-1z" clipRule="evenodd" /></svg>
                             </button>
                         ))}
                     </div>
@@ -542,13 +436,13 @@ export default function AdminHomepage({ products = [] }) {
                 <div className="space-y-2 mb-3">
                     {categories.map((cat, i) => (
                         <div key={i} className="grid gap-2 grid-cols-[48px_1fr_1fr_32px] items-center rounded-xl border border-[#E8E4DE] bg-stone-50 px-3 py-2">
-                            <input value={cat.emoji} onChange={(e) => setCategories((prev) => prev.map((x,j) => j===i ? {...x,emoji:e.target.value} : x))}
+                            <input value={cat.emoji} onChange={(e) => setCategories((prev) => prev.map((x, j) => j === i ? { ...x, emoji: e.target.value } : x))}
                                 className="w-10 text-center rounded-lg border border-[#E8E4DE] bg-white px-1 py-1.5 text-lg outline-none" title="Emoji" />
-                            <input value={cat.label} onChange={(e) => setCategories((prev) => prev.map((x,j) => j===i ? {...x,label:e.target.value} : x))}
+                            <input value={cat.label} onChange={(e) => setCategories((prev) => prev.map((x, j) => j === i ? { ...x, label: e.target.value } : x))}
                                 className="rounded-lg border border-[#E8E4DE] bg-white px-2 py-1.5 text-sm font-semibold text-stone-900 outline-none" placeholder="Display label" />
-                            <input value={cat.category} onChange={(e) => setCategories((prev) => prev.map((x,j) => j===i ? {...x,category:e.target.value} : x))}
+                            <input value={cat.category} onChange={(e) => setCategories((prev) => prev.map((x, j) => j === i ? { ...x, category: e.target.value } : x))}
                                 className="rounded-lg border border-[#E8E4DE] bg-white px-2 py-1.5 text-xs text-stone-500 outline-none font-mono" placeholder="Product category value" title="Must match the category field in your products" />
-                            <button type="button" onClick={() => setCategories((prev) => prev.filter((_,j) => j !== i))}
+                            <button type="button" onClick={() => setCategories((prev) => prev.filter((_, j) => j !== i))}
                                 className="h-7 w-7 rounded-lg border border-red-200 bg-red-50 text-red-400 hover:bg-red-100 flex items-center justify-center text-xs">✕</button>
                         </div>
                     ))}
@@ -617,7 +511,8 @@ export default function AdminHomepage({ products = [] }) {
             {/* Position adjuster modal */}
             {adjustingIdx !== null && images[adjustingIdx] && (
                 <ImagePositionAdjuster
-                    img={images[adjustingIdx]}
+                    src={images[adjustingIdx]._preview || images[adjustingIdx].url}
+                    position={images[adjustingIdx].position}
                     onSave={(position) => setImages((prev) => prev.map((img, i) => i === adjustingIdx ? { ...img, position } : img))}
                     onClose={() => setAdjustingIdx(null)}
                 />

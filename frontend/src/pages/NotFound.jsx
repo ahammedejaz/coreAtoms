@@ -1,6 +1,17 @@
+/**
+ * NotFound.jsx — 404 catch-all page.
+ *
+ * Displayed for any URL that doesn't match a defined route.
+ * Provides links back to Home and Shop.
+ *
+ * @module pages/NotFound
+ */
 import { Link } from "react-router-dom";
 
+import useDocumentTitle from "../hooks/useDocumentTitle";
+
 export default function NotFound() {
+  useDocumentTitle("Page Not Found | Core Atoms");
   return (
     <div className="min-h-[70vh] grid place-items-center px-4">
       <div className="w-full max-w-xl rounded-2xl border border-neutral-200 bg-white p-8 shadow-sm text-center">

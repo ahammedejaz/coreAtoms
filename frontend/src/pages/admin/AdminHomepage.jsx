@@ -1,6 +1,7 @@
-import { useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { supabase } from "../../services/supabase/client";
 import ImagePositionAdjuster from "../../components/ImagePositionAdjuster";
+import useKeyboardShortcut from "../../hooks/useKeyboardShortcut";
 
 const DEFAULT_COPY = {
     headline: "Engineered for",
@@ -153,6 +154,11 @@ export default function AdminHomepage({ products = [] }) {
         setLoading(false);
     };
 
+    // ── Keyboard shortcut: Ctrl+S to save ────────────────────────────────────
+    const saveRef = useRef(null);
+    const handleCtrlS = useCallback((e) => { e.preventDefault(); saveRef.current?.(); }, []);
+    useKeyboardShortcut("ctrl+s", handleCtrlS);
+
     // ── Save ─────────────────────────────────────────────────────────────────
     const save = async () => {
         setSaving(true);
@@ -215,6 +221,7 @@ export default function AdminHomepage({ products = [] }) {
             setSaving(false);
         }
     };
+    saveRef.current = save;
 
     if (loading) return (
         <div className="py-10 text-center text-sm text-stone-400 animate-pulse">Loading homepage settings…</div>

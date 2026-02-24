@@ -28,11 +28,11 @@ export function ToastProvider({ children }) {
     const [toasts, setToasts] = useState([]);
     const idRef = useRef(0);
 
-    const showToast = useCallback((message, variant = "info", duration = 3000) => {
+    const showToast = useCallback((message, variant = "info", duration = 3000, action = null) => {
         const id = ++idRef.current;
-        setToasts((prev) => [...prev, { id, message, variant, exiting: false }]);
+        setToasts((prev) => [...prev, { id, message, variant, action, exiting: false }]);
 
-        setTimeout(() => {
+        const timerId = setTimeout(() => {
             // Start exit animation
             setToasts((prev) => prev.map((t) => t.id === id ? { ...t, exiting: true } : t));
             // Remove after animation
@@ -40,6 +40,9 @@ export function ToastProvider({ children }) {
                 setToasts((prev) => prev.filter((t) => t.id !== id));
             }, 300);
         }, duration);
+
+        // Return a cancel function so callers can extend the toast
+        return () => clearTimeout(timerId);
     }, []);
 
     const dismiss = useCallback((id) => {
@@ -56,7 +59,7 @@ export function ToastProvider({ children }) {
             {children}
             {/* Toast container */}
             {toasts.length > 0 && (
-                <div className="fixed top-4 right-4 z-[9999] flex flex-col gap-2 pointer-events-none" style={{ maxWidth: 360 }}>
+                <div className="fixed top-4 right-4 z-[9999] flex flex-col gap-2 pointer-events-none" style={{ maxWidth: 380 }}>
                     {toasts.map((toast) => (
                         <div
                             key={toast.id}
@@ -64,6 +67,14 @@ export function ToastProvider({ children }) {
                                 } ${toast.exiting ? "opacity-0 translate-x-4" : "opacity-100 translate-x-0 animate-toast-in"}`}
                         >
                             <span className="flex-1">{toast.message}</span>
+                            {toast.action && (
+                                <button
+                                    onClick={() => { toast.action.onClick(); dismiss(toast.id); }}
+                                    className="shrink-0 rounded-lg bg-white/20 px-2.5 py-1 text-xs font-bold hover:bg-white/30 transition"
+                                >
+                                    {toast.action.label || "Undo"}
+                                </button>
+                            )}
                             <button
                                 onClick={() => dismiss(toast.id)}
                                 className="shrink-0 opacity-70 hover:opacity-100 transition-opacity"

@@ -2,16 +2,19 @@ import { Fragment, useEffect, useMemo, useRef, useState } from "react";
 import { supabase } from "../../services/supabase/client";
 import ImagePositionAdjuster from "../../components/ImagePositionAdjuster";
 import { SkeletonAdminTable } from "../../components/Skeleton";
-
+import ConfirmDialog from "../../components/ConfirmDialog";
+import { useToast } from "../../context/ToastContext";
 
 const LOW_STOCK_THRESHOLD = 5;
 const PRODUCT_BUCKET = "product-images";
 
 export default function AdminProducts({ onProductsChange }) {
+    const { showToast } = useToast();
     // -------------------- Products (Admin CRUD) --------------------
     const [products, setProducts] = useState([]);
     const [loadingProducts, setLoadingProducts] = useState(true);
     const [productErr, setProductErr] = useState("");
+    const [confirmDlg, setConfirmDlg] = useState(null);
 
     const [showProductForm, setShowProductForm] = useState(false);
     const [editingId, setEditingId] = useState(null);
@@ -244,12 +247,20 @@ export default function AdminProducts({ onProductsChange }) {
         }
     };
 
-    const deleteExtraImage = async (imgId) => {
-        const ok = window.confirm("Remove this image?");
-        if (!ok) return;
-        const { error } = await supabase.from("product_images").delete().eq("id", imgId);
-        if (error) { alert(error.message); return; }
-        setExtraImages((prev) => prev.filter((img) => img.id !== imgId));
+    const deleteExtraImage = (imgId) => {
+        setConfirmDlg({
+            title: "Remove image?",
+            message: "This image will be permanently deleted from the product gallery.",
+            confirmLabel: "Remove",
+            variant: "danger",
+            onConfirm: async () => {
+                setConfirmDlg(null);
+                const { error } = await supabase.from("product_images").delete().eq("id", imgId);
+                if (error) { showToast(error.message, "error"); return; }
+                setExtraImages((prev) => prev.filter((img) => img.id !== imgId));
+                showToast("Image removed", "success");
+            },
+        });
     };
 
     const moveExtraImage = async (imgId, direction) => {
@@ -375,24 +386,25 @@ export default function AdminProducts({ onProductsChange }) {
         }
     };
 
-    const deleteProduct = async (id) => {
-        const ok = window.confirm(
-            "Delete this product? This will remove it from the shop."
-        );
-        if (!ok) return;
-
-        const { error } = await supabase.from("products").delete().eq("id", id);
-        if (error) {
-            alert(error.message);
-            return;
-        }
-
-        if (editingId === id) {
-            resetProductForm();
-            setShowProductForm(false);
-        }
-
-        loadProducts();
+    const deleteProduct = (id) => {
+        const product = products.find((p) => p.id === id);
+        setConfirmDlg({
+            title: "Delete product?",
+            message: `"${product?.name || "This product"}" will be permanently removed from the shop.`,
+            confirmLabel: "Delete product",
+            variant: "danger",
+            onConfirm: async () => {
+                setConfirmDlg(null);
+                const { error } = await supabase.from("products").delete().eq("id", id);
+                if (error) { showToast(error.message, "error"); return; }
+                if (editingId === id) {
+                    resetProductForm();
+                    setShowProductForm(false);
+                }
+                showToast("Product deleted", "success");
+                loadProducts();
+            },
+        });
     };
 
     const filteredProducts = useMemo(() => {
@@ -413,7 +425,7 @@ export default function AdminProducts({ onProductsChange }) {
             .update({ stock_qty: qty })
             .eq("id", productId);
         setSavingInlineStock(false);
-        if (error) { alert(error.message); return; }
+        if (error) { showToast(error.message, "error"); return; }
         setInlineStockId(null);
         setInlineStockValue("");
         loadProducts();
@@ -721,12 +733,23 @@ export default function AdminProducts({ onProductsChange }) {
                                                     {/* Delete */}
                                                     <button
                                                         type="button"
-                                                        onClick={async () => {
+                                                        onClick={() => {
                                                             if (v.id) {
-                                                                if (!window.confirm("Remove this variant? Customers will no longer see it.")) return;
-                                                                await supabase.from("product_variants").delete().eq("id", v.id);
+                                                                setConfirmDlg({
+                                                                    title: "Remove variant?",
+                                                                    message: `"${v.label || "This variant"}" will be removed. Customers will no longer see it.`,
+                                                                    confirmLabel: "Remove variant",
+                                                                    variant: "danger",
+                                                                    onConfirm: async () => {
+                                                                        setConfirmDlg(null);
+                                                                        await supabase.from("product_variants").delete().eq("id", v.id);
+                                                                        setVariants(prev => prev.filter((_, j) => j !== i));
+                                                                        showToast("Variant removed", "success");
+                                                                    },
+                                                                });
+                                                            } else {
+                                                                setVariants(prev => prev.filter((_, j) => j !== i));
                                                             }
-                                                            setVariants(prev => prev.filter((_, j) => j !== i));
                                                         }}
                                                         className="h-7 w-7 flex items-center justify-center rounded-lg text-stone-300 hover:text-red-500 hover:bg-red-50 transition"
                                                         title="Remove variant"
@@ -1053,7 +1076,14 @@ export default function AdminProducts({ onProductsChange }) {
                         ) : productErr ? (
                             <div className="text-sm text-red-600">{productErr}</div>
                         ) : products.length === 0 ? (
-                            <div className="text-sm text-stone-400">No products yet.</div>
+                            <div className="mt-8 flex flex-col items-center py-10 text-center">
+                                <div className="h-14 w-14 rounded-2xl bg-stone-100 flex items-center justify-center mb-4">
+                                    <svg className="h-7 w-7 text-stone-400" viewBox="0 0 20 20" fill="currentColor"><path fillRule="evenodd" d="M10 2a4 4 0 00-4 4v1H5a1 1 0 00-.994.89l-1 9A1 1 0 004 18h12a1 1 0 00.994-1.11l-1-9A1 1 0 0015 7h-1V6a4 4 0 00-4-4zm2 5V6a2 2 0 10-4 0v1h4zm-6 3a1 1 0 112 0 1 1 0 01-2 0zm7-1a1 1 0 100 2 1 1 0 000-2z" clipRule="evenodd" /></svg>
+                                </div>
+                                <div className="text-sm font-semibold text-stone-700">No products yet</div>
+                                <p className="mt-1 text-xs text-stone-400 max-w-xs">Add your first product to get started.</p>
+                                <button type="button" onClick={() => { resetProductForm(); setEditingId(null); setShowProductForm(true); }} className="btn-primary mt-4 text-sm">+ Add product</button>
+                            </div>
                         ) : (
                             <div className="mt-2">
                                 {/* Mobile cards */}
@@ -1333,6 +1363,13 @@ export default function AdminProducts({ onProductsChange }) {
                     aspectRatio="37/22"
                     onSave={(val) => setPImagePosition(val)}
                     onClose={() => setShowImageAdjuster(false)}
+                />
+            )}
+
+            {confirmDlg && (
+                <ConfirmDialog
+                    {...confirmDlg}
+                    onCancel={() => setConfirmDlg(null)}
                 />
             )}
         </>

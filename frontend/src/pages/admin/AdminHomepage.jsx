@@ -2,6 +2,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { supabase } from "../../services/supabase/client";
 import ImagePositionAdjuster from "../../components/ImagePositionAdjuster";
 import useKeyboardShortcut from "../../hooks/useKeyboardShortcut";
+import { useToast } from "../../context/ToastContext";
 
 const DEFAULT_COPY = {
     headline: "Engineered for",
@@ -55,6 +56,7 @@ function SectionHeader({ step, title, desc }) {
 
 // ── Main Component ────────────────────────────────────────────────────────────
 export default function AdminHomepage({ products = [] }) {
+    const { showToast } = useToast();
     // ── Logo ─────────────────────────────────────────────────────────────────
     const [logoUrl, setLogoUrl] = useState("");
     const [logoFile, setLogoFile] = useState(null);
@@ -211,12 +213,14 @@ export default function AdminHomepage({ products = [] }) {
             ]);
 
             const err = results.find((r) => r.error)?.error;
-            if (err) { setMsg(`Save failed: ${err.message}`); setSaving(false); return; }
+            if (err) { setMsg(`Save failed: ${err.message}`); showToast(err.message, "error"); setSaving(false); return; }
 
             setImages(finalImages.map((img, i) => ({ ...img, _key: String(i) })));
             setMsg("Saved ✅ — all changes are live.");
+            showToast("Homepage saved — all changes are live", "success");
         } catch (e) {
             setMsg(e?.message || "Save failed");
+            showToast(e?.message || "Save failed", "error");
         } finally {
             setSaving(false);
         }

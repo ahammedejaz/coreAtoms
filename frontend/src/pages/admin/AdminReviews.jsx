@@ -1,8 +1,9 @@
-import { useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { supabase } from "../../services/supabase/client";
 import { SkeletonAdminList } from "../../components/Skeleton";
 import ConfirmDialog from "../../components/ConfirmDialog";
 import { useToast } from "../../context/ToastContext";
+import useKeyboardShortcut from "../../hooks/useKeyboardShortcut";
 
 export default function AdminReviews({ onCountChange }) {
     const { showToast } = useToast();
@@ -11,6 +12,11 @@ export default function AdminReviews({ onCountChange }) {
     const [err, setErr] = useState("");
     const [search, setSearch] = useState("");
     const [confirmDlg, setConfirmDlg] = useState(null);
+
+    // Ctrl+S → refresh reviews
+    const loadRef = useRef(null);
+    const handleCtrlS = useCallback((e) => { e.preventDefault(); loadRef.current?.(); }, []);
+    useKeyboardShortcut("ctrl+s", handleCtrlS);
 
     const load = async () => {
         setLoading(true); setErr("");

@@ -1,9 +1,10 @@
-import { Fragment, useEffect, useMemo, useRef, useState } from "react";
+import { Fragment, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { supabase } from "../../services/supabase/client";
 import ImagePositionAdjuster from "../../components/ImagePositionAdjuster";
 import { SkeletonAdminTable } from "../../components/Skeleton";
 import ConfirmDialog from "../../components/ConfirmDialog";
 import { useToast } from "../../context/ToastContext";
+import useKeyboardShortcut from "../../hooks/useKeyboardShortcut";
 
 const LOW_STOCK_THRESHOLD = 5;
 const PRODUCT_BUCKET = "product-images";
@@ -15,6 +16,14 @@ export default function AdminProducts({ onProductsChange }) {
     const [loadingProducts, setLoadingProducts] = useState(true);
     const [productErr, setProductErr] = useState("");
     const [confirmDlg, setConfirmDlg] = useState(null);
+
+    // Ctrl+S → save product (when form is open)
+    const saveProductRef = useRef(null);
+    const showProductFormRef = useRef(false);
+    const handleCtrlS = useCallback((e) => {
+        if (showProductFormRef.current) { e.preventDefault(); saveProductRef.current?.(); }
+    }, []);
+    useKeyboardShortcut("ctrl+s", handleCtrlS);
 
     const [showProductForm, setShowProductForm] = useState(false);
     const [editingId, setEditingId] = useState(null);
@@ -385,6 +394,8 @@ export default function AdminProducts({ onProductsChange }) {
             setSavingProduct(false);
         }
     };
+    saveProductRef.current = saveProduct;
+    showProductFormRef.current = showProductForm;
 
     const deleteProduct = (id) => {
         const product = products.find((p) => p.id === id);

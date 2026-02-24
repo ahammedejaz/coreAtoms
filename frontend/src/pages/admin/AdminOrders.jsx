@@ -1,8 +1,9 @@
-import { Fragment, useEffect, useMemo, useState } from "react";
+import { Fragment, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { supabase } from "../../services/supabase/client";
 import { SkeletonAdminTable } from "../../components/Skeleton";
 import ConfirmDialog from "../../components/ConfirmDialog";
 import { useToast } from "../../context/ToastContext";
+import useKeyboardShortcut from "../../hooks/useKeyboardShortcut";
 
 const LOW_STOCK_THRESHOLD = 5;
 
@@ -12,6 +13,11 @@ export default function AdminOrders({ onOrdersChange }) {
     const [loadingOrders, setLoadingOrders] = useState(false);
     const [orderErr, setOrderErr] = useState("");
     const [confirmDlg, setConfirmDlg] = useState(null);
+
+    // Ctrl+S → export CSV
+    const exportRef = useRef(null);
+    const handleCtrlS = useCallback((e) => { e.preventDefault(); exportRef.current?.(); }, []);
+    useKeyboardShortcut("ctrl+s", handleCtrlS);
     const [orderSearch, setOrderSearch] = useState("");
     const [orderStatusFilter, setOrderStatusFilter] = useState("All");
     const [orderDateFrom, setOrderDateFrom] = useState("");
@@ -356,6 +362,7 @@ export default function AdminOrders({ onOrdersChange }) {
         a.click();
         URL.revokeObjectURL(url);
     };
+    exportRef.current = exportOrdersCSV;
 
     return (
         <>

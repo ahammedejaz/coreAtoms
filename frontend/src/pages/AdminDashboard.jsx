@@ -93,7 +93,9 @@ export default function AdminDashboard() {
 
     const stats = useMemo(() => {
         const totalOrders = orders.length;
-        const totalRevenue = orders.reduce((s, o) => s + Number(o.computed_total_inr || 0), 0);
+        const totalRevenue = orders
+            .filter((o) => String(o.status || "").toLowerCase() === "delivered")
+            .reduce((s, o) => s + Number(o.computed_total_inr || 0), 0);
         const activeProducts = products.filter((p) => p.is_active).length;
         const lowStock = products.filter(
             (p) => p.is_active && Number(p.stock_qty || 0) <= LOW_STOCK_THRESHOLD

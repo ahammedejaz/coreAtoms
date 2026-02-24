@@ -1,10 +1,12 @@
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { supabase } from "../../services/supabase/client";
+import { useToast } from "../../context/ToastContext";
+import useKeyboardShortcut from "../../hooks/useKeyboardShortcut";
 
 export default function AdminSettings() {
+    const { showToast } = useToast();
     const [maxItems, setMaxItems] = useState(15);
-    const [saving, setSaving]     = useState(false);
-    const [msg, setMsg]           = useState("");
+    const [saving, setSaving] = useState(false);
 
     useEffect(() => {
         supabase.from("app_settings").select("value")
@@ -16,14 +18,28 @@ export default function AdminSettings() {
     }, []);
 
     const save = async () => {
-        setSaving(true); setMsg("");
+        setSaving(true);
         const n = Number(maxItems);
-        if (!Number.isFinite(n) || n <= 0) { setMsg("Enter a valid number > 0"); setSaving(false); return; }
+        if (!Number.isFinite(n) || n <= 0) {
+            showToast("Enter a valid number > 0", "error");
+            setSaving(false);
+            return;
+        }
         const { error } = await supabase.from("app_settings")
             .update({ value: { n } }).eq("key", "max_items_per_order");
-        setMsg(error ? error.message : "Saved ✅");
+        if (error) {
+            showToast(error.message, "error");
+        } else {
+            showToast("Settings saved", "success");
+        }
         setSaving(false);
     };
+
+    // Ctrl+S to save
+    const saveRef = useRef(save);
+    saveRef.current = save;
+    const handleCtrlS = useCallback((e) => { e.preventDefault(); saveRef.current(); }, []);
+    useKeyboardShortcut("ctrl+s", handleCtrlS);
 
     return (
         <div className="max-w-2xl">
@@ -41,7 +57,7 @@ export default function AdminSettings() {
                     <button onClick={save} disabled={saving} className="btn-primary disabled:opacity-50">
                         {saving ? "Saving..." : "Save"}
                     </button>
-                    {msg && <div className="text-sm text-stone-600">{msg}</div>}
+                    <span className="text-xs text-stone-400">Ctrl+S</span>
                 </div>
             </div>
         </div>

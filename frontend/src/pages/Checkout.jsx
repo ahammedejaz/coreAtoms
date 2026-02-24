@@ -11,8 +11,9 @@ import { useState, useEffect, useCallback } from "react";
 import { Link, useNavigate } from "react-router-dom";
 import { useAuth } from "../context/AuthContext";
 import { useCart } from "../context/CartContext";
+import { useToast } from "../context/ToastContext";
 import { supabase } from "../services/supabase/client";
-import useDocumentTitle from "../hooks/useDocumentTitle";
+import SEO from "../components/SEO";
 
 const money = (n) => `₹${Number(n || 0).toLocaleString("en-IN")}`;
 
@@ -38,10 +39,10 @@ function isValidAddress(a) {
 }
 
 export default function Checkout() {
-  useDocumentTitle("Checkout | Core Atoms");
   const navigate = useNavigate();
   const { user } = useAuth();
   const { items, subtotal, totalItems, clear } = useCart();
+  const { showToast } = useToast();
 
   // Saved addresses from Supabase
   const [savedAddresses, setSavedAddresses] = useState([]);
@@ -53,10 +54,12 @@ export default function Checkout() {
   const [savingAddress, setSavingAddress] = useState(false);
   const [addressSaved, setAddressSaved] = useState(false);
 
+  // Confirmation state for address deletion (replaces window.confirm)
+  const [pendingDeleteId, setPendingDeleteId] = useState(null);
+
   // Order state
   const [placed, setPlaced] = useState(false);
   const [loading, setLoading] = useState(false);
-  const [errorToast, setErrorToast] = useState("");
 
   const shipping = 0;
   const total = Number(subtotal || 0) + shipping;
@@ -104,6 +107,7 @@ export default function Checkout() {
       pincode: addr.pincode || "",
     });
     setAddressSaved(false);
+    setPendingDeleteId(null);
   };
 
   // Start a new blank address form
@@ -111,6 +115,7 @@ export default function Checkout() {
     setSelectedAddressId(null);
     setForm(EMPTY_ADDRESS);
     setAddressSaved(false);
+    setPendingDeleteId(null);
   };
 
   // Save current form as a new address in Supabase
@@ -133,20 +138,22 @@ export default function Checkout() {
       .select()
       .single();
     setSavingAddress(false);
-    if (error) { alert(error.message); return; }
+    if (error) { showToast(error.message, "error"); return; }
     setAddressSaved(true);
+    showToast("Address saved", "success");
     await loadAddresses();
     setSelectedAddressId(data.id);
   };
 
-  // Delete a saved address
-  const deleteAddress = async (id) => {
-    if (!window.confirm("Remove this saved address?")) return;
-    await supabase.from("addresses").delete().eq("id", id);
+  // Delete a saved address (with inline confirmation instead of window.confirm)
+  const confirmDeleteAddress = async (id) => {
+    await supabase.from("addresses").delete().eq("id", id).eq("user_id", user.id);
+    setPendingDeleteId(null);
     if (selectedAddressId === id) {
       setSelectedAddressId(null);
       setForm(EMPTY_ADDRESS);
     }
+    showToast("Address removed", "info");
     await loadAddresses();
   };
 
@@ -189,10 +196,9 @@ export default function Checkout() {
     } catch (e) {
       const msg = e?.message || "Unknown error";
       if (msg.toLowerCase().includes("insufficient")) {
-        setErrorToast("⚠️ Some items are out of stock. Please reduce quantity and try again.");
-        setTimeout(() => setErrorToast(""), 3500);
+        showToast("⚠️ Some items are out of stock. Please reduce quantity and try again.", "warning", 4000);
       } else {
-        alert(`Order failed: ${msg}`);
+        showToast(`Order failed: ${msg}`, "error", 4000);
       }
     } finally {
       setLoading(false);
@@ -219,17 +225,12 @@ export default function Checkout() {
 
   return (
     <div>
+      <SEO title="Checkout | Core Atoms" description="Complete your order with cash on delivery." noIndex />
       <div className="mb-8">
         <Link to="/cart" className="text-sm text-stone-500 hover:text-stone-900 transition-colors">← Back to Cart</Link>
         <h1 className="mt-3 text-2xl font-semibold tracking-tight text-stone-900">Checkout</h1>
         <p className="text-sm text-stone-500 mt-1">Cash on Delivery · India only</p>
       </div>
-
-      {errorToast && (
-        <div className="mb-6 rounded-2xl border border-red-200 bg-red-50 px-5 py-3.5 text-sm text-red-700">
-          {errorToast}
-        </div>
-      )}
 
       <div className="grid gap-6 lg:grid-cols-5">
 
@@ -262,8 +263,18 @@ export default function Checkout() {
                     <p className="text-xs text-stone-500 mt-0.5">{addr.line1}{addr.line2 ? `, ${addr.line2}` : ""}, {addr.city}, {addr.state} — {addr.pincode}</p>
                     <p className="text-xs text-stone-500">{addr.phone}</p>
                   </div>
-                  <button type="button" onClick={(e) => { e.stopPropagation(); deleteAddress(addr.id); }}
-                    className="text-xs text-stone-300 hover:text-red-400 transition-colors shrink-0">✕</button>
+                  {/* Delete button with inline confirmation */}
+                  {pendingDeleteId === addr.id ? (
+                    <div className="flex items-center gap-2 shrink-0" onClick={(e) => e.stopPropagation()}>
+                      <button type="button" onClick={() => confirmDeleteAddress(addr.id)}
+                        className="text-xs font-semibold text-red-600 hover:text-red-700 transition-colors">Remove</button>
+                      <button type="button" onClick={() => setPendingDeleteId(null)}
+                        className="text-xs text-stone-400 hover:text-stone-600 transition-colors">Cancel</button>
+                    </div>
+                  ) : (
+                    <button type="button" onClick={(e) => { e.stopPropagation(); setPendingDeleteId(addr.id); }}
+                      className="text-xs text-stone-300 hover:text-red-400 transition-colors shrink-0">✕</button>
+                  )}
                 </div>
               ))}
               <button type="button" onClick={startNewAddress}

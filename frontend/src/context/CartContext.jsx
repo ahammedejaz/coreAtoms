@@ -154,7 +154,7 @@ export function CartProvider({ children }) {
    * @param {object} product - Product object (must have `id`; uses `price`, `price_inr`, or `unitPrice`).
    * @param {number} [qty=1] - Number of units to add.
    */
-  const addItem = (product, qty = 1) => {
+  const addItem = useCallback((product, qty = 1) => {
     if (!product?.id) return;
 
     const productId = String(product.id);
@@ -203,9 +203,9 @@ export function CartProvider({ children }) {
         },
       ];
     });
-  };
+  }, [maxItems]);
 
-  const updateQty = (id, nextQty) => {
+  const updateQty = useCallback((id, nextQty) => {
     const targetId = String(id);
     setItems((prev) => {
       const prevNorm = normalizeCartItems(prev);
@@ -231,14 +231,14 @@ export function CartProvider({ children }) {
           : x
       );
     });
-  };
+  }, [maxItems]);
 
-  const removeItem = (id) => {
+  const removeItem = useCallback((id) => {
     const targetId = String(id);
     setItems((prev) => normalizeCartItems(prev).filter((x) => String(x.id) !== targetId));
-  };
+  }, []);
 
-  const clear = () => setItems([]);
+  const clear = useCallback(() => setItems([]), []);
 
   /** Re-fetches maxItems from Supabase. Called by admin settings after saving. */
   const refreshMaxItems = fetchMaxItems;
@@ -256,8 +256,7 @@ export function CartProvider({ children }) {
       lastAction,
       refreshMaxItems,
     }),
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-    [items, totalItems, subtotal, maxItems, lastAction]
+    [items, addItem, updateQty, removeItem, clear, totalItems, subtotal, maxItems, lastAction, refreshMaxItems]
   );
 
   return <CartContext.Provider value={value}>{children}</CartContext.Provider>;

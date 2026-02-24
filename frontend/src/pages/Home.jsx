@@ -9,11 +9,11 @@
  */
 import { Link } from "react-router-dom";
 import { useCart } from "../context/CartContext";
-import { useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { fetchProducts } from "../services/products";
 import { supabase } from "../services/supabase/client";
 import { ProductCard } from "./Shop";
-import useDocumentTitle from "../hooks/useDocumentTitle";
+import SEO from "../components/SEO";
 import { SkeletonGrid } from "../components/Skeleton";
 
 // ── Defaults (shown if admin hasn't saved yet) ────────────────────────────────
@@ -58,11 +58,11 @@ const DEFAULT_PHILOSOPHY = {
 };
 
 export default function Home() {
-  useDocumentTitle("Core Atoms | Nutraceuticals");
   const { addItem } = useCart();
 
   const [products, setProducts] = useState([]);
   const [loadingProducts, setLoadingProducts] = useState(true);
+  const [fetchError, setFetchError] = useState("");
   const [toast, setToast] = useState({ open: false, message: "" });
   const [justAddedId, setJustAddedId] = useState(null);
 
@@ -77,76 +77,75 @@ export default function Home() {
   const [philosophy, setPhilosophy] = useState(DEFAULT_PHILOSOPHY);
 
   // ── Load all settings + products in parallel ─────────────────────────────
-  useEffect(() => {
-    let cancelled = false;
-    (async () => {
-      try {
-        const [settingsRes, productList] = await Promise.all([
-          supabase
-            .from("app_settings")
-            .select("key,value")
-            .in("key", [
-              "homepage_hero_images",
-              "homepage_hero_copy",
-              "homepage_featured_products",
-              "homepage_pillars",
-              "homepage_categories",
-              "homepage_philosophy",
-            ]),
-          fetchProducts(),
-        ]);
+  const loadData = useCallback(async () => {
+    setLoadingProducts(true);
+    setFetchError("");
+    try {
+      const [settingsRes, productList] = await Promise.all([
+        supabase
+          .from("app_settings")
+          .select("key,value")
+          .in("key", [
+            "homepage_hero_images",
+            "homepage_hero_copy",
+            "homepage_featured_products",
+            "homepage_pillars",
+            "homepage_categories",
+            "homepage_philosophy",
+          ]),
+        fetchProducts(),
+      ]);
 
-        if (cancelled) return;
+      const map = {};
+      (settingsRes.data || []).forEach((row) => { map[row.key] = row.value; });
 
-        const map = {};
-        (settingsRes.data || []).forEach((row) => { map[row.key] = row.value; });
+      // Hero images — support old string[] and new {url,position}[]
+      const rawImgs = Array.isArray(map.homepage_hero_images) && map.homepage_hero_images.length > 0
+        ? map.homepage_hero_images : DEFAULT_HERO_IMAGES;
+      setHeroImages(rawImgs.map((item) =>
+        typeof item === "string"
+          ? { url: item, position: "50% 50%" }
+          : { url: item.url || "", position: item.position || "50% 50%" }
+      ));
 
-        // Hero images — support old string[] and new {url,position}[]
-        const rawImgs = Array.isArray(map.homepage_hero_images) && map.homepage_hero_images.length > 0
-          ? map.homepage_hero_images : DEFAULT_HERO_IMAGES;
-        setHeroImages(rawImgs.map((item) =>
-          typeof item === "string"
-            ? { url: item, position: "50% 50%" }
-            : { url: item.url || "", position: item.position || "50% 50%" }
-        ));
-
-        // Hero copy
-        if (map.homepage_hero_copy && typeof map.homepage_hero_copy === "object") {
-          setHeroCopy({ ...DEFAULT_HERO_COPY, ...map.homepage_hero_copy });
-        }
-
-        // Pillars
-        if (Array.isArray(map.homepage_pillars) && map.homepage_pillars.length > 0) {
-          setPillars(map.homepage_pillars);
-        }
-
-        // Categories
-        if (Array.isArray(map.homepage_categories) && map.homepage_categories.length > 0) {
-          setCategories(map.homepage_categories);
-        }
-
-        // Philosophy
-        if (map.homepage_philosophy && typeof map.homepage_philosophy === "object") {
-          setPhilosophy({ ...DEFAULT_PHILOSOPHY, ...map.homepage_philosophy });
-        }
-
-        // Featured products
-        const featuredIds = Array.isArray(map.homepage_featured_products)
-          ? map.homepage_featured_products : [];
-        if (featuredIds.length > 0) {
-          const pinned = featuredIds.map((id) => productList.find((p) => p.id === id)).filter(Boolean);
-          setProducts(pinned.length > 0 ? pinned : productList.slice(0, 6));
-        } else {
-          setProducts(productList.slice(0, 6));
-        }
-      } catch (e) {
-        console.error("Home load error:", e);
-      } finally {
-        if (!cancelled) setLoadingProducts(false);
+      // Hero copy
+      if (map.homepage_hero_copy && typeof map.homepage_hero_copy === "object") {
+        setHeroCopy({ ...DEFAULT_HERO_COPY, ...map.homepage_hero_copy });
       }
-    })();
-    return () => { cancelled = true; };
+
+      // Pillars
+      if (Array.isArray(map.homepage_pillars) && map.homepage_pillars.length > 0) {
+        setPillars(map.homepage_pillars);
+      }
+
+      // Categories
+      if (Array.isArray(map.homepage_categories) && map.homepage_categories.length > 0) {
+        setCategories(map.homepage_categories);
+      }
+
+      // Philosophy
+      if (map.homepage_philosophy && typeof map.homepage_philosophy === "object") {
+        setPhilosophy({ ...DEFAULT_PHILOSOPHY, ...map.homepage_philosophy });
+      }
+
+      // Featured products
+      const featuredIds = Array.isArray(map.homepage_featured_products)
+        ? map.homepage_featured_products : [];
+      if (featuredIds.length > 0) {
+        const pinned = featuredIds.map((id) => productList.find((p) => p.id === id)).filter(Boolean);
+        setProducts(pinned.length > 0 ? pinned : productList.slice(0, 6));
+      } else {
+        setProducts(productList.slice(0, 6));
+      }
+    } catch (e) {
+      console.error("Home load error:", e);
+      setFetchError(e?.message || "Failed to load products. Please try again.");
+    } finally {
+      setLoadingProducts(false);
+    }
   }, []);
+
+  useEffect(() => { loadData(); }, [loadData]);
 
   // Carousel auto-advance
   useEffect(() => {
@@ -184,6 +183,10 @@ export default function Home() {
 
   return (
     <div className="space-y-24">
+      <SEO
+        title="Core Atoms | Premium Nutraceuticals"
+        description="Modern nutraceuticals designed for real routines. Clean formulas, structured stacks, COD available across India."
+      />
 
       {/* ── HERO ──────────────────────────────────────────────────────────── */}
       <section className="rounded-3xl border border-[#E8E4DE] bg-white overflow-hidden shadow-[0_4px_40px_rgba(0,0,0,0.08)]">
@@ -203,6 +206,8 @@ export default function Home() {
                     alt={`Hero ${i + 1}`}
                     className="absolute inset-0 h-full w-full object-cover"
                     style={{ objectPosition: slide.position || "50% 50%" }}
+                    loading={i === 0 ? "eager" : "lazy"}
+                    sizes="(max-width: 1024px) 100vw, 50vw"
                   />
                   <div className="absolute inset-0 bg-gradient-to-r from-white/20 via-transparent to-transparent" />
                 </div>
@@ -289,6 +294,15 @@ export default function Home() {
         </div>
         {loadingProducts ? (
           <SkeletonGrid count={6} />
+        ) : fetchError ? (
+          <div className="card p-12 text-center">
+            <div className="mx-auto mb-3 h-12 w-12 rounded-xl bg-red-50 border border-red-200 grid place-items-center">
+              <svg className="h-5 w-5 text-red-400" viewBox="0 0 20 20" fill="currentColor"><path fillRule="evenodd" d="M18 10a8 8 0 11-16 0 8 8 0 0116 0zm-7 4a1 1 0 11-2 0 1 1 0 012 0zm-1-9a1 1 0 00-1 1v4a1 1 0 102 0V6a1 1 0 00-1-1z" clipRule="evenodd" /></svg>
+            </div>
+            <p className="font-semibold text-stone-900">Unable to load products</p>
+            <p className="mt-1 text-sm text-stone-500">{fetchError}</p>
+            <button type="button" onClick={loadData} className="btn-primary mt-5 inline-flex">Try again</button>
+          </div>
         ) : (
           <div className="grid gap-5 sm:grid-cols-2 lg:grid-cols-3">
             {products.map((p) => (

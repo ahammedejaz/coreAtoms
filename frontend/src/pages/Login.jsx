@@ -8,13 +8,14 @@
  * @module pages/Login
  */
 import { useState } from "react";
-import { useNavigate } from "react-router-dom";
+import { useNavigate, useSearchParams } from "react-router-dom";
 import { supabase } from "../services/supabase/client";
-import useDocumentTitle from "../hooks/useDocumentTitle";
+import SEO from "../components/SEO";
 
 export default function Login() {
-  useDocumentTitle("Login | Core Atoms");
   const navigate = useNavigate();
+  const [searchParams] = useSearchParams();
+  const redirectTo = searchParams.get("redirect") || null;
   const [isSignup, setIsSignup] = useState(false);
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
@@ -22,6 +23,11 @@ export default function Login() {
   const [message, setMessage] = useState({ text: "", type: "" });
 
   const redirectAfterLogin = async (uid) => {
+    // If there's a redirect URL from ProtectedRoute, go there first
+    if (redirectTo) {
+      navigate(decodeURIComponent(redirectTo), { replace: true });
+      return;
+    }
     const { data } = await supabase.from("profiles").select("role").eq("id", uid).maybeSingle();
     if (data?.role === "admin") navigate("/admin", { replace: true });
     else navigate("/", { replace: true });
@@ -53,6 +59,7 @@ export default function Login() {
 
   return (
     <div className="min-h-[70vh] flex items-center justify-center py-12">
+      <SEO title="Login | Core Atoms" description="Sign in or create an account to manage your orders." />
       <div className="w-full max-w-md">
 
         {/* Header */}

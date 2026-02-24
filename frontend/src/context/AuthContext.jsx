@@ -152,13 +152,9 @@ export function AuthProvider({ children }) {
       profile,
       isAuthenticated,
       isAdmin,
-      signOut: async () => {
-        await supabase.auth.signOut();
-        setProfile(null);
-        localStorage.removeItem(ACTIVITY_STORAGE_KEY);
-      },
+      signOut: handleSignOut,
     }),
-    [loading, session, user, profile, isAuthenticated, isAdmin]
+    [loading, session, user, profile, isAuthenticated, isAdmin, handleSignOut]
   );
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;

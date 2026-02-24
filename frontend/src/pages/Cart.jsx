@@ -9,18 +9,18 @@
 import { Link, useNavigate } from "react-router-dom";
 import { useCart } from "../context/CartContext";
 import { useAuth } from "../context/AuthContext";
-import useDocumentTitle from "../hooks/useDocumentTitle";
+import SEO from "../components/SEO";
 
 const money = (n) => `₹${Number(n || 0).toLocaleString("en-IN")}`;
 
 export default function Cart() {
-  useDocumentTitle("Cart | Core Atoms");
   const navigate = useNavigate();
   const { isAuthenticated } = useAuth();
   const { items, totalItems, subtotal, updateQty, removeItem, clear } = useCart();
 
   return (
     <div>
+      <SEO title="Cart | Core Atoms" description="Review your cart and proceed to checkout." />
       <div className="mb-8 flex items-end justify-between">
         <div>
           <p className="section-label">Review & Checkout</p>

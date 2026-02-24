@@ -8,6 +8,7 @@
  * @module components/ErrorBoundary
  */
 import React from "react";
+import { reportError } from "../services/errorReporter";
 
 export default class ErrorBoundary extends React.Component {
     constructor(props) {
@@ -20,7 +21,7 @@ export default class ErrorBoundary extends React.Component {
     }
 
     componentDidCatch(error, errorInfo) {
-        console.error("ErrorBoundary caught:", error, errorInfo);
+        reportError(error, { component: "ErrorBoundary", errorInfo });
     }
 
     render() {

@@ -9,12 +9,12 @@
  *
  * @module pages/Shop
  */
-import { useEffect, useMemo, useRef, useState } from "react";
+import React, { useEffect, useMemo, useRef, useState } from "react";
 import { Link, useSearchParams } from "react-router-dom";
 import { fetchProducts } from "../services/products";
 import { useCart } from "../context/CartContext";
 import useDebounce from "../hooks/useDebounce";
-import useDocumentTitle from "../hooks/useDocumentTitle";
+import SEO from "../components/SEO";
 
 const money = (n) => `₹${Number(n || 0).toLocaleString("en-IN")}`;
 
@@ -30,7 +30,7 @@ export function Stars({ rating, count }) {
   );
 }
 
-export function ProductCard({ p, onAdd, justAdded }) {
+export const ProductCard = React.memo(function ProductCard({ p, onAdd, justAdded }) {
   const out = (p.stockQty ?? 0) <= 0;
   const desc = String(p.description || "").replace(/\s+/g, " ").trim().slice(0, 110) ||
     "Premium daily supplement with clean ingredients and reliable quality.";
@@ -46,6 +46,7 @@ export function ProductCard({ p, onAdd, justAdded }) {
           className="h-full w-full object-cover transition-transform duration-300 group-hover:scale-[1.03]"
           style={{ objectPosition: p.imagePosition || "50% 50%" }}
           loading="lazy"
+          sizes="(max-width: 640px) 100vw, (max-width: 1024px) 50vw, 33vw"
         />
         {/* Category */}
         {p.category && (
@@ -154,10 +155,9 @@ export function ProductCard({ p, onAdd, justAdded }) {
       </div>
     </div>
   );
-}
+});
 
 export default function Shop() {
-  useDocumentTitle("Shop | Core Atoms");
   const { addItem } = useCart();
   const [searchParams, setSearchParams] = useSearchParams();
   const [products, setProducts] = useState([]);
@@ -253,6 +253,7 @@ export default function Shop() {
     <div>
       {/* Page header */}
       <div className="mb-8">
+        <SEO title="Shop | Core Atoms" description="Browse our full range of premium nutraceuticals. Clean labels, lab-tested, COD available across India." />
         <p className="section-label">Our Collection</p>
         <h1 className="mt-2 text-3xl font-semibold tracking-tight text-stone-900">Shop</h1>
         <p className="mt-2 text-sm text-stone-500">Premium supplements, clean labels, COD available across India.</p>

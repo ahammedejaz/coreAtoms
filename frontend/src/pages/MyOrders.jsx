@@ -12,7 +12,8 @@ import { useEffect, useState } from "react";
 import { Link } from "react-router-dom";
 import { supabase } from "../services/supabase/client";
 import { useAuth } from "../context/AuthContext";
-import useDocumentTitle from "../hooks/useDocumentTitle";
+import { useToast } from "../context/ToastContext";
+import SEO from "../components/SEO";
 import { SkeletonOrderCard } from "../components/Skeleton";
 
 const money = (n) => `₹${Number(n || 0).toLocaleString("en-IN")}`;
@@ -78,8 +79,8 @@ const STATUS_STYLES = {
 };
 
 export default function MyOrders() {
-  useDocumentTitle("My Orders | Core Atoms");
   const { user } = useAuth();
+  const { showToast } = useToast();
   const userId = user?.id;
 
   const [orders, setOrders] = useState([]);
@@ -89,6 +90,7 @@ export default function MyOrders() {
   const [reviewedKeys, setReviewedKeys] = useState(new Set());
   const [openReviews, setOpenReviews] = useState({});
   const [existingReviews, setExistingReviews] = useState(new Set());
+  const [pendingCancelId, setPendingCancelId] = useState(null);
 
   const load = async () => {
     if (!userId) return;
@@ -107,10 +109,19 @@ export default function MyOrders() {
   useEffect(() => { load(); }, [userId]);
 
   const onCancel = async (orderId, status) => {
-    if (["shipped", "delivered"].includes(status.toLowerCase())) { alert("Cannot cancel after shipment."); return; }
-    if (!confirm("Cancel this order?")) return;
+    if (["shipped", "delivered"].includes(status.toLowerCase())) {
+      showToast("Cannot cancel after shipment.", "warning");
+      return;
+    }
+    // Use inline confirmation via pendingCancelId
+    setPendingCancelId(orderId);
+  };
+
+  const confirmCancel = async (orderId) => {
     const { error } = await supabase.rpc("cancel_order", { p_order_id: orderId, p_user_id: userId });
-    if (error) return alert(error.message);
+    setPendingCancelId(null);
+    if (error) { showToast(error.message, "error"); return; }
+    showToast("Order cancelled", "info");
     load();
   };
 
@@ -128,6 +139,7 @@ export default function MyOrders() {
 
   return (
     <div>
+      <SEO title="My Orders | Core Atoms" description="Track and manage all your orders." />
       {/* Header */}
       <div className="mb-8">
         <p className="section-label">Account</p>
@@ -197,7 +209,14 @@ export default function MyOrders() {
                 </div>
                 <div className="flex items-center gap-2 flex-wrap justify-end">
                   <span className={`px-3 py-1 rounded-full text-[11px] font-semibold capitalize ${statusCls}`}>{o.status}</span>
-                  {cancellable && (
+                  {cancellable && pendingCancelId === o.id ? (
+                    <div className="flex items-center gap-2">
+                      <button type="button" onClick={() => confirmCancel(o.id)}
+                        className="rounded-lg bg-red-600 px-3 py-1 text-xs font-semibold text-white hover:bg-red-700 transition">Confirm cancel</button>
+                      <button type="button" onClick={() => setPendingCancelId(null)}
+                        className="text-xs text-stone-400 hover:text-stone-600 transition">Keep</button>
+                    </div>
+                  ) : cancellable && (
                     <button type="button" onClick={() => onCancel(o.id, o.status)} className="btn-ghost py-1 px-3 text-xs">Cancel</button>
                   )}
                 </div>

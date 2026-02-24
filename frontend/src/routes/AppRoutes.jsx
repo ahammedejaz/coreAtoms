@@ -24,16 +24,16 @@ import React, { Suspense } from "react";
 import MainLayout from "../layouts/MainLayout";
 
 import Home from "../pages/Home";
-import Shop from "../pages/Shop";
-import Cart from "../pages/Cart";
-import ProductDetail from "../pages/ProductDetail";
 import Login from "../pages/Login";
-import MyOrders from "../pages/MyOrders";
-import Checkout from "../pages/Checkout";
 import NotFound from "../pages/NotFound";
 import ErrorPage from "../pages/ErrorPage";
 
-/** Lazy-loaded admin — keeps admin code out of the main bundle for customers. */
+/** Lazy-loaded pages — keeps heavy code out of the initial bundle. */
+const Shop = React.lazy(() => import("../pages/Shop"));
+const Cart = React.lazy(() => import("../pages/Cart"));
+const ProductDetail = React.lazy(() => import("../pages/ProductDetail"));
+const MyOrders = React.lazy(() => import("../pages/MyOrders"));
+const Checkout = React.lazy(() => import("../pages/Checkout"));
 const AdminDashboard = React.lazy(() => import("../pages/AdminDashboard.jsx"));
 
 import ProtectedRoute from "./ProtectedRoute";

@@ -12,7 +12,7 @@ import { useEffect, useMemo, useState } from "react";
 import { Link, useNavigate, useParams } from "react-router-dom";
 import { useCart } from "../context/CartContext";
 import { fetchProductById } from "../services/products";
-import useDocumentTitle from "../hooks/useDocumentTitle";
+import SEO from "../components/SEO";
 import { SkeletonProductDetail } from "../components/Skeleton";
 
 const money = (n) => `₹${Number(n || 0).toLocaleString("en-IN")}`;
@@ -93,7 +93,8 @@ export default function ProductDetail() {
 
   const images = (product?.images?.length > 0 ? product.images : [product?.image]).filter(Boolean);
 
-  useDocumentTitle(product ? `${product.name} | Core Atoms` : "Product | Core Atoms");
+  const pageTitle = product ? `${product.name} | Core Atoms` : "Product | Core Atoms";
+  const pageDescription = product?.description || "Premium nutraceutical supplement from Core Atoms.";
 
   /* ── Loading skeleton ── */
   if (loading) {
@@ -115,6 +116,7 @@ export default function ProductDetail() {
 
   return (
     <div className="pb-16">
+      <SEO title={pageTitle} description={pageDescription} ogImage={product.image} />
       <div className="mx-auto max-w-6xl px-4 py-10">
 
         {/* ── Breadcrumb ── */}
@@ -150,6 +152,7 @@ export default function ProductDetail() {
                 alt={product.name}
                 className="h-full w-full object-cover"
                 loading="lazy"
+                sizes="(max-width: 1024px) 100vw, 50vw"
               />
             </div>
 

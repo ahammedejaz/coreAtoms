@@ -81,6 +81,30 @@ export function CartProvider({ children }) {
   }, [items]);
 
   /**
+   * Preserve guest cart across auth state changes.
+   * When the user signs in (especially via OAuth redirect which causes a
+   * full page reload), re-read the cart from localStorage so that items
+   * added before login are restored.
+   */
+  useEffect(() => {
+    const { data: sub } = supabase.auth.onAuthStateChange((event) => {
+      if (event === "SIGNED_IN") {
+        const saved = readCart();
+        if (saved.length > 0) {
+          setItems((current) => {
+            // If the current in-memory cart is empty but localStorage has items,
+            // restore from localStorage (handles OAuth redirect re-mount).
+            // If both have items, keep whichever is larger (avoids duplicating).
+            if (current.length === 0) return saved;
+            return current;
+          });
+        }
+      }
+    });
+    return () => sub.subscription?.unsubscribe?.();
+  }, []);
+
+  /**
    * Fetches the `max_items_per_order` setting from the `app_settings` table.
    * Accepts value shapes: `{ n: 15 }`, `15`, or `"15"`.
    * Falls back to 15 if the fetch fails or returns an invalid value.
@@ -158,11 +182,11 @@ export function CartProvider({ children }) {
         return prevNorm.map((x) =>
           String(x.id) === productId
             ? {
-                ...x,
-                // preserve price always (never become 0)
-                unitPrice: Number(x.unitPrice) || productPrice || 0,
-                qty: (Number(x.qty) || 0) + allowedQty,
-              }
+              ...x,
+              // preserve price always (never become 0)
+              unitPrice: Number(x.unitPrice) || productPrice || 0,
+              qty: (Number(x.qty) || 0) + allowedQty,
+            }
             : x
         );
       }
@@ -200,10 +224,10 @@ export function CartProvider({ children }) {
       return prevNorm.map((x) =>
         String(x.id) === targetId
           ? {
-              ...x,
-              qty: finalQty,
-              unitPrice: Number(x.unitPrice) || 0, // keep price stable
-            }
+            ...x,
+            qty: finalQty,
+            unitPrice: Number(x.unitPrice) || 0, // keep price stable
+          }
           : x
       );
     });

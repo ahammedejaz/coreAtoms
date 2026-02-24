@@ -65,9 +65,11 @@ export default function AdminProducts({ onProductsChange }) {
     const [productSearch, setProductSearch] = useState("");
 
     const [savingProduct, setSavingProduct] = useState(false);
-    const [productMsg, setProductMsg] = useState("");
 
     const fileInputRef = useRef(null);
+    const formRef = useRef(null);
+    const initialFormState = useRef(null);
+    const initialVariants = useRef([]);
 
     // NOTE: Ensure this bucket exists in Supabase Storage
     const PRODUCT_BUCKET = "product-images";
@@ -153,8 +155,9 @@ export default function AdminProducts({ onProductsChange }) {
         setPHighlightInput("");
         setVariants([]);
         setVariantErr("");
-        setProductMsg("");
         if (fileInputRef.current) fileInputRef.current.value = "";
+        initialFormState.current = null;
+        initialVariants.current = [];
     };
 
     const openAddProduct = () => {
@@ -192,6 +195,22 @@ export default function AdminProducts({ onProductsChange }) {
         setPRecommendedStack(p.recommended_stack || "");
         setPHighlights(Array.isArray(p.highlights) ? p.highlights : []);
         setPHighlightInput("");
+        initialFormState.current = {
+            name: p.name || "",
+            sku: p.sku || "",
+            category: p.category || "",
+            price: String(p.price_inr ?? ""),
+            stock: String(p.stock_qty ?? ""),
+            desc: p.description || "",
+            active: p.is_active !== false,
+            imagePosition: p.image_position || "50% 50%",
+            aboutText: p.about_text || "",
+            bestFor: p.best_for || "",
+            pairsWellWith: p.pairs_well_with || "",
+            recommendedStack: p.recommended_stack || "",
+            highlights: Array.isArray(p.highlights) ? [...p.highlights] : [],
+        };
+        initialVariants.current = [];
         // Load variants
         setVariantErr("");
         (async () => {
@@ -200,10 +219,11 @@ export default function AdminProducts({ onProductsChange }) {
                 .select("id,label,price_inr,stock_qty,sku,sort_order,is_active")
                 .eq("product_id", p.id)
                 .order("sort_order", { ascending: true });
-            setVariants((vData || []).map((v) => ({ ...v, _dirty: false })));
+            const loaded = (vData || []).map((v) => ({ ...v, _dirty: false }));
+            setVariants(loaded);
+            initialVariants.current = loaded;
         })();
         setPFile(null);
-        setProductMsg("");
         if (fileInputRef.current) fileInputRef.current.value = "";
         setShowProductForm(true);
     };
@@ -324,7 +344,6 @@ export default function AdminProducts({ onProductsChange }) {
 
     const saveProduct = async () => {
         setSavingProduct(true);
-        setProductMsg("");
 
         try {
             const name = String(pName || "").trim();
@@ -370,7 +389,7 @@ export default function AdminProducts({ onProductsChange }) {
                 if (error) throw new Error(error.message);
                 await uploadAndSaveExtraImages(editingId);
                 await saveVariants(editingId);
-                setProductMsg("Updated ✅");
+                showToast("Product updated successfully", "success");
             } else {
                 const { data: inserted, error } = await supabase
                     .from("products")
@@ -380,8 +399,26 @@ export default function AdminProducts({ onProductsChange }) {
                 if (error) throw new Error(error.message);
                 await uploadAndSaveExtraImages(inserted.id);
                 await saveVariants(inserted.id);
-                setProductMsg("Created ✅");
+                showToast("Product created successfully", "success");
             }
+
+            // Sync snapshot so isDirty resets to false
+            initialFormState.current = {
+                name: name,
+                sku: String(pSku || "").trim(),
+                category: category,
+                price: String(price),
+                stock: String(stock),
+                desc: description,
+                active: !!pActive,
+                imagePosition: pImagePosition || "50% 50%",
+                aboutText: String(pAboutText || "").trim(),
+                bestFor: String(pBestFor || "").trim(),
+                pairsWellWith: String(pPairsWellWith || "").trim(),
+                recommendedStack: String(pRecommendedStack || "").trim(),
+                highlights: [...pHighlights],
+            };
+            initialVariants.current = variants.map((v) => ({ ...v }));
 
             await loadProducts();
             setPFile(null);
@@ -389,13 +426,19 @@ export default function AdminProducts({ onProductsChange }) {
             if (fileInputRef.current) fileInputRef.current.value = "";
             if (extraFileInputRef.current) extraFileInputRef.current.value = "";
         } catch (e) {
-            setProductMsg(e?.message || "Failed to save product");
+            showToast(e?.message || "Failed to save product", "error");
         } finally {
             setSavingProduct(false);
         }
     };
     saveProductRef.current = saveProduct;
     showProductFormRef.current = showProductForm;
+
+    useEffect(() => {
+        if (showProductForm && formRef.current) {
+            formRef.current.scrollIntoView({ behavior: "smooth", block: "start" });
+        }
+    }, [showProductForm]);
 
     const deleteProduct = (id) => {
         const product = products.find((p) => p.id === id);
@@ -426,6 +469,41 @@ export default function AdminProducts({ onProductsChange }) {
             String(p.category || "").toLowerCase().includes(q)
         );
     }, [products, productSearch]);
+
+    const isDirty = useMemo(() => {
+        if (!editingId) return true; // Add mode — always enabled
+        const init = initialFormState.current;
+        if (!init) return false;
+        if (pName !== init.name) return true;
+        if (pSku !== init.sku) return true;
+        if (pCategory !== init.category) return true;
+        if (pPrice !== init.price) return true;
+        if (pStock !== init.stock) return true;
+        if (pDesc !== init.desc) return true;
+        if (pActive !== init.active) return true;
+        if (pImagePosition !== init.imagePosition) return true;
+        if (pAboutText !== init.aboutText) return true;
+        if (pBestFor !== init.bestFor) return true;
+        if (pPairsWellWith !== init.pairsWellWith) return true;
+        if (pRecommendedStack !== init.recommendedStack) return true;
+        if (pFile !== null) return true;
+        if (extraImageFiles.length > 0) return true;
+        if (pHighlights.length !== init.highlights.length) return true;
+        if (pHighlights.some((h, i) => h !== init.highlights[i])) return true;
+        const initVars = initialVariants.current;
+        if (variants.length !== initVars.length) return true;
+        for (let i = 0; i < variants.length; i++) {
+            const v = variants[i];
+            const iv = initVars[i];
+            if (!iv) return true;
+            if (String(v.label || "") !== String(iv.label || "")) return true;
+            if (String(v.price_inr ?? "") !== String(iv.price_inr ?? "")) return true;
+            if (String(v.stock_qty ?? "") !== String(iv.stock_qty ?? "")) return true;
+            if (String(v.sku || "") !== String(iv.sku || "")) return true;
+            if ((v.is_active !== false) !== (iv.is_active !== false)) return true;
+        }
+        return false;
+    }, [editingId, pName, pSku, pCategory, pPrice, pStock, pDesc, pActive, pImagePosition, pAboutText, pBestFor, pPairsWellWith, pRecommendedStack, pHighlights, pFile, extraImageFiles, variants]);
 
     const saveInlineStock = async (productId) => {
         const qty = Number(inlineStockValue);
@@ -476,7 +554,7 @@ export default function AdminProducts({ onProductsChange }) {
                     </div>
 
                     {showProductForm && (
-                        <div className="mt-4 rounded-2xl border border-[#E8E4DE] bg-white p-4">
+                        <div ref={formRef} className="mt-4 rounded-2xl border border-[#E8E4DE] bg-white p-4">
                             <div className="flex items-start justify-between gap-3">
                                 <div>
                                     <div className="text-sm font-semibold text-stone-900">
@@ -918,9 +996,22 @@ export default function AdminProducts({ onProductsChange }) {
                                     <div className="flex items-end gap-2">
                                         <button
                                             type="button"
-                                            onClick={saveProduct}
-                                            disabled={savingProduct}
-                                            className="w-full rounded-xl bg-gradient-to-r from-neutral-200 to-neutral-300 px-4 py-2.5 text-sm font-semibold text-stone-900 shadow-sm hover:shadow disabled:opacity-60"
+                                            onClick={() => {
+                                                setConfirmDlg({
+                                                    title: editingId ? "Save changes?" : "Create product?",
+                                                    message: editingId
+                                                        ? `Save changes to "${pName}"?`
+                                                        : `Create new product "${pName}"?`,
+                                                    confirmLabel: editingId ? "Save changes" : "Create product",
+                                                    variant: "info",
+                                                    onConfirm: async () => {
+                                                        setConfirmDlg(null);
+                                                        await saveProduct();
+                                                    },
+                                                });
+                                            }}
+                                            disabled={savingProduct || !isDirty}
+                                            className="w-full rounded-xl bg-gradient-to-r from-neutral-200 to-neutral-300 px-4 py-2.5 text-sm font-semibold text-stone-900 shadow-sm hover:shadow disabled:opacity-40 disabled:cursor-not-allowed"
                                         >
                                             {savingProduct
                                                 ? "Saving..."
@@ -940,10 +1031,6 @@ export default function AdminProducts({ onProductsChange }) {
                                         )}
                                     </div>
                                 </div>
-
-                                {productMsg && (
-                                    <div className="text-sm text-stone-600">{productMsg}</div>
-                                )}
 
                                 {/* ── Extra Images Gallery ── */}
                                 <div className="rounded-xl border border-[#E8E4DE] bg-stone-50 p-4 space-y-3">
@@ -1188,7 +1275,7 @@ export default function AdminProducts({ onProductsChange }) {
                                                             <button
                                                                 type="button"
                                                                 onClick={() => openEditProduct(p)}
-                                                                className="rounded-xl border border-[#E8E4DE] bg-white px-3 py-2 text-xs font-semibold text-stone-900 hover:bg-stone-50"
+                                                                className="rounded-xl border border-[#E8E4DE] bg-white px-3 py-2 text-xs font-semibold text-stone-900 hover:bg-stone-50 active:scale-95 transition-transform duration-100"
                                                             >
                                                                 Edit
                                                             </button>
@@ -1348,7 +1435,7 @@ export default function AdminProducts({ onProductsChange }) {
                                                             <button
                                                                 type="button"
                                                                 onClick={() => openEditProduct(p)}
-                                                                className="rounded-lg border border-[#E8E4DE] px-3 py-1.5 text-xs hover:bg-stone-50"
+                                                                className="rounded-lg border border-[#E8E4DE] px-3 py-1.5 text-xs hover:bg-stone-50 active:scale-95 transition-transform duration-100"
                                                             >
                                                                 Edit
                                                             </button>

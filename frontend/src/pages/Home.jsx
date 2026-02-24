@@ -192,9 +192,9 @@ export default function Home() {
       <section className="rounded-3xl border border-[#E8E4DE] bg-white overflow-hidden shadow-[0_4px_40px_rgba(0,0,0,0.08)]">
         <div className="grid lg:grid-cols-2 gap-0">
 
-          {/* LEFT — carousel */}
-          <div className="relative overflow-hidden h-[340px] lg:h-[500px]">
-            <div className="relative h-full w-full">
+          {/* LEFT — carousel: aspect-ratio on mobile, stretch to full card height on desktop */}
+          <div className="relative overflow-hidden aspect-[4/3] lg:aspect-auto">
+            <div className="absolute inset-0">
               {heroImages.map((slide, i) => (
                 <div
                   key={i}

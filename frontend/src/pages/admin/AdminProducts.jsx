@@ -1,163 +1,29 @@
-import { Fragment, useEffect, useMemo, useRef, useState } from "react";
+import { Fragment, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { supabase } from "../../services/supabase/client";
+import ImagePositionAdjuster from "../../components/ImagePositionAdjuster";
+import { SkeletonAdminTable } from "../../components/Skeleton";
+import ConfirmDialog from "../../components/ConfirmDialog";
+import { useToast } from "../../context/ToastContext";
+import useKeyboardShortcut from "../../hooks/useKeyboardShortcut";
 
 const LOW_STOCK_THRESHOLD = 5;
 const PRODUCT_BUCKET = "product-images";
 
-// ── Image Position / Zoom Adjuster Modal ──────────────────────────────────────
-function ImagePositionAdjuster({ src, position, onSave, onClose }) {
-    const containerRef = useRef(null);
-    const [pos, setPos] = useState(() => {
-        if (position) {
-            const parts = position.split(" ");
-            return { x: parseFloat(parts[0]) || 50, y: parseFloat(parts[1]) || 50 };
-        }
-        return { x: 50, y: 50 };
-    });
-    const [zoom, setZoom] = useState(() => {
-        // parse zoom from position string if stored e.g. "50% 30% / 1.2"
-        if (position && position.includes("/")) {
-            return parseFloat(position.split("/")[1]) || 1;
-        }
-        return 1;
-    });
-    const dragging = useRef(false);
-    const lastMouse = useRef(null);
-
-    useEffect(() => {
-        const onMouseMove = (e) => {
-            if (!dragging.current || !containerRef.current) return;
-            const rect = containerRef.current.getBoundingClientRect();
-            const dx = e.clientX - lastMouse.current.x;
-            const dy = e.clientY - lastMouse.current.y;
-            lastMouse.current = { x: e.clientX, y: e.clientY };
-            setPos((p) => ({
-                x: Math.max(0, Math.min(100, p.x - (dx / rect.width) * 100)),
-                y: Math.max(0, Math.min(100, p.y - (dy / rect.height) * 100)),
-            }));
-        };
-        const onMouseUp = () => { dragging.current = false; };
-        window.addEventListener("mousemove", onMouseMove);
-        window.addEventListener("mouseup", onMouseUp);
-        return () => { window.removeEventListener("mousemove", onMouseMove); window.removeEventListener("mouseup", onMouseUp); };
-    }, []);
-
-    useEffect(() => {
-        const onTouchMove = (e) => {
-            if (!dragging.current || !containerRef.current) return;
-            const rect = containerRef.current.getBoundingClientRect();
-            const dx = e.touches[0].clientX - lastMouse.current.x;
-            const dy = e.touches[0].clientY - lastMouse.current.y;
-            lastMouse.current = { x: e.touches[0].clientX, y: e.touches[0].clientY };
-            setPos((p) => ({
-                x: Math.max(0, Math.min(100, p.x - (dx / rect.width) * 100)),
-                y: Math.max(0, Math.min(100, p.y - (dy / rect.height) * 100)),
-            }));
-            e.preventDefault();
-        };
-        const onTouchEnd = () => { dragging.current = false; };
-        window.addEventListener("touchmove", onTouchMove, { passive: false });
-        window.addEventListener("touchend", onTouchEnd);
-        return () => { window.removeEventListener("touchmove", onTouchMove); window.removeEventListener("touchend", onTouchEnd); };
-    }, []);
-
-    // Save only "X% Y%" — valid CSS objectPosition, works directly on card img tags
-    const posStr = `${Math.round(pos.x)}% ${Math.round(pos.y)}%`;
-
-    return (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm p-4">
-            <div className="bg-white rounded-2xl shadow-2xl w-full max-w-lg overflow-hidden">
-                <div className="flex items-center justify-between px-5 py-4 border-b border-[#E8E4DE]">
-                    <div>
-                        <div className="text-sm font-semibold text-stone-900">Adjust Image Position & Zoom</div>
-                        <div className="text-xs text-stone-400 mt-0.5">Drag to reposition · use slider to zoom</div>
-                    </div>
-                    <button type="button" onClick={onClose} className="h-7 w-7 rounded-full border border-[#E8E4DE] flex items-center justify-center text-stone-400 hover:text-stone-700">
-                        <svg className="h-3.5 w-3.5" viewBox="0 0 20 20" fill="currentColor"><path fillRule="evenodd" d="M4.293 4.293a1 1 0 011.414 0L10 8.586l4.293-4.293a1 1 0 111.414 1.414L11.414 10l4.293 4.293a1 1 0 01-1.414 1.414L10 11.414l-4.293 4.293a1 1 0 01-1.414-1.414L8.586 10 4.293 5.707a1 1 0 010-1.414z" clipRule="evenodd"/></svg>
-                    </button>
-                </div>
-
-                <div className="p-5">
-                    {/* Preview — matches exact product card image dimensions (370×220) */}
-                    <div
-                        ref={containerRef}
-                        className="relative overflow-hidden rounded-xl border-2 border-[#1e3a5f]/30 select-none w-full"
-                        style={{ aspectRatio: "37/22", cursor: "grab" }}
-                        onMouseDown={(e) => { dragging.current = true; lastMouse.current = { x: e.clientX, y: e.clientY }; e.preventDefault(); }}
-                        onTouchStart={(e) => { dragging.current = true; lastMouse.current = { x: e.touches[0].clientX, y: e.touches[0].clientY }; }}
-                    >
-                        <img
-                            src={src}
-                            alt="Position preview"
-                            className="absolute inset-0 w-full h-full pointer-events-none"
-                            style={{
-                                objectFit: "cover",
-                                objectPosition: `${Math.round(pos.x)}% ${Math.round(pos.y)}%`,
-                                transform: zoom !== 1 ? `scale(${zoom})` : undefined,
-                                transformOrigin: `${Math.round(pos.x)}% ${Math.round(pos.y)}%`,
-                            }}
-                            draggable={false}
-                        />
-                        {/* Rule-of-thirds grid */}
-                        <div className="absolute inset-0 pointer-events-none" style={{
-                            backgroundImage: "linear-gradient(rgba(255,255,255,0.12) 1px, transparent 1px), linear-gradient(90deg, rgba(255,255,255,0.12) 1px, transparent 1px)",
-                            backgroundSize: "33.33% 33.33%",
-                        }} />
-                        <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
-                            <div className="h-5 w-5 rounded-full border-2 border-white/70 shadow-[0_0_0_1px_rgba(0,0,0,0.3)]" />
-                        </div>
-                        <div className="absolute bottom-2 left-0 right-0 text-center pointer-events-none">
-                            <span className="inline-flex items-center gap-1 rounded-full bg-black/40 backdrop-blur-sm px-3 py-1 text-[10px] text-white font-medium">✦ Drag to reposition</span>
-                        </div>
-                    </div>
-
-                    {/* Zoom slider */}
-                    <div className="mt-4">
-                        <div className="flex items-center justify-between mb-1.5">
-                            <div className="text-xs text-stone-500 font-medium">Zoom</div>
-                            <div className="text-xs font-mono text-stone-700">{zoom.toFixed(2)}×</div>
-                        </div>
-                        <div className="flex items-center gap-3">
-                            <span className="text-xs text-stone-400">1×</span>
-                            <input type="range" min="100" max="200" step="1" value={Math.round(zoom * 100)}
-                                   onChange={(e) => setZoom(Number(e.target.value) / 100)}
-                                   className="flex-1 accent-[#1e3a5f]" />
-                            <span className="text-xs text-stone-400">2×</span>
-                        </div>
-                    </div>
-
-                    {/* Quick presets */}
-                    <div className="mt-3 flex flex-wrap gap-2">
-                        {[
-                            { label: "Top",    pos: { x: 50, y: 15 } },
-                            { label: "Center", pos: { x: 50, y: 50 } },
-                            { label: "Bottom", pos: { x: 50, y: 85 } },
-                            { label: "Left",   pos: { x: 20, y: 50 } },
-                            { label: "Right",  pos: { x: 80, y: 50 } },
-                        ].map(({ label, pos: p }) => (
-                            <button key={label} type="button" onClick={() => setPos(p)}
-                                    className="rounded-lg border border-[#E8E4DE] bg-stone-50 px-2.5 py-1 text-xs text-stone-600 hover:border-[#1e3a5f]/40 hover:bg-[#EFF6FF] transition">{label}</button>
-                        ))}
-                        <button type="button" onClick={() => { setPos({ x: 50, y: 50 }); setZoom(1); }}
-                                className="rounded-lg border border-stone-200 bg-stone-50 px-2.5 py-1 text-xs text-stone-500 hover:text-stone-700 transition">Reset all</button>
-                    </div>
-                </div>
-
-                <div className="flex items-center justify-end gap-3 px-5 py-4 border-t border-[#E8E4DE]">
-                    <button type="button" onClick={onClose} className="rounded-xl border border-[#E8E4DE] px-4 py-2 text-sm text-stone-600 hover:bg-stone-50">Cancel</button>
-                    <button type="button" onClick={() => { onSave(posStr); onClose(); }}
-                            className="rounded-xl bg-[#1e3a5f] px-5 py-2 text-sm font-semibold text-white hover:bg-[#16304f] transition">Apply</button>
-                </div>
-            </div>
-        </div>
-    );
-}
-
 export default function AdminProducts({ onProductsChange }) {
-// -------------------- Products (Admin CRUD) --------------------
+    const { showToast } = useToast();
+    // -------------------- Products (Admin CRUD) --------------------
     const [products, setProducts] = useState([]);
     const [loadingProducts, setLoadingProducts] = useState(true);
     const [productErr, setProductErr] = useState("");
+    const [confirmDlg, setConfirmDlg] = useState(null);
+
+    // Ctrl+S → save product (when form is open)
+    const saveProductRef = useRef(null);
+    const showProductFormRef = useRef(false);
+    const handleCtrlS = useCallback((e) => {
+        if (showProductFormRef.current) { e.preventDefault(); saveProductRef.current?.(); }
+    }, []);
+    useKeyboardShortcut("ctrl+s", handleCtrlS);
 
     const [showProductForm, setShowProductForm] = useState(false);
     const [editingId, setEditingId] = useState(null);
@@ -184,7 +50,7 @@ export default function AdminProducts({ onProductsChange }) {
     // -------------------- Variants --------------------
     const [variants, setVariants] = useState([]); // [{id?, label, price_inr, stock_qty, sku, sort_order, is_active, _dirty}]
     const [variantErr, setVariantErr] = useState("");
-// -------------------- Extra images (product_images table) --------------------
+    // -------------------- Extra images (product_images table) --------------------
     const [extraImages, setExtraImages] = useState([]); // [{ id, image_url, sort_order }]
     const [extraImageFiles, setExtraImageFiles] = useState([]); // pending uploads
     const [uploadingExtra, setUploadingExtra] = useState(false);
@@ -199,9 +65,11 @@ export default function AdminProducts({ onProductsChange }) {
     const [productSearch, setProductSearch] = useState("");
 
     const [savingProduct, setSavingProduct] = useState(false);
-    const [productMsg, setProductMsg] = useState("");
 
     const fileInputRef = useRef(null);
+    const formRef = useRef(null);
+    const initialFormState = useRef(null);
+    const initialVariants = useRef([]);
 
     // NOTE: Ensure this bucket exists in Supabase Storage
     const PRODUCT_BUCKET = "product-images";
@@ -287,14 +155,21 @@ export default function AdminProducts({ onProductsChange }) {
         setPHighlightInput("");
         setVariants([]);
         setVariantErr("");
-        setProductMsg("");
         if (fileInputRef.current) fileInputRef.current.value = "";
+        initialFormState.current = null;
+        initialVariants.current = [];
     };
 
     const openAddProduct = () => {
         resetProductForm();
         setShowProductForm(true);
-        // form close handled by parent
+        // Set empty baseline so isDirty starts false and tracks from here
+        initialFormState.current = {
+            name: "", sku: "", category: "", price: "", stock: "", desc: "",
+            active: true, imagePosition: "50% 50%", aboutText: "", bestFor: "",
+            pairsWellWith: "", recommendedStack: "", highlights: [],
+        };
+        initialVariants.current = [];
     };
 
     const openEditProduct = (p) => {
@@ -326,6 +201,22 @@ export default function AdminProducts({ onProductsChange }) {
         setPRecommendedStack(p.recommended_stack || "");
         setPHighlights(Array.isArray(p.highlights) ? p.highlights : []);
         setPHighlightInput("");
+        initialFormState.current = {
+            name: p.name || "",
+            sku: p.sku || "",
+            category: p.category || "",
+            price: String(p.price_inr ?? ""),
+            stock: String(p.stock_qty ?? ""),
+            desc: p.description || "",
+            active: p.is_active !== false,
+            imagePosition: p.image_position || "50% 50%",
+            aboutText: p.about_text || "",
+            bestFor: p.best_for || "",
+            pairsWellWith: p.pairs_well_with || "",
+            recommendedStack: p.recommended_stack || "",
+            highlights: Array.isArray(p.highlights) ? [...p.highlights] : [],
+        };
+        initialVariants.current = [];
         // Load variants
         setVariantErr("");
         (async () => {
@@ -334,10 +225,11 @@ export default function AdminProducts({ onProductsChange }) {
                 .select("id,label,price_inr,stock_qty,sku,sort_order,is_active")
                 .eq("product_id", p.id)
                 .order("sort_order", { ascending: true });
-            setVariants((vData || []).map((v) => ({ ...v, _dirty: false })));
+            const loaded = (vData || []).map((v) => ({ ...v, _dirty: false }));
+            setVariants(loaded);
+            initialVariants.current = loaded;
         })();
         setPFile(null);
-        setProductMsg("");
         if (fileInputRef.current) fileInputRef.current.value = "";
         setShowProductForm(true);
     };
@@ -390,12 +282,20 @@ export default function AdminProducts({ onProductsChange }) {
         }
     };
 
-    const deleteExtraImage = async (imgId) => {
-        const ok = window.confirm("Remove this image?");
-        if (!ok) return;
-        const { error } = await supabase.from("product_images").delete().eq("id", imgId);
-        if (error) { alert(error.message); return; }
-        setExtraImages((prev) => prev.filter((img) => img.id !== imgId));
+    const deleteExtraImage = (imgId) => {
+        setConfirmDlg({
+            title: "Remove image?",
+            message: "This image will be permanently deleted from the product gallery.",
+            confirmLabel: "Remove",
+            variant: "danger",
+            onConfirm: async () => {
+                setConfirmDlg(null);
+                const { error } = await supabase.from("product_images").delete().eq("id", imgId);
+                if (error) { showToast(error.message, "error"); return; }
+                setExtraImages((prev) => prev.filter((img) => img.id !== imgId));
+                showToast("Image removed", "success");
+            },
+        });
     };
 
     const moveExtraImage = async (imgId, direction) => {
@@ -450,7 +350,6 @@ export default function AdminProducts({ onProductsChange }) {
 
     const saveProduct = async () => {
         setSavingProduct(true);
-        setProductMsg("");
 
         try {
             const name = String(pName || "").trim();
@@ -496,7 +395,7 @@ export default function AdminProducts({ onProductsChange }) {
                 if (error) throw new Error(error.message);
                 await uploadAndSaveExtraImages(editingId);
                 await saveVariants(editingId);
-                setProductMsg("Updated ✅");
+                showToast("Product updated successfully", "success");
             } else {
                 const { data: inserted, error } = await supabase
                     .from("products")
@@ -506,8 +405,26 @@ export default function AdminProducts({ onProductsChange }) {
                 if (error) throw new Error(error.message);
                 await uploadAndSaveExtraImages(inserted.id);
                 await saveVariants(inserted.id);
-                setProductMsg("Created ✅");
+                showToast("Product created successfully", "success");
             }
+
+            // Sync snapshot so isDirty resets to false
+            initialFormState.current = {
+                name: name,
+                sku: String(pSku || "").trim(),
+                category: category,
+                price: String(price),
+                stock: String(stock),
+                desc: description,
+                active: !!pActive,
+                imagePosition: pImagePosition || "50% 50%",
+                aboutText: String(pAboutText || "").trim(),
+                bestFor: String(pBestFor || "").trim(),
+                pairsWellWith: String(pPairsWellWith || "").trim(),
+                recommendedStack: String(pRecommendedStack || "").trim(),
+                highlights: [...pHighlights],
+            };
+            initialVariants.current = variants.map((v) => ({ ...v }));
 
             await loadProducts();
             setPFile(null);
@@ -515,30 +432,39 @@ export default function AdminProducts({ onProductsChange }) {
             if (fileInputRef.current) fileInputRef.current.value = "";
             if (extraFileInputRef.current) extraFileInputRef.current.value = "";
         } catch (e) {
-            setProductMsg(e?.message || "Failed to save product");
+            showToast(e?.message || "Failed to save product", "error");
         } finally {
             setSavingProduct(false);
         }
     };
+    saveProductRef.current = saveProduct;
+    showProductFormRef.current = showProductForm;
 
-    const deleteProduct = async (id) => {
-        const ok = window.confirm(
-            "Delete this product? This will remove it from the shop."
-        );
-        if (!ok) return;
-
-        const { error } = await supabase.from("products").delete().eq("id", id);
-        if (error) {
-            alert(error.message);
-            return;
+    useEffect(() => {
+        if (showProductForm && formRef.current) {
+            formRef.current.scrollIntoView({ behavior: "smooth", block: "start" });
         }
+    }, [showProductForm]);
 
-        if (editingId === id) {
-            resetProductForm();
-            setShowProductForm(false);
-        }
-
-        loadProducts();
+    const deleteProduct = (id) => {
+        const product = products.find((p) => p.id === id);
+        setConfirmDlg({
+            title: "Delete product?",
+            message: `"${product?.name || "This product"}" will be permanently removed from the shop.`,
+            confirmLabel: "Delete product",
+            variant: "danger",
+            onConfirm: async () => {
+                setConfirmDlg(null);
+                const { error } = await supabase.from("products").delete().eq("id", id);
+                if (error) { showToast(error.message, "error"); return; }
+                if (editingId === id) {
+                    resetProductForm();
+                    setShowProductForm(false);
+                }
+                showToast("Product deleted", "success");
+                loadProducts();
+            },
+        });
     };
 
     const filteredProducts = useMemo(() => {
@@ -550,6 +476,40 @@ export default function AdminProducts({ onProductsChange }) {
         );
     }, [products, productSearch]);
 
+    const isDirty = useMemo(() => {
+        const init = initialFormState.current;
+        if (!init) return false;
+        if (pName !== init.name) return true;
+        if (pSku !== init.sku) return true;
+        if (pCategory !== init.category) return true;
+        if (pPrice !== init.price) return true;
+        if (pStock !== init.stock) return true;
+        if (pDesc !== init.desc) return true;
+        if (pActive !== init.active) return true;
+        if (pImagePosition !== init.imagePosition) return true;
+        if (pAboutText !== init.aboutText) return true;
+        if (pBestFor !== init.bestFor) return true;
+        if (pPairsWellWith !== init.pairsWellWith) return true;
+        if (pRecommendedStack !== init.recommendedStack) return true;
+        if (pFile !== null) return true;
+        if (extraImageFiles.length > 0) return true;
+        if (pHighlights.length !== init.highlights.length) return true;
+        if (pHighlights.some((h, i) => h !== init.highlights[i])) return true;
+        const initVars = initialVariants.current;
+        if (variants.length !== initVars.length) return true;
+        for (let i = 0; i < variants.length; i++) {
+            const v = variants[i];
+            const iv = initVars[i];
+            if (!iv) return true;
+            if (String(v.label || "") !== String(iv.label || "")) return true;
+            if (String(v.price_inr ?? "") !== String(iv.price_inr ?? "")) return true;
+            if (String(v.stock_qty ?? "") !== String(iv.stock_qty ?? "")) return true;
+            if (String(v.sku || "") !== String(iv.sku || "")) return true;
+            if ((v.is_active !== false) !== (iv.is_active !== false)) return true;
+        }
+        return false;
+    }, [editingId, pName, pSku, pCategory, pPrice, pStock, pDesc, pActive, pImagePosition, pAboutText, pBestFor, pPairsWellWith, pRecommendedStack, pHighlights, pFile, extraImageFiles, variants]);
+
     const saveInlineStock = async (productId) => {
         const qty = Number(inlineStockValue);
         if (!Number.isFinite(qty) || qty < 0) return;
@@ -559,7 +519,7 @@ export default function AdminProducts({ onProductsChange }) {
             .update({ stock_qty: qty })
             .eq("id", productId);
         setSavingInlineStock(false);
-        if (error) { alert(error.message); return; }
+        if (error) { showToast(error.message, "error"); return; }
         setInlineStockId(null);
         setInlineStockValue("");
         loadProducts();
@@ -585,13 +545,13 @@ export default function AdminProducts({ onProductsChange }) {
                         <div className="flex items-center gap-2">
                             {products.filter(p => p.is_active && Number(p.stock_qty || 0) <= LOW_STOCK_THRESHOLD).length > 0 && (
                                 <span className="inline-flex items-center rounded-full bg-amber-100 px-3 py-1.5 text-xs font-semibold text-amber-700">
-                            {products.filter(p => p.is_active && Number(p.stock_qty || 0) <= LOW_STOCK_THRESHOLD).length} low stock ⚠️
-                        </span>
+                                    {products.filter(p => p.is_active && Number(p.stock_qty || 0) <= LOW_STOCK_THRESHOLD).length} low stock ⚠️
+                                </span>
                             )}
                             <button
                                 type="button"
                                 onClick={openAddProduct}
-                                className="rounded-xl bg-gradient-to-r from-neutral-200 to-neutral-300 px-4 py-2 text-sm font-semibold text-stone-900 shadow-sm hover:shadow"
+                                className="btn-primary"
                             >
                                 + Add Product
                             </button>
@@ -599,7 +559,7 @@ export default function AdminProducts({ onProductsChange }) {
                     </div>
 
                     {showProductForm && (
-                        <div className="mt-4 rounded-2xl border border-[#E8E4DE] bg-white p-4">
+                        <div ref={formRef} className="mt-4 rounded-2xl border border-[#E8E4DE] bg-white p-4">
                             <div className="flex items-start justify-between gap-3">
                                 <div>
                                     <div className="text-sm font-semibold text-stone-900">
@@ -647,11 +607,10 @@ export default function AdminProducts({ onProductsChange }) {
                                             onChange={(e) => setPSku(e.target.value)}
                                             placeholder={variants.length > 0 ? "Set per variant ↑" : "e.g. CA-MULTI-001"}
                                             disabled={variants.length > 0}
-                                            className={`mt-1 w-full rounded-xl border px-3 py-2 text-sm outline-none transition-colors ${
-                                                variants.length > 0
-                                                    ? "border-stone-200 bg-stone-100 text-stone-300 cursor-not-allowed"
-                                                    : "border-[#E8E4DE] bg-white text-stone-900 focus:ring-2 focus:ring-[#1e3a5f]/20"
-                                            }`}
+                                            className={`mt-1 w-full rounded-xl border px-3 py-2 text-sm outline-none transition-colors ${variants.length > 0
+                                                ? "border-stone-200 bg-stone-100 text-stone-300 cursor-not-allowed"
+                                                : "border-[#E8E4DE] bg-white text-stone-900 focus:ring-2 focus:ring-[#1e3a5f]/20"
+                                                }`}
                                         />
                                     </div>
                                 </div>
@@ -732,7 +691,7 @@ export default function AdminProducts({ onProductsChange }) {
                                 <div className="rounded-xl border border-[#E8E4DE] bg-stone-50 p-4 space-y-3">
                                     <div>
                                         <div className="text-xs font-semibold text-stone-600 flex items-center gap-1.5">
-                                            <svg className="h-3.5 w-3.5 text-[#1e3a5f]" viewBox="0 0 20 20" fill="currentColor"><path fillRule="evenodd" d="M17.707 9.293a1 1 0 010 1.414l-7 7a1 1 0 01-1.414 0l-7-7A.997.997 0 012 10V5a3 3 0 013-3h5c.256 0 .512.098.707.293l7 7zM5 6a1 1 0 100-2 1 1 0 000 2z" clipRule="evenodd"/></svg>
+                                            <svg className="h-3.5 w-3.5 text-[#1e3a5f]" viewBox="0 0 20 20" fill="currentColor"><path fillRule="evenodd" d="M17.707 9.293a1 1 0 010 1.414l-7 7a1 1 0 01-1.414 0l-7-7A.997.997 0 012 10V5a3 3 0 013-3h5c.256 0 .512.098.707.293l7 7zM5 6a1 1 0 100-2 1 1 0 000 2z" clipRule="evenodd" /></svg>
                                             Product Card Highlights
                                         </div>
                                         <div className="text-[11px] text-stone-400 mt-0.5">
@@ -745,16 +704,16 @@ export default function AdminProducts({ onProductsChange }) {
                                         <div className="flex flex-wrap gap-2">
                                             {pHighlights.map((tag, i) => (
                                                 <span key={i} className="inline-flex items-center gap-1.5 rounded-full border border-[#E8E4DE] bg-white px-3 py-1 text-[11px] font-medium text-stone-700 shadow-sm">
-                                            {tag}
+                                                    {tag}
                                                     <button
                                                         type="button"
                                                         onClick={() => setPHighlights(prev => prev.filter((_, j) => j !== i))}
                                                         className="text-stone-400 hover:text-red-500 transition-colors leading-none"
                                                         title="Remove"
                                                     >
-                                                ✕
-                                            </button>
-                                        </span>
+                                                        ✕
+                                                    </button>
+                                                </span>
                                             ))}
                                         </div>
                                     )}
@@ -816,7 +775,7 @@ export default function AdminProducts({ onProductsChange }) {
                                 <div className="rounded-xl border border-[#E8E4DE] bg-stone-50 p-4 space-y-4">
                                     <div>
                                         <div className="text-xs font-semibold text-stone-600 flex items-center gap-1.5">
-                                            <svg className="h-3.5 w-3.5 text-[#1e3a5f]" viewBox="0 0 20 20" fill="currentColor"><path d="M7 3a1 1 0 000 2h6a1 1 0 100-2H7zM4 7a1 1 0 011-1h10a1 1 0 110 2H5a1 1 0 01-1-1zM2 11a2 2 0 012-2h12a2 2 0 012 2v4a2 2 0 01-2 2H4a2 2 0 01-2-2v-4z"/></svg>
+                                            <svg className="h-3.5 w-3.5 text-[#1e3a5f]" viewBox="0 0 20 20" fill="currentColor"><path d="M7 3a1 1 0 000 2h6a1 1 0 100-2H7zM4 7a1 1 0 011-1h10a1 1 0 110 2H5a1 1 0 01-1-1zM2 11a2 2 0 012-2h12a2 2 0 012 2v4a2 2 0 01-2 2H4a2 2 0 01-2-2v-4z" /></svg>
                                             Product Variants (optional)
                                         </div>
                                         <div className="text-[11px] text-stone-400 mt-0.5">
@@ -832,7 +791,7 @@ export default function AdminProducts({ onProductsChange }) {
                                                 <span>Label</span><span>Price (₹)</span><span>Stock</span><span>SKU</span><span />
                                             </div>
                                             {variants.map((v, i) => (
-                                                <div key={v.id || i} className="grid grid-cols-[1fr_100px_80px_90px_32px] gap-2 items-center bg-white rounded-xl border border-[#E8E4DE] px-3 py-2.5">
+                                                <div key={v.id || i} className="grid grid-cols-2 sm:grid-cols-[1fr_100px_80px_90px_32px] gap-2 items-center bg-white rounded-xl border border-[#E8E4DE] px-3 py-2.5">
                                                     {/* Label */}
                                                     <input
                                                         value={v.label || ""}
@@ -868,17 +827,28 @@ export default function AdminProducts({ onProductsChange }) {
                                                     {/* Delete */}
                                                     <button
                                                         type="button"
-                                                        onClick={async () => {
+                                                        onClick={() => {
                                                             if (v.id) {
-                                                                if (!window.confirm("Remove this variant? Customers will no longer see it.")) return;
-                                                                await supabase.from("product_variants").delete().eq("id", v.id);
+                                                                setConfirmDlg({
+                                                                    title: "Remove variant?",
+                                                                    message: `"${v.label || "This variant"}" will be removed. Customers will no longer see it.`,
+                                                                    confirmLabel: "Remove variant",
+                                                                    variant: "danger",
+                                                                    onConfirm: async () => {
+                                                                        setConfirmDlg(null);
+                                                                        await supabase.from("product_variants").delete().eq("id", v.id);
+                                                                        setVariants(prev => prev.filter((_, j) => j !== i));
+                                                                        showToast("Variant removed", "success");
+                                                                    },
+                                                                });
+                                                            } else {
+                                                                setVariants(prev => prev.filter((_, j) => j !== i));
                                                             }
-                                                            setVariants(prev => prev.filter((_, j) => j !== i));
                                                         }}
                                                         className="h-7 w-7 flex items-center justify-center rounded-lg text-stone-300 hover:text-red-500 hover:bg-red-50 transition"
                                                         title="Remove variant"
                                                     >
-                                                        <svg className="h-3.5 w-3.5" viewBox="0 0 20 20" fill="currentColor"><path fillRule="evenodd" d="M9 2a1 1 0 00-.894.553L7.382 4H4a1 1 0 000 2v10a2 2 0 002 2h8a2 2 0 002-2V6a1 1 0 100-2h-3.382l-.724-1.447A1 1 0 0011 2H9zM7 8a1 1 0 012 0v6a1 1 0 11-2 0V8zm5-1a1 1 0 00-1 1v6a1 1 0 102 0V8a1 1 0 00-1-1z" clipRule="evenodd"/></svg>
+                                                        <svg className="h-3.5 w-3.5" viewBox="0 0 20 20" fill="currentColor"><path fillRule="evenodd" d="M9 2a1 1 0 00-.894.553L7.382 4H4a1 1 0 000 2v10a2 2 0 002 2h8a2 2 0 002-2V6a1 1 0 100-2h-3.382l-.724-1.447A1 1 0 0011 2H9zM7 8a1 1 0 012 0v6a1 1 0 11-2 0V8zm5-1a1 1 0 00-1 1v6a1 1 0 102 0V8a1 1 0 00-1-1z" clipRule="evenodd" /></svg>
                                                     </button>
                                                 </div>
                                             ))}
@@ -894,7 +864,7 @@ export default function AdminProducts({ onProductsChange }) {
                                         ])}
                                         className="flex items-center gap-2 rounded-xl border-2 border-dashed border-stone-300 px-4 py-2.5 text-sm font-medium text-stone-500 hover:border-[#1e3a5f] hover:text-[#1e3a5f] transition w-full justify-center"
                                     >
-                                        <svg className="h-4 w-4" viewBox="0 0 20 20" fill="currentColor"><path fillRule="evenodd" d="M10 3a1 1 0 011 1v5h5a1 1 0 110 2h-5v5a1 1 0 11-2 0v-5H4a1 1 0 110-2h5V4a1 1 0 011-1z" clipRule="evenodd"/></svg>
+                                        <svg className="h-4 w-4" viewBox="0 0 20 20" fill="currentColor"><path fillRule="evenodd" d="M10 3a1 1 0 011 1v5h5a1 1 0 110 2h-5v5a1 1 0 11-2 0v-5H4a1 1 0 110-2h5V4a1 1 0 011-1z" clipRule="evenodd" /></svg>
                                         Add variant
                                     </button>
 
@@ -904,7 +874,7 @@ export default function AdminProducts({ onProductsChange }) {
 
                                     {variants.length > 0 && (
                                         <div className="flex items-center gap-1.5 text-[11px] text-stone-400 bg-white border border-[#E8E4DE] rounded-xl px-3 py-2">
-                                            <svg className="h-3.5 w-3.5 text-[#1e3a5f] shrink-0" viewBox="0 0 20 20" fill="currentColor"><path fillRule="evenodd" d="M18 10a8 8 0 11-16 0 8 8 0 0116 0zm-7-4a1 1 0 11-2 0 1 1 0 012 0zM9 9a1 1 0 000 2v3a1 1 0 001 1h1a1 1 0 100-2v-3a1 1 0 00-1-1H9z" clipRule="evenodd"/></svg>
+                                            <svg className="h-3.5 w-3.5 text-[#1e3a5f] shrink-0" viewBox="0 0 20 20" fill="currentColor"><path fillRule="evenodd" d="M18 10a8 8 0 11-16 0 8 8 0 0116 0zm-7-4a1 1 0 11-2 0 1 1 0 012 0zM9 9a1 1 0 000 2v3a1 1 0 001 1h1a1 1 0 100-2v-3a1 1 0 00-1-1H9z" clipRule="evenodd" /></svg>
                                             Variants are saved when you click <strong className="text-stone-600 ml-1">Save product</strong>. The base product price/stock is used as fallback if no variant is selected.
                                         </div>
                                     )}
@@ -924,11 +894,10 @@ export default function AdminProducts({ onProductsChange }) {
                                             value={pPrice}
                                             onChange={(e) => setPPrice(e.target.value)}
                                             disabled={variants.length > 0}
-                                            className={`mt-1 w-full rounded-xl border px-3 py-2 text-sm outline-none transition-colors ${
-                                                variants.length > 0
-                                                    ? "border-stone-200 bg-stone-100 text-stone-300 cursor-not-allowed"
-                                                    : "border-[#E8E4DE] bg-white text-stone-900 focus:ring-2 focus:ring-[#1e3a5f]/20"
-                                            }`}
+                                            className={`mt-1 w-full rounded-xl border px-3 py-2 text-sm outline-none transition-colors ${variants.length > 0
+                                                ? "border-stone-200 bg-stone-100 text-stone-300 cursor-not-allowed"
+                                                : "border-[#E8E4DE] bg-white text-stone-900 focus:ring-2 focus:ring-[#1e3a5f]/20"
+                                                }`}
                                             min={0}
                                             placeholder={variants.length > 0 ? "Set per variant ↑" : ""}
                                         />
@@ -946,11 +915,10 @@ export default function AdminProducts({ onProductsChange }) {
                                             value={pStock}
                                             onChange={(e) => setPStock(e.target.value)}
                                             disabled={variants.length > 0}
-                                            className={`mt-1 w-full rounded-xl border px-3 py-2 text-sm outline-none transition-colors ${
-                                                variants.length > 0
-                                                    ? "border-stone-200 bg-stone-100 text-stone-300 cursor-not-allowed"
-                                                    : "border-[#E8E4DE] bg-white text-stone-900 focus:ring-2 focus:ring-[#1e3a5f]/20"
-                                            }`}
+                                            className={`mt-1 w-full rounded-xl border px-3 py-2 text-sm outline-none transition-colors ${variants.length > 0
+                                                ? "border-stone-200 bg-stone-100 text-stone-300 cursor-not-allowed"
+                                                : "border-[#E8E4DE] bg-white text-stone-900 focus:ring-2 focus:ring-[#1e3a5f]/20"
+                                                }`}
                                             min={0}
                                             placeholder={variants.length > 0 ? "Set per variant ↑" : ""}
                                         />
@@ -973,7 +941,7 @@ export default function AdminProducts({ onProductsChange }) {
                                     <div>
                                         <div className="text-xs text-stone-400 mb-2">Product image</div>
                                         <label className="inline-flex items-center gap-2 cursor-pointer rounded-xl border border-[#E8E4DE] bg-stone-50 hover:border-[#1e3a5f]/40 hover:bg-[#EFF6FF] px-4 py-2 text-xs font-medium text-stone-700 transition w-fit">
-                                            <svg className="h-3.5 w-3.5 text-stone-400" viewBox="0 0 20 20" fill="currentColor"><path fillRule="evenodd" d="M3 17a1 1 0 011-1h12a1 1 0 110 2H4a1 1 0 01-1-1zM6.293 6.707a1 1 0 010-1.414l3-3a1 1 0 011.414 0l3 3a1 1 0 01-1.414 1.414L11 5.414V13a1 1 0 11-2 0V5.414L7.707 6.707a1 1 0 01-1.414 0z" clipRule="evenodd"/></svg>
+                                            <svg className="h-3.5 w-3.5 text-stone-400" viewBox="0 0 20 20" fill="currentColor"><path fillRule="evenodd" d="M3 17a1 1 0 011-1h12a1 1 0 110 2H4a1 1 0 01-1-1zM6.293 6.707a1 1 0 010-1.414l3-3a1 1 0 011.414 0l3 3a1 1 0 01-1.414 1.414L11 5.414V13a1 1 0 11-2 0V5.414L7.707 6.707a1 1 0 01-1.414 0z" clipRule="evenodd" /></svg>
                                             {pFile ? pFile.name : "Upload image"}
                                             <input
                                                 ref={fileInputRef}
@@ -1006,7 +974,7 @@ export default function AdminProducts({ onProductsChange }) {
                                                         onClick={() => setShowImageAdjuster(true)}
                                                         className="inline-flex items-center gap-1.5 rounded-lg border border-[#E8E4DE] bg-stone-50 px-2.5 py-1.5 text-xs font-medium text-stone-700 hover:border-[#1e3a5f]/40 hover:bg-[#EFF6FF] transition w-fit"
                                                     >
-                                                        <svg className="h-3 w-3 text-[#1e3a5f]" viewBox="0 0 20 20" fill="currentColor"><path d="M5 3a2 2 0 00-2 2v2a2 2 0 002 2h2a2 2 0 002-2V5a2 2 0 00-2-2H5zM5 11a2 2 0 00-2 2v2a2 2 0 002 2h2a2 2 0 002-2v-2a2 2 0 00-2-2H5zM11 5a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2h-2a2 2 0 01-2-2V5zM14 11a1 1 0 011 1v1h1a1 1 0 110 2h-1v1a1 1 0 11-2 0v-1h-1a1 1 0 110-2h1v-1a1 1 0 011-1z"/></svg>
+                                                        <svg className="h-3 w-3 text-[#1e3a5f]" viewBox="0 0 20 20" fill="currentColor"><path d="M5 3a2 2 0 00-2 2v2a2 2 0 002 2h2a2 2 0 002-2V5a2 2 0 00-2-2H5zM5 11a2 2 0 00-2 2v2a2 2 0 002 2h2a2 2 0 002-2v-2a2 2 0 00-2-2H5zM11 5a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2h-2a2 2 0 01-2-2V5zM14 11a1 1 0 011 1v1h1a1 1 0 110 2h-1v1a1 1 0 11-2 0v-1h-1a1 1 0 110-2h1v-1a1 1 0 011-1z" /></svg>
                                                         Adjust position & zoom
                                                     </button>
                                                     {pImagePosition !== "50% 50%" && (
@@ -1033,9 +1001,22 @@ export default function AdminProducts({ onProductsChange }) {
                                     <div className="flex items-end gap-2">
                                         <button
                                             type="button"
-                                            onClick={saveProduct}
-                                            disabled={savingProduct}
-                                            className="w-full rounded-xl bg-gradient-to-r from-neutral-200 to-neutral-300 px-4 py-2.5 text-sm font-semibold text-stone-900 shadow-sm hover:shadow disabled:opacity-60"
+                                            onClick={() => {
+                                                setConfirmDlg({
+                                                    title: editingId ? "Save changes?" : "Create product?",
+                                                    message: editingId
+                                                        ? `Save changes to "${pName}"?`
+                                                        : `Create new product "${pName}"?`,
+                                                    confirmLabel: editingId ? "Save changes" : "Create product",
+                                                    variant: "info",
+                                                    onConfirm: async () => {
+                                                        setConfirmDlg(null);
+                                                        await saveProduct();
+                                                    },
+                                                });
+                                            }}
+                                            disabled={savingProduct || !isDirty}
+                                            className="btn-primary w-full disabled:opacity-40 disabled:cursor-not-allowed"
                                         >
                                             {savingProduct
                                                 ? "Saving..."
@@ -1055,10 +1036,6 @@ export default function AdminProducts({ onProductsChange }) {
                                         )}
                                     </div>
                                 </div>
-
-                                {productMsg && (
-                                    <div className="text-sm text-stone-600">{productMsg}</div>
-                                )}
 
                                 {/* ── Extra Images Gallery ── */}
                                 <div className="rounded-xl border border-[#E8E4DE] bg-stone-50 p-4 space-y-3">
@@ -1198,11 +1175,18 @@ export default function AdminProducts({ onProductsChange }) {
                     {/* List */}
                     <div className="mt-4">
                         {loadingProducts ? (
-                            <div className="text-sm text-stone-400">Loading products...</div>
+                            <SkeletonAdminTable rows={4} />
                         ) : productErr ? (
                             <div className="text-sm text-red-600">{productErr}</div>
                         ) : products.length === 0 ? (
-                            <div className="text-sm text-stone-400">No products yet.</div>
+                            <div className="mt-8 flex flex-col items-center py-10 text-center">
+                                <div className="h-14 w-14 rounded-2xl bg-stone-100 flex items-center justify-center mb-4">
+                                    <svg className="h-7 w-7 text-stone-400" viewBox="0 0 20 20" fill="currentColor"><path fillRule="evenodd" d="M10 2a4 4 0 00-4 4v1H5a1 1 0 00-.994.89l-1 9A1 1 0 004 18h12a1 1 0 00.994-1.11l-1-9A1 1 0 0015 7h-1V6a4 4 0 00-4-4zm2 5V6a2 2 0 10-4 0v1h4zm-6 3a1 1 0 112 0 1 1 0 01-2 0zm7-1a1 1 0 100 2 1 1 0 000-2z" clipRule="evenodd" /></svg>
+                                </div>
+                                <div className="text-sm font-semibold text-stone-700">No products yet</div>
+                                <p className="mt-1 text-xs text-stone-400 max-w-xs">Add your first product to get started.</p>
+                                <button type="button" onClick={openAddProduct} className="btn-primary mt-4 text-sm">+ Add product</button>
+                            </div>
                         ) : (
                             <div className="mt-2">
                                 {/* Mobile cards */}
@@ -1252,8 +1236,8 @@ export default function AdminProducts({ onProductsChange }) {
                                                                                         <div key={v.id} className="flex items-center justify-between gap-1">
                                                                                             <span className="text-stone-500 truncate">{v.label}</span>
                                                                                             <span className={`font-semibold shrink-0 ${vOut ? "text-red-600" : vLow ? "text-amber-600" : "text-emerald-600"}`}>
-                                                                                        {vOut ? "0" : Number(v.stock_qty || 0)}{vLow && " ⚠️"}
-                                                                                    </span>
+                                                                                                {vOut ? "0" : Number(v.stock_qty || 0)}{vLow && " ⚠️"}
+                                                                                            </span>
                                                                                         </div>
                                                                                     );
                                                                                 })}
@@ -1290,13 +1274,13 @@ export default function AdminProducts({ onProductsChange }) {
                                                             <div className="text-xs text-stone-400">
                                                                 Active:{" "}
                                                                 <span className="font-semibold text-stone-900">
-                    {p.is_active ? "Yes" : "No"}
-                  </span>
+                                                                    {p.is_active ? "Yes" : "No"}
+                                                                </span>
                                                             </div>
                                                             <button
                                                                 type="button"
                                                                 onClick={() => openEditProduct(p)}
-                                                                className="rounded-xl border border-[#E8E4DE] bg-white px-3 py-2 text-xs font-semibold text-stone-900 hover:bg-stone-50"
+                                                                className="rounded-xl border border-[#E8E4DE] bg-white px-3 py-2 text-xs font-semibold text-stone-900 hover:bg-stone-50 active:scale-95 transition-transform duration-100"
                                                             >
                                                                 Edit
                                                             </button>
@@ -1317,153 +1301,153 @@ export default function AdminProducts({ onProductsChange }) {
                                 <div className="hidden md:block overflow-x-auto">
                                     <table className="w-full table-fixed text-sm">
                                         <thead>
-                                        <tr className="text-left text-stone-400 border-b">
-                                            <th className="py-2 pr-4 w-[40%]">Product</th>
-                                            <th className="py-2 pr-4 w-[14%]">Price</th>
-                                            <th className="py-2 pr-4 w-[14%]">Stock</th>
-                                            <th className="py-2 pr-4 w-[10%]">Active</th>
-                                            <th className="py-2 pr-4 w-[16%]">Created</th>
-                                            <th className="py-2 w-[6%]">Action</th>
-                                        </tr>
+                                            <tr className="text-left text-stone-400 border-b">
+                                                <th className="py-2 pr-4 w-[40%]">Product</th>
+                                                <th className="py-2 pr-4 w-[14%]">Price</th>
+                                                <th className="py-2 pr-4 w-[14%]">Stock</th>
+                                                <th className="py-2 pr-4 w-[10%]">Active</th>
+                                                <th className="py-2 pr-4 w-[16%]">Created</th>
+                                                <th className="py-2 w-[6%]">Action</th>
+                                            </tr>
                                         </thead>
 
                                         <tbody>
-                                        {filteredProducts.map((p) => {
-                                            const out = Number(p.stock_qty || 0) <= 0;
-                                            return (
-                                                <tr key={p.id} className="border-b align-top">
-                                                    <td className="py-2 pr-4">
-                                                        <div className="flex items-center gap-3">
-                                                            <div className="h-10 w-10 rounded-lg bg-stone-100 overflow-hidden shrink-0">
-                                                                {p.image_url ? (
-                                                                    <img
-                                                                        src={p.image_url}
-                                                                        alt={p.name}
-                                                                        className="h-full w-full object-cover"
-                                                                        loading="lazy"
-                                                                    />
-                                                                ) : null}
-                                                            </div>
-                                                            <div>
-                                                                <div className="font-semibold text-stone-900">
-                                                                    {p.name}
+                                            {filteredProducts.map((p) => {
+                                                const out = Number(p.stock_qty || 0) <= 0;
+                                                return (
+                                                    <tr key={p.id} className="border-b align-top">
+                                                        <td className="py-2 pr-4">
+                                                            <div className="flex items-center gap-3">
+                                                                <div className="h-10 w-10 rounded-lg bg-stone-100 overflow-hidden shrink-0">
+                                                                    {p.image_url ? (
+                                                                        <img
+                                                                            src={p.image_url}
+                                                                            alt={p.name}
+                                                                            className="h-full w-full object-cover"
+                                                                            loading="lazy"
+                                                                        />
+                                                                    ) : null}
                                                                 </div>
-                                                                <div className="text-xs text-stone-400">
-                                                                    {p.category || "—"}
-                                                                </div>
-                                                            </div>
-                                                        </div>
-                                                    </td>
-
-                                                    <td className="py-2 pr-4">
-                                                        ₹{Number(p.price_inr || 0).toLocaleString("en-IN")}
-                                                    </td>
-
-                                                    <td className="py-2 pr-4">
-                                                        {(() => {
-                                                            const activeVariants = (p.product_variants || []).filter(v => v.is_active !== false);
-                                                            if (activeVariants.length > 0) {
-                                                                // Has variants — show per-variant stock, no inline edit
-                                                                return (
-                                                                    <div className="space-y-1">
-                                                                        {activeVariants.map((v) => {
-                                                                            const vOut = Number(v.stock_qty || 0) <= 0;
-                                                                            const vLow = !vOut && Number(v.stock_qty || 0) <= LOW_STOCK_THRESHOLD;
-                                                                            return (
-                                                                                <div key={v.id} className="flex items-center gap-1.5">
-                                                                                    <span className="text-[11px] text-stone-500 truncate max-w-[80px]">{v.label}</span>
-                                                                                    <span className={`text-[11px] font-semibold ${vOut ? "text-red-600" : vLow ? "text-amber-600" : "text-emerald-600"}`}>
-                                                                                {vOut ? "0" : Number(v.stock_qty || 0)}
-                                                                                        {vLow && " ⚠️"}
-                                                                            </span>
-                                                                                </div>
-                                                                            );
-                                                                        })}
-                                                                        <div className="text-[10px] text-stone-400 mt-0.5">Edit to update stock</div>
+                                                                <div>
+                                                                    <div className="font-semibold text-stone-900">
+                                                                        {p.name}
                                                                     </div>
-                                                                );
-                                                            }
-                                                            // No variants — standard inline edit
-                                                            return inlineStockId === p.id ? (
-                                                                <div className="flex items-center gap-1">
-                                                                    <input
-                                                                        type="number"
-                                                                        value={inlineStockValue}
-                                                                        onChange={(e) => setInlineStockValue(e.target.value)}
-                                                                        onKeyDown={(e) => {
-                                                                            if (e.key === "Enter") saveInlineStock(p.id);
-                                                                            if (e.key === "Escape") { setInlineStockId(null); setInlineStockValue(""); }
-                                                                        }}
-                                                                        className="w-16 rounded-lg border border-stone-300 px-2 py-1 text-xs focus:ring-2 focus:ring-[#1e3a5f]/20 outline-none"
-                                                                        min={0}
-                                                                        autoFocus
-                                                                    />
-                                                                    <button
-                                                                        type="button"
-                                                                        onClick={() => saveInlineStock(p.id)}
-                                                                        disabled={savingInlineStock}
-                                                                        className="rounded-lg bg-[#1e3a5f] px-2 py-1 text-[10px] font-semibold text-white hover:bg-[#162d4a] disabled:opacity-50"
-                                                                    >
-                                                                        {savingInlineStock ? "…" : "Save"}
-                                                                    </button>
-                                                                    <button
-                                                                        type="button"
-                                                                        onClick={() => { setInlineStockId(null); setInlineStockValue(""); }}
-                                                                        className="rounded-lg border border-[#E8E4DE] px-2 py-1 text-[10px] text-stone-500 hover:bg-stone-50"
-                                                                    >
-                                                                        ✕
-                                                                    </button>
+                                                                    <div className="text-xs text-stone-400">
+                                                                        {p.category || "—"}
+                                                                    </div>
                                                                 </div>
-                                                            ) : (
-                                                                <button
-                                                                    type="button"
-                                                                    onClick={() => { setInlineStockId(p.id); setInlineStockValue(String(p.stock_qty || 0)); }}
-                                                                    className="group flex items-center gap-1.5 rounded-lg px-2 py-1 hover:bg-stone-100 transition"
-                                                                    title="Click to edit stock"
-                                                                >
-                                                            <span className={out ? "text-red-600 font-semibold" : "text-green-600 font-semibold"}>
-                                                                {out ? "Out of stock" : "In stock"}
+                                                            </div>
+                                                        </td>
+
+                                                        <td className="py-2 pr-4">
+                                                            ₹{Number(p.price_inr || 0).toLocaleString("en-IN")}
+                                                        </td>
+
+                                                        <td className="py-2 pr-4">
+                                                            {(() => {
+                                                                const activeVariants = (p.product_variants || []).filter(v => v.is_active !== false);
+                                                                if (activeVariants.length > 0) {
+                                                                    // Has variants — show per-variant stock, no inline edit
+                                                                    return (
+                                                                        <div className="space-y-1">
+                                                                            {activeVariants.map((v) => {
+                                                                                const vOut = Number(v.stock_qty || 0) <= 0;
+                                                                                const vLow = !vOut && Number(v.stock_qty || 0) <= LOW_STOCK_THRESHOLD;
+                                                                                return (
+                                                                                    <div key={v.id} className="flex items-center gap-1.5">
+                                                                                        <span className="text-[11px] text-stone-500 truncate max-w-[80px]">{v.label}</span>
+                                                                                        <span className={`text-[11px] font-semibold ${vOut ? "text-red-600" : vLow ? "text-amber-600" : "text-emerald-600"}`}>
+                                                                                            {vOut ? "0" : Number(v.stock_qty || 0)}
+                                                                                            {vLow && " ⚠️"}
+                                                                                        </span>
+                                                                                    </div>
+                                                                                );
+                                                                            })}
+                                                                            <div className="text-[10px] text-stone-400 mt-0.5">Edit to update stock</div>
+                                                                        </div>
+                                                                    );
+                                                                }
+                                                                // No variants — standard inline edit
+                                                                return inlineStockId === p.id ? (
+                                                                    <div className="flex items-center gap-1">
+                                                                        <input
+                                                                            type="number"
+                                                                            value={inlineStockValue}
+                                                                            onChange={(e) => setInlineStockValue(e.target.value)}
+                                                                            onKeyDown={(e) => {
+                                                                                if (e.key === "Enter") saveInlineStock(p.id);
+                                                                                if (e.key === "Escape") { setInlineStockId(null); setInlineStockValue(""); }
+                                                                            }}
+                                                                            className="w-16 rounded-lg border border-stone-300 px-2 py-1 text-xs focus:ring-2 focus:ring-[#1e3a5f]/20 outline-none"
+                                                                            min={0}
+                                                                            autoFocus
+                                                                        />
+                                                                        <button
+                                                                            type="button"
+                                                                            onClick={() => saveInlineStock(p.id)}
+                                                                            disabled={savingInlineStock}
+                                                                            className="rounded-lg bg-[#1e3a5f] px-2 py-1 text-[10px] font-semibold text-white hover:bg-[#162d4a] disabled:opacity-50"
+                                                                        >
+                                                                            {savingInlineStock ? "…" : "Save"}
+                                                                        </button>
+                                                                        <button
+                                                                            type="button"
+                                                                            onClick={() => { setInlineStockId(null); setInlineStockValue(""); }}
+                                                                            className="rounded-lg border border-[#E8E4DE] px-2 py-1 text-[10px] text-stone-500 hover:bg-stone-50"
+                                                                        >
+                                                                            ✕
+                                                                        </button>
+                                                                    </div>
+                                                                ) : (
+                                                                    <button
+                                                                        type="button"
+                                                                        onClick={() => { setInlineStockId(p.id); setInlineStockValue(String(p.stock_qty || 0)); }}
+                                                                        className="group flex items-center gap-1.5 rounded-lg px-2 py-1 hover:bg-stone-100 transition"
+                                                                        title="Click to edit stock"
+                                                                    >
+                                                                        <span className={out ? "text-red-600 font-semibold" : "text-green-600 font-semibold"}>
+                                                                            {out ? "Out of stock" : "In stock"}
+                                                                        </span>
+                                                                        <span className="text-xs text-stone-400">({Number(p.stock_qty || 0)})</span>
+                                                                        {!out && Number(p.stock_qty || 0) <= LOW_STOCK_THRESHOLD && (
+                                                                            <span className="inline-flex items-center rounded-full bg-amber-100 px-2 py-0.5 text-[10px] font-semibold text-amber-700">Low ⚠️</span>
+                                                                        )}
+                                                                        <span className="hidden group-hover:inline text-[10px] text-stone-400 ml-1">✏️</span>
+                                                                    </button>
+                                                                );
+                                                            })()}
+                                                        </td>
+
+                                                        <td className="py-2 pr-4">
+                                                            <span
+                                                                className={
+                                                                    p.is_active
+                                                                        ? "text-green-600 font-semibold"
+                                                                        : "text-stone-400 font-semibold"
+                                                                }
+                                                            >
+                                                                {p.is_active ? "Yes" : "No"}
                                                             </span>
-                                                                    <span className="text-xs text-stone-400">({Number(p.stock_qty || 0)})</span>
-                                                                    {!out && Number(p.stock_qty || 0) <= LOW_STOCK_THRESHOLD && (
-                                                                        <span className="inline-flex items-center rounded-full bg-amber-100 px-2 py-0.5 text-[10px] font-semibold text-amber-700">Low ⚠️</span>
-                                                                    )}
-                                                                    <span className="hidden group-hover:inline text-[10px] text-stone-400 ml-1">✏️</span>
-                                                                </button>
-                                                            );
-                                                        })()}
-                                                    </td>
+                                                        </td>
 
-                                                    <td className="py-2 pr-4">
-                <span
-                    className={
-                        p.is_active
-                            ? "text-green-600 font-semibold"
-                            : "text-stone-400 font-semibold"
-                    }
-                >
-                  {p.is_active ? "Yes" : "No"}
-                </span>
-                                                    </td>
+                                                        <td className="py-2 pr-4 text-xs text-stone-400">
+                                                            {p.created_at
+                                                                ? new Date(p.created_at).toLocaleString()
+                                                                : "—"}
+                                                        </td>
 
-                                                    <td className="py-2 pr-4 text-xs text-stone-400">
-                                                        {p.created_at
-                                                            ? new Date(p.created_at).toLocaleString()
-                                                            : "—"}
-                                                    </td>
-
-                                                    <td className="py-2">
-                                                        <button
-                                                            type="button"
-                                                            onClick={() => openEditProduct(p)}
-                                                            className="rounded-lg border border-[#E8E4DE] px-3 py-1.5 text-xs hover:bg-stone-50"
-                                                        >
-                                                            Edit
-                                                        </button>
-                                                    </td>
-                                                </tr>
-                                            );
-                                        })}
+                                                        <td className="py-2">
+                                                            <button
+                                                                type="button"
+                                                                onClick={() => openEditProduct(p)}
+                                                                className="rounded-lg border border-[#E8E4DE] px-3 py-1.5 text-xs hover:bg-stone-50 active:scale-95 transition-transform duration-100"
+                                                            >
+                                                                Edit
+                                                            </button>
+                                                        </td>
+                                                    </tr>
+                                                );
+                                            })}
                                         </tbody>
                                     </table>
                                 </div>
@@ -1478,8 +1462,17 @@ export default function AdminProducts({ onProductsChange }) {
                 <ImagePositionAdjuster
                     src={pImagePreview}
                     position={pImagePosition}
+                    showZoom
+                    aspectRatio="37/22"
                     onSave={(val) => setPImagePosition(val)}
                     onClose={() => setShowImageAdjuster(false)}
+                />
+            )}
+
+            {confirmDlg && (
+                <ConfirmDialog
+                    {...confirmDlg}
+                    onCancel={() => setConfirmDlg(null)}
                 />
             )}
         </>

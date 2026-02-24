@@ -1,7 +1,19 @@
+/**
+ * ProductDetail.jsx — Single-product page with variant selection.
+ *
+ * Fetches one product by URL param `:id`, shows image gallery with
+ * thumbnails, variant picker, quantity stepper, stock/order-limit
+ * warnings, highlight pills, about section, and customer reviews.
+ * Uses composite cart keys (`productId_variantId`) for variant items.
+ *
+ * @module pages/ProductDetail
+ */
 import { useEffect, useMemo, useState } from "react";
 import { Link, useNavigate, useParams } from "react-router-dom";
 import { useCart } from "../context/CartContext";
 import { fetchProductById } from "../services/products";
+import SEO from "../components/SEO";
+import { SkeletonProductDetail } from "../components/Skeleton";
 
 const money = (n) => `₹${Number(n || 0).toLocaleString("en-IN")}`;
 
@@ -14,11 +26,11 @@ export default function ProductDetail() {
   const navigate = useNavigate();
   const { items, addItem, maxItems, updateQty } = useCart();
 
-  const [product, setProduct]           = useState(null);
-  const [loading, setLoading]           = useState(true);
-  const [err, setErr]                   = useState("");
+  const [product, setProduct] = useState(null);
+  const [loading, setLoading] = useState(true);
+  const [err, setErr] = useState("");
   const [selectedVariant, setSelectedVariant] = useState(null);
-  const [activeImg, setActiveImg]       = useState(0);
+  const [activeImg, setActiveImg] = useState(0);
 
   useEffect(() => {
     let alive = true;
@@ -46,10 +58,10 @@ export default function ProductDetail() {
     return () => { alive = false; };
   }, [id]);
 
-  const hasVariants  = (product?.variants?.length ?? 0) > 0;
-  const activePrice  = selectedVariant ? selectedVariant.price    : (product?.price    ?? 0);
-  const activeStock  = selectedVariant ? selectedVariant.stockQty : (product?.stockQty ?? 0);
-  const activeKey    = cartKey(id, selectedVariant?.id);
+  const hasVariants = (product?.variants?.length ?? 0) > 0;
+  const activePrice = selectedVariant ? selectedVariant.price : (product?.price ?? 0);
+  const activeStock = selectedVariant ? selectedVariant.stockQty : (product?.stockQty ?? 0);
+  const activeKey = cartKey(id, selectedVariant?.id);
 
   const cartItem = useMemo(
     () => (items || []).find((x) => x.id === activeKey),
@@ -57,10 +69,10 @@ export default function ProductDetail() {
   );
   const cartQty = cartItem?.qty || 0;
 
-  const cartCount        = useMemo(() => (items || []).reduce((s, x) => s + (Number(x.qty) || 0), 0), [items]);
+  const cartCount = useMemo(() => (items || []).reduce((s, x) => s + (Number(x.qty) || 0), 0), [items]);
   const remainingInOrder = Math.max(0, Number(maxItems || 0) - cartCount);
-  const remainingStock   = Math.max(0, activeStock - cartQty);
-  const canAdd           = remainingInOrder > 0 && remainingStock > 0;
+  const remainingStock = Math.max(0, activeStock - cartQty);
+  const canAdd = remainingInOrder > 0 && remainingStock > 0;
 
   const handlePlus = () => {
     if (!product || !canAdd) return;
@@ -81,17 +93,12 @@ export default function ProductDetail() {
 
   const images = (product?.images?.length > 0 ? product.images : [product?.image]).filter(Boolean);
 
+  const pageTitle = product ? `${product.name} | Core Atoms` : "Product | Core Atoms";
+  const pageDescription = product?.description || "Premium nutraceutical supplement from Core Atoms.";
+
   /* ── Loading skeleton ── */
   if (loading) {
-    return (
-      <div className="mx-auto max-w-6xl px-4 py-10">
-        <div className="h-4 w-48 rounded-full bg-stone-100 mb-8 animate-pulse" />
-        <div className="grid gap-8 lg:grid-cols-2 items-start">
-          <div className="rounded-2xl bg-stone-100 animate-pulse" style={{ height: 420 }} />
-          <div className="rounded-2xl bg-stone-100 animate-pulse" style={{ height: 420 }} />
-        </div>
-      </div>
-    );
+    return <SkeletonProductDetail />;
   }
 
   /* ── Error ── */
@@ -109,6 +116,7 @@ export default function ProductDetail() {
 
   return (
     <div className="pb-16">
+      <SEO title={pageTitle} description={pageDescription} ogImage={product.image} />
       <div className="mx-auto max-w-6xl px-4 py-10">
 
         {/* ── Breadcrumb ── */}
@@ -144,6 +152,7 @@ export default function ProductDetail() {
                 alt={product.name}
                 className="h-full w-full object-cover"
                 loading="lazy"
+                sizes="(max-width: 1024px) 100vw, 50vw"
               />
             </div>
 
@@ -155,11 +164,10 @@ export default function ProductDetail() {
                     key={i}
                     type="button"
                     onClick={() => setActiveImg(i)}
-                    className={`shrink-0 h-16 w-16 rounded-xl border-2 overflow-hidden transition-all ${
-                      i === activeImg
-                        ? "border-[#1e3a5f] shadow-sm"
-                        : "border-[#E8E4DE] hover:border-stone-400"
-                    }`}
+                    className={`shrink-0 h-16 w-16 rounded-xl border-2 overflow-hidden transition-all ${i === activeImg
+                      ? "border-[#1e3a5f] shadow-sm"
+                      : "border-[#E8E4DE] hover:border-stone-400"
+                      }`}
                   >
                     <img src={src} alt={`View ${i + 1}`} className="h-full w-full object-cover" />
                   </button>
@@ -216,13 +224,12 @@ export default function ProductDetail() {
                         type="button"
                         disabled={outOfStock}
                         onClick={() => setSelectedVariant(v)}
-                        className={`relative rounded-xl border-2 px-4 py-3 text-sm font-semibold transition-all duration-150 min-w-[90px] text-left ${
-                          outOfStock
-                            ? "border-stone-200 text-stone-300 cursor-not-allowed bg-stone-50"
-                            : isSelected
-                              ? "border-[#1e3a5f] bg-[#1e3a5f] text-white shadow-md"
-                              : "border-[#E8E4DE] text-stone-700 bg-white hover:border-[#1e3a5f]/50 hover:bg-[#EFF6FF]"
-                        }`}
+                        className={`relative rounded-xl border-2 px-4 py-3 text-sm font-semibold transition-all duration-150 min-w-[90px] text-left ${outOfStock
+                          ? "border-stone-200 text-stone-300 cursor-not-allowed bg-stone-50"
+                          : isSelected
+                            ? "border-[#1e3a5f] bg-[#1e3a5f] text-white shadow-md"
+                            : "border-[#E8E4DE] text-stone-700 bg-white hover:border-[#1e3a5f]/50 hover:bg-[#EFF6FF]"
+                          }`}
                       >
                         {isSelected && (
                           <span className="absolute top-1.5 right-1.5 h-4 w-4 rounded-full bg-white/20 flex items-center justify-center">
@@ -232,9 +239,8 @@ export default function ProductDetail() {
                           </span>
                         )}
                         <span className="block leading-tight">{v.label}</span>
-                        <span className={`block text-[11px] font-medium mt-1 ${
-                          isSelected ? "text-white/75" : outOfStock ? "text-stone-300" : "text-[#1e3a5f]"
-                        }`}>
+                        <span className={`block text-[11px] font-medium mt-1 ${isSelected ? "text-white/75" : outOfStock ? "text-stone-300" : "text-[#1e3a5f]"
+                          }`}>
                           {outOfStock ? "Out of stock" : money(v.price)}
                         </span>
                       </button>
@@ -255,11 +261,10 @@ export default function ProductDetail() {
                 </div>
                 <p className="text-xs text-stone-400 mt-1">Cash on Delivery · India only</p>
               </div>
-              <span className={`inline-flex items-center gap-1.5 text-xs font-semibold px-3 py-1.5 rounded-full ${
-                activeStock > 0
-                  ? "bg-emerald-50 border border-emerald-200 text-emerald-700"
-                  : "bg-red-50 border border-red-200 text-red-600"
-              }`}>
+              <span className={`inline-flex items-center gap-1.5 text-xs font-semibold px-3 py-1.5 rounded-full ${activeStock > 0
+                ? "bg-emerald-50 border border-emerald-200 text-emerald-700"
+                : "bg-red-50 border border-red-200 text-red-600"
+                }`}>
                 <span className={`h-1.5 w-1.5 rounded-full ${activeStock > 0 ? "bg-emerald-500" : "bg-red-500"}`} />
                 {activeStock > 0 ? "In stock" : "Out of stock"}
               </span>

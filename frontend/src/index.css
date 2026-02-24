@@ -18,6 +18,20 @@
 
 @layer components {
 
+  /* Premium card — subtle depth and hover lift (used by ProductCard, Button) */
+  .premium-card {
+    box-shadow: 0 1px 3px rgba(0, 0, 0, 0.05);
+    transition: box-shadow 0.2s ease, transform 0.2s ease;
+  }
+  .premium-card:hover {
+    box-shadow: 0 6px 24px rgba(0, 0, 0, 0.08);
+  }
+
+  /* Toast slide-in animation (used by Navbar inline toast) */
+  .animate-toast-in {
+    animation: toastIn 220ms ease-out;
+  }
+
   /* Primary CTA — dark navy, clean */
   .btn-primary {
     @apply inline-flex items-center justify-center gap-2

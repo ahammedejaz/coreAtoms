@@ -1,3 +1,11 @@
+/**
+ * AdminRoute.jsx — Route guard that restricts access to admin users only.
+ *
+ * Redirects to `/login` if unauthenticated, to `/` if authenticated but
+ * not an admin. Shows a loading indicator while auth state resolves.
+ *
+ * @module routes/AdminRoute
+ */
 import { Navigate } from "react-router-dom";
 import { useAuth } from "../context/AuthContext";
 

@@ -1,6 +1,17 @@
+/**
+ * ErrorPage.jsx — React Router error boundary page.
+ *
+ * Shown when a route throws an error. Displays the error message with
+ * expandable technical details and links back to Home / Shop.
+ *
+ * @module pages/ErrorPage
+ */
 import { Link, useRouteError } from "react-router-dom";
 
+import useDocumentTitle from "../hooks/useDocumentTitle";
+
 export default function ErrorPage() {
+  useDocumentTitle("Error | Core Atoms");
   const err = useRouteError();
   const message =
     err?.statusText ||
@@ -32,7 +43,7 @@ export default function ErrorPage() {
         <details className="mt-6 text-xs text-neutral-600">
           <summary className="cursor-pointer">Technical details</summary>
           <pre className="mt-2 overflow-auto rounded-xl border border-neutral-200 bg-neutral-50 p-3">
-{String(err?.stack || err?.message || err)}
+            {String(err?.stack || err?.message || err)}
           </pre>
         </details>
       </div>

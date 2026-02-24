@@ -1,8 +1,19 @@
-import { useMemo, useState, useEffect, useCallback } from "react";
+/**
+ * Checkout.jsx — Complete checkout flow with saved addresses + COD order placement.
+ *
+ * Loads the user's saved addresses from Supabase, allows picking one or entering
+ * a new address, validates form fields (Indian phone + 6-digit pincode), and
+ * places the order via the `place_order_cod` RPC.
+ *
+ * @module pages/Checkout
+ */
+import { useState, useEffect, useCallback } from "react";
 import { Link, useNavigate } from "react-router-dom";
 import { useAuth } from "../context/AuthContext";
 import { useCart } from "../context/CartContext";
+import { useToast } from "../context/ToastContext";
 import { supabase } from "../services/supabase/client";
+import SEO from "../components/SEO";
 
 const money = (n) => `₹${Number(n || 0).toLocaleString("en-IN")}`;
 
@@ -31,6 +42,7 @@ export default function Checkout() {
   const navigate = useNavigate();
   const { user } = useAuth();
   const { items, subtotal, totalItems, clear } = useCart();
+  const { showToast } = useToast();
 
   // Saved addresses from Supabase
   const [savedAddresses, setSavedAddresses] = useState([]);
@@ -42,10 +54,12 @@ export default function Checkout() {
   const [savingAddress, setSavingAddress] = useState(false);
   const [addressSaved, setAddressSaved] = useState(false);
 
+  // Confirmation state for address deletion (replaces window.confirm)
+  const [pendingDeleteId, setPendingDeleteId] = useState(null);
+
   // Order state
   const [placed, setPlaced] = useState(false);
   const [loading, setLoading] = useState(false);
-  const [errorToast, setErrorToast] = useState("");
 
   const shipping = 0;
   const total = Number(subtotal || 0) + shipping;
@@ -76,7 +90,7 @@ export default function Checkout() {
       });
     }
     setLoadingAddresses(false);
-  }, [user?.id]);
+  }, [user?.id, selectedAddressId]);
 
   useEffect(() => { loadAddresses(); }, [loadAddresses]);
 
@@ -93,6 +107,7 @@ export default function Checkout() {
       pincode: addr.pincode || "",
     });
     setAddressSaved(false);
+    setPendingDeleteId(null);
   };
 
   // Start a new blank address form
@@ -100,6 +115,7 @@ export default function Checkout() {
     setSelectedAddressId(null);
     setForm(EMPTY_ADDRESS);
     setAddressSaved(false);
+    setPendingDeleteId(null);
   };
 
   // Save current form as a new address in Supabase
@@ -122,20 +138,22 @@ export default function Checkout() {
       .select()
       .single();
     setSavingAddress(false);
-    if (error) { alert(error.message); return; }
+    if (error) { showToast(error.message, "error"); return; }
     setAddressSaved(true);
+    showToast("Address saved", "success");
     await loadAddresses();
     setSelectedAddressId(data.id);
   };
 
-  // Delete a saved address
-  const deleteAddress = async (id) => {
-    if (!window.confirm("Remove this saved address?")) return;
-    await supabase.from("addresses").delete().eq("id", id);
+  // Delete a saved address (with inline confirmation instead of window.confirm)
+  const confirmDeleteAddress = async (id) => {
+    await supabase.from("addresses").delete().eq("id", id).eq("user_id", user.id);
+    setPendingDeleteId(null);
     if (selectedAddressId === id) {
       setSelectedAddressId(null);
       setForm(EMPTY_ADDRESS);
     }
+    showToast("Address removed", "info");
     await loadAddresses();
   };
 
@@ -178,10 +196,9 @@ export default function Checkout() {
     } catch (e) {
       const msg = e?.message || "Unknown error";
       if (msg.toLowerCase().includes("insufficient")) {
-        setErrorToast("⚠️ Some items are out of stock. Please reduce quantity and try again.");
-        setTimeout(() => setErrorToast(""), 3500);
+        showToast("⚠️ Some items are out of stock. Please reduce quantity and try again.", "warning", 4000);
       } else {
-        alert(`Order failed: ${msg}`);
+        showToast(`Order failed: ${msg}`, "error", 4000);
       }
     } finally {
       setLoading(false);
@@ -208,17 +225,12 @@ export default function Checkout() {
 
   return (
     <div>
+      <SEO title="Checkout | Core Atoms" description="Complete your order with cash on delivery." noIndex />
       <div className="mb-8">
         <Link to="/cart" className="text-sm text-stone-500 hover:text-stone-900 transition-colors">← Back to Cart</Link>
         <h1 className="mt-3 text-2xl font-semibold tracking-tight text-stone-900">Checkout</h1>
         <p className="text-sm text-stone-500 mt-1">Cash on Delivery · India only</p>
       </div>
-
-      {errorToast && (
-        <div className="mb-6 rounded-2xl border border-red-200 bg-red-50 px-5 py-3.5 text-sm text-red-700">
-          {errorToast}
-        </div>
-      )}
 
       <div className="grid gap-6 lg:grid-cols-5">
 
@@ -237,15 +249,13 @@ export default function Checkout() {
               <p className="text-xs font-semibold text-stone-500 uppercase tracking-wide">Saved</p>
               {savedAddresses.map((addr) => (
                 <div key={addr.id} onClick={() => selectSavedAddress(addr)}
-                  className={`flex items-start gap-3 rounded-xl border p-4 cursor-pointer transition-all ${
-                    selectedAddressId === addr.id
-                      ? "border-[#1e3a5f] bg-[#EFF6FF]"
-                      : "border-[#E8E4DE] hover:border-stone-300"
-                  }`}
+                  className={`flex items-start gap-3 rounded-xl border p-4 cursor-pointer transition-all ${selectedAddressId === addr.id
+                    ? "border-[#1e3a5f] bg-[#EFF6FF]"
+                    : "border-[#E8E4DE] hover:border-stone-300"
+                    }`}
                 >
-                  <div className={`mt-0.5 h-4 w-4 rounded-full border-2 flex items-center justify-center shrink-0 transition-colors ${
-                    selectedAddressId === addr.id ? "border-[#1e3a5f]" : "border-stone-300"
-                  }`}>
+                  <div className={`mt-0.5 h-4 w-4 rounded-full border-2 flex items-center justify-center shrink-0 transition-colors ${selectedAddressId === addr.id ? "border-[#1e3a5f]" : "border-stone-300"
+                    }`}>
                     {selectedAddressId === addr.id && <div className="h-2 w-2 rounded-full bg-[#1e3a5f]" />}
                   </div>
                   <div className="flex-1 min-w-0">
@@ -253,16 +263,25 @@ export default function Checkout() {
                     <p className="text-xs text-stone-500 mt-0.5">{addr.line1}{addr.line2 ? `, ${addr.line2}` : ""}, {addr.city}, {addr.state} — {addr.pincode}</p>
                     <p className="text-xs text-stone-500">{addr.phone}</p>
                   </div>
-                  <button type="button" onClick={(e) => { e.stopPropagation(); deleteAddress(addr.id); }}
-                    className="text-xs text-stone-300 hover:text-red-400 transition-colors shrink-0">✕</button>
+                  {/* Delete button with inline confirmation */}
+                  {pendingDeleteId === addr.id ? (
+                    <div className="flex items-center gap-2 shrink-0" onClick={(e) => e.stopPropagation()}>
+                      <button type="button" onClick={() => confirmDeleteAddress(addr.id)}
+                        className="text-xs font-semibold text-red-600 hover:text-red-700 transition-colors">Remove</button>
+                      <button type="button" onClick={() => setPendingDeleteId(null)}
+                        className="text-xs text-stone-400 hover:text-stone-600 transition-colors">Cancel</button>
+                    </div>
+                  ) : (
+                    <button type="button" onClick={(e) => { e.stopPropagation(); setPendingDeleteId(addr.id); }}
+                      className="text-xs text-stone-300 hover:text-red-400 transition-colors shrink-0">✕</button>
+                  )}
                 </div>
               ))}
               <button type="button" onClick={startNewAddress}
-                className={`w-full rounded-xl border-2 border-dashed px-4 py-3 text-sm font-medium transition-all ${
-                  selectedAddressId === null
-                    ? "border-[#1e3a5f] text-[#1e3a5f] bg-[#EFF6FF]"
-                    : "border-[#E8E4DE] text-stone-400 hover:border-stone-300 hover:text-stone-600"
-                }`}
+                className={`w-full rounded-xl border-2 border-dashed px-4 py-3 text-sm font-medium transition-all ${selectedAddressId === null
+                  ? "border-[#1e3a5f] text-[#1e3a5f] bg-[#EFF6FF]"
+                  : "border-[#E8E4DE] text-stone-400 hover:border-stone-300 hover:text-stone-600"
+                  }`}
               >
                 + Add a new address
               </button>
@@ -277,33 +296,33 @@ export default function Checkout() {
               <div className="grid gap-4 sm:grid-cols-2">
                 <div>
                   <label className="text-xs font-semibold text-stone-500 block mb-1.5">Full name *</label>
-                  <input value={form.fullName} onChange={(e) => setForm(a => ({...a, fullName: e.target.value}))} placeholder="Your name" className={inputCls} />
+                  <input value={form.fullName} onChange={(e) => setForm(a => ({ ...a, fullName: e.target.value }))} placeholder="Your name" className={inputCls} />
                 </div>
                 <div>
                   <label className="text-xs font-semibold text-stone-500 block mb-1.5">Phone (India) *</label>
-                  <input value={form.phone} onChange={(e) => setForm(a => ({...a, phone: e.target.value}))} placeholder="10-digit mobile" className={inputCls} />
+                  <input value={form.phone} onChange={(e) => setForm(a => ({ ...a, phone: e.target.value }))} placeholder="10-digit mobile" className={inputCls} />
                 </div>
               </div>
               <div>
                 <label className="text-xs font-semibold text-stone-500 block mb-1.5">Address line 1 *</label>
-                <input value={form.line1} onChange={(e) => setForm(a => ({...a, line1: e.target.value}))} placeholder="House / Flat, Street" className={inputCls} />
+                <input value={form.line1} onChange={(e) => setForm(a => ({ ...a, line1: e.target.value }))} placeholder="House / Flat, Street" className={inputCls} />
               </div>
               <div>
                 <label className="text-xs font-semibold text-stone-500 block mb-1.5">Address line 2 (optional)</label>
-                <input value={form.line2} onChange={(e) => setForm(a => ({...a, line2: e.target.value}))} placeholder="Landmark, Area" className={inputCls} />
+                <input value={form.line2} onChange={(e) => setForm(a => ({ ...a, line2: e.target.value }))} placeholder="Landmark, Area" className={inputCls} />
               </div>
               <div className="grid gap-4 sm:grid-cols-3">
                 <div>
                   <label className="text-xs font-semibold text-stone-500 block mb-1.5">City *</label>
-                  <input value={form.city} onChange={(e) => setForm(a => ({...a, city: e.target.value}))} placeholder="City" className={inputCls} />
+                  <input value={form.city} onChange={(e) => setForm(a => ({ ...a, city: e.target.value }))} placeholder="City" className={inputCls} />
                 </div>
                 <div>
                   <label className="text-xs font-semibold text-stone-500 block mb-1.5">State *</label>
-                  <input value={form.state} onChange={(e) => setForm(a => ({...a, state: e.target.value}))} placeholder="State" className={inputCls} />
+                  <input value={form.state} onChange={(e) => setForm(a => ({ ...a, state: e.target.value }))} placeholder="State" className={inputCls} />
                 </div>
                 <div>
                   <label className="text-xs font-semibold text-stone-500 block mb-1.5">Pincode *</label>
-                  <input value={form.pincode} onChange={(e) => setForm(a => ({...a, pincode: e.target.value}))} placeholder="6 digits" className={inputCls} />
+                  <input value={form.pincode} onChange={(e) => setForm(a => ({ ...a, pincode: e.target.value }))} placeholder="6 digits" className={inputCls} />
                 </div>
               </div>
 

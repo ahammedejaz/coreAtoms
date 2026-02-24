@@ -1,9 +1,21 @@
+/**
+ * Login.jsx — Authentication page (sign in / sign up).
+ *
+ * Supports both email+password and Google OAuth via Supabase Auth.
+ * After login, admins are redirected to `/admin` and customers to `/`.
+ * Toggle between sign-in and sign-up modes in the same card.
+ *
+ * @module pages/Login
+ */
 import { useState } from "react";
-import { useNavigate } from "react-router-dom";
+import { useNavigate, useSearchParams } from "react-router-dom";
 import { supabase } from "../services/supabase/client";
+import SEO from "../components/SEO";
 
 export default function Login() {
   const navigate = useNavigate();
+  const [searchParams] = useSearchParams();
+  const redirectTo = searchParams.get("redirect") || null;
   const [isSignup, setIsSignup] = useState(false);
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
@@ -11,6 +23,11 @@ export default function Login() {
   const [message, setMessage] = useState({ text: "", type: "" });
 
   const redirectAfterLogin = async (uid) => {
+    // If there's a redirect URL from ProtectedRoute, go there first
+    if (redirectTo) {
+      navigate(decodeURIComponent(redirectTo), { replace: true });
+      return;
+    }
     const { data } = await supabase.from("profiles").select("role").eq("id", uid).maybeSingle();
     if (data?.role === "admin") navigate("/admin", { replace: true });
     else navigate("/", { replace: true });
@@ -42,6 +59,7 @@ export default function Login() {
 
   return (
     <div className="min-h-[70vh] flex items-center justify-center py-12">
+      <SEO title="Login | Core Atoms" description="Sign in or create an account to manage your orders." />
       <div className="w-full max-w-md">
 
         {/* Header */}
@@ -66,10 +84,10 @@ export default function Login() {
             className="w-full inline-flex items-center justify-center gap-3 rounded-xl border border-[#E8E4DE] bg-white px-5 py-3 text-sm font-semibold text-stone-700 shadow-sm hover:bg-stone-50 hover:shadow transition-all duration-200"
           >
             <svg width="18" height="18" viewBox="0 0 48 48">
-              <path fill="#EA4335" d="M24 9.5c3.4 0 6.4 1.2 8.7 3.2l6.5-6.5C35.2 2.3 29.9 0 24 0 14.7 0 6.7 5.4 2.7 13.3l7.6 5.9C12.1 13.3 17.6 9.5 24 9.5z"/>
-              <path fill="#4285F4" d="M46.1 24.5c0-1.6-.1-3.1-.4-4.5H24v8.5h12.4c-.5 2.7-2 5-4.2 6.6l6.6 5.1c3.8-3.5 6.3-8.6 6.3-15.7z"/>
-              <path fill="#FBBC05" d="M10.3 28.2c-.5-1.5-.8-3.1-.8-4.7s.3-3.2.8-4.7l-7.6-5.9C1 17.1 0 20.4 0 23.5s1 6.4 2.7 9.1l7.6-5.9z"/>
-              <path fill="#34A853" d="M24 47c6 0 11.1-2 14.8-5.4l-6.6-5.1c-2 1.3-4.6 2.1-8.2 2.1-6.4 0-11.9-3.8-13.8-9.7l-7.6 5.9C6.7 42.6 14.7 47 24 47z"/>
+              <path fill="#EA4335" d="M24 9.5c3.4 0 6.4 1.2 8.7 3.2l6.5-6.5C35.2 2.3 29.9 0 24 0 14.7 0 6.7 5.4 2.7 13.3l7.6 5.9C12.1 13.3 17.6 9.5 24 9.5z" />
+              <path fill="#4285F4" d="M46.1 24.5c0-1.6-.1-3.1-.4-4.5H24v8.5h12.4c-.5 2.7-2 5-4.2 6.6l6.6 5.1c3.8-3.5 6.3-8.6 6.3-15.7z" />
+              <path fill="#FBBC05" d="M10.3 28.2c-.5-1.5-.8-3.1-.8-4.7s.3-3.2.8-4.7l-7.6-5.9C1 17.1 0 20.4 0 23.5s1 6.4 2.7 9.1l7.6-5.9z" />
+              <path fill="#34A853" d="M24 47c6 0 11.1-2 14.8-5.4l-6.6-5.1c-2 1.3-4.6 2.1-8.2 2.1-6.4 0-11.9-3.8-13.8-9.7l-7.6 5.9C6.7 42.6 14.7 47 24 47z" />
             </svg>
             Continue with Google
           </button>
@@ -91,11 +109,10 @@ export default function Login() {
             </div>
 
             {message.text && (
-              <div className={`rounded-xl px-4 py-3 text-sm ${
-                message.type === "success"
-                  ? "bg-emerald-50 border border-emerald-200 text-emerald-700"
-                  : "bg-red-50 border border-red-200 text-red-600"
-              }`}>
+              <div className={`rounded-xl px-4 py-3 text-sm ${message.type === "success"
+                ? "bg-emerald-50 border border-emerald-200 text-emerald-700"
+                : "bg-red-50 border border-red-200 text-red-600"
+                }`}>
                 {message.text}
               </div>
             )}

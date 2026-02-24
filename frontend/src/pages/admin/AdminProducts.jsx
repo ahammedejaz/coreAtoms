@@ -163,7 +163,13 @@ export default function AdminProducts({ onProductsChange }) {
     const openAddProduct = () => {
         resetProductForm();
         setShowProductForm(true);
-        // form close handled by parent
+        // Set empty baseline so isDirty starts false and tracks from here
+        initialFormState.current = {
+            name: "", sku: "", category: "", price: "", stock: "", desc: "",
+            active: true, imagePosition: "50% 50%", aboutText: "", bestFor: "",
+            pairsWellWith: "", recommendedStack: "", highlights: [],
+        };
+        initialVariants.current = [];
     };
 
     const openEditProduct = (p) => {
@@ -471,7 +477,6 @@ export default function AdminProducts({ onProductsChange }) {
     }, [products, productSearch]);
 
     const isDirty = useMemo(() => {
-        if (!editingId) return true; // Add mode — always enabled
         const init = initialFormState.current;
         if (!init) return false;
         if (pName !== init.name) return true;
@@ -546,7 +551,7 @@ export default function AdminProducts({ onProductsChange }) {
                             <button
                                 type="button"
                                 onClick={openAddProduct}
-                                className="rounded-xl bg-gradient-to-r from-neutral-200 to-neutral-300 px-4 py-2 text-sm font-semibold text-stone-900 shadow-sm hover:shadow"
+                                className="btn-primary"
                             >
                                 + Add Product
                             </button>
@@ -1011,7 +1016,7 @@ export default function AdminProducts({ onProductsChange }) {
                                                 });
                                             }}
                                             disabled={savingProduct || !isDirty}
-                                            className="w-full rounded-xl bg-gradient-to-r from-neutral-200 to-neutral-300 px-4 py-2.5 text-sm font-semibold text-stone-900 shadow-sm hover:shadow disabled:opacity-40 disabled:cursor-not-allowed"
+                                            className="btn-primary w-full disabled:opacity-40 disabled:cursor-not-allowed"
                                         >
                                             {savingProduct
                                                 ? "Saving..."
@@ -1180,7 +1185,7 @@ export default function AdminProducts({ onProductsChange }) {
                                 </div>
                                 <div className="text-sm font-semibold text-stone-700">No products yet</div>
                                 <p className="mt-1 text-xs text-stone-400 max-w-xs">Add your first product to get started.</p>
-                                <button type="button" onClick={() => { resetProductForm(); setEditingId(null); setShowProductForm(true); }} className="btn-primary mt-4 text-sm">+ Add product</button>
+                                <button type="button" onClick={openAddProduct} className="btn-primary mt-4 text-sm">+ Add product</button>
                             </div>
                         ) : (
                             <div className="mt-2">

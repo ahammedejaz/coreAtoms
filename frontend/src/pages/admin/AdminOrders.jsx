@@ -5,7 +5,6 @@ import ConfirmDialog from "../../components/ConfirmDialog";
 import { useToast } from "../../context/ToastContext";
 import useKeyboardShortcut from "../../hooks/useKeyboardShortcut";
 
-const LOW_STOCK_THRESHOLD = 5;
 
 export default function AdminOrders({ onOrdersChange }) {
     const { showToast } = useToast();
@@ -458,7 +457,7 @@ export default function AdminOrders({ onOrdersChange }) {
                                         type="button"
                                         onClick={applyBulkStatus}
                                         disabled={!bulkStatus || applyingBulk}
-                                        className="rounded-lg bg-blue-600 px-3 py-1 text-xs font-semibold text-white hover:bg-blue-700 disabled:opacity-40"
+                                        className="rounded-lg bg-[#1e3a5f] px-3 py-1 text-xs font-semibold text-white hover:bg-[#162d4a] disabled:opacity-40"
                                     >
                                         {applyingBulk ? "Applying…" : "Apply"}
                                     </button>

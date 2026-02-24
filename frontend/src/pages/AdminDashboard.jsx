@@ -103,7 +103,14 @@ export default function AdminDashboard() {
         const pendingOrders = orders.filter(
             (o) => ["placed", "processing"].includes(String(o.status || "").toLowerCase())
         ).length;
-        return { totalOrders, totalRevenue, activeProducts, lowStock, pendingOrders };
+        const pendingSalesAmount = orders
+            .filter((o) => ["placed", "processing", "shipped"].includes(String(o.status || "").toLowerCase()))
+            .reduce((s, o) => s + Number(o.computed_total_inr || 0), 0);
+        const placedCount = orders.filter((o) => String(o.status || "").toLowerCase() === "placed").length;
+        const processingCount = orders.filter((o) => String(o.status || "").toLowerCase() === "processing").length;
+        const shippedCount = orders.filter((o) => String(o.status || "").toLowerCase() === "shipped").length;
+        const deliveredCount = orders.filter((o) => String(o.status || "").toLowerCase() === "delivered").length;
+        return { totalOrders, totalRevenue, activeProducts, lowStock, pendingOrders, pendingSalesAmount, placedCount, processingCount, shippedCount, deliveredCount };
     }, [orders, products]);
 
     if (!profile || profile.role !== "admin") {
@@ -174,9 +181,44 @@ export default function AdminDashboard() {
                 </div>
 
                 {/* ── Stats Row ── */}
-                <div className="mt-6 grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-5">
+                <div className="mt-6 grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-6">
                     <StatCard icon={STAT_ICONS.orders} label="Total Orders" value={stats.totalOrders} iconBg="bg-blue-50" iconColor="text-blue-500" />
-                    <StatCard icon={STAT_ICONS.revenue} label="Total Revenue" value={`₹${stats.totalRevenue.toLocaleString("en-IN")}`} iconBg="bg-emerald-50" iconColor="text-emerald-500" />
+                    <StatCard
+                        icon={STAT_ICONS.revenue}
+                        label="Total Sales"
+                        value={`₹${stats.totalRevenue.toLocaleString("en-IN")}`}
+                        sub="From delivered orders"
+                        iconBg="bg-emerald-50" iconColor="text-emerald-500"
+                    />
+                    <StatCard
+                        icon={STAT_ICONS.pending}
+                        label="Pending Sales"
+                        value={`₹${stats.pendingSalesAmount.toLocaleString("en-IN")}`}
+                        sub="Placed · Processing · Shipped"
+                        warn={stats.pendingSalesAmount > 0} warnColor="blue"
+                        iconBg="bg-sky-50" iconColor="text-sky-500"
+                    />
+                    <div className="rounded-2xl border border-[#E8E4DE] bg-white p-4 shadow-sm transition-shadow hover:shadow-md">
+                        <div className="text-[11px] font-medium uppercase tracking-wide text-stone-400 mb-3">Order Status</div>
+                        <div className="space-y-2">
+                            <div className="flex items-center justify-between gap-2">
+                                <span className="inline-flex items-center rounded-full bg-green-50 px-2 py-0.5 text-[10px] font-semibold text-green-700">Placed</span>
+                                <span className="text-sm font-bold text-stone-900">{stats.placedCount}</span>
+                            </div>
+                            <div className="flex items-center justify-between gap-2">
+                                <span className="inline-flex items-center rounded-full bg-yellow-50 px-2 py-0.5 text-[10px] font-semibold text-yellow-700">Processing</span>
+                                <span className="text-sm font-bold text-stone-900">{stats.processingCount}</span>
+                            </div>
+                            <div className="flex items-center justify-between gap-2">
+                                <span className="inline-flex items-center rounded-full bg-blue-50 px-2 py-0.5 text-[10px] font-semibold text-blue-700">Shipped</span>
+                                <span className="text-sm font-bold text-stone-900">{stats.shippedCount}</span>
+                            </div>
+                            <div className="flex items-center justify-between gap-2">
+                                <span className="inline-flex items-center rounded-full bg-emerald-50 px-2 py-0.5 text-[10px] font-semibold text-emerald-700">Delivered</span>
+                                <span className="text-sm font-bold text-stone-900">{stats.deliveredCount}</span>
+                            </div>
+                        </div>
+                    </div>
                     <StatCard icon={STAT_ICONS.products} label="Active Products" value={stats.activeProducts} iconBg="bg-violet-50" iconColor="text-violet-500" />
                     <StatCard
                         icon={STAT_ICONS.lowStock}
@@ -185,14 +227,6 @@ export default function AdminDashboard() {
                         sub={stats.lowStock > 0 ? `≤${LOW_STOCK_THRESHOLD} units` : "All stocked"}
                         warn={stats.lowStock > 0} warnColor="amber"
                         iconBg="bg-amber-50" iconColor="text-amber-500"
-                    />
-                    <StatCard
-                        icon={STAT_ICONS.pending}
-                        label="Pending"
-                        value={stats.pendingOrders}
-                        sub={stats.pendingOrders > 0 ? "Need action" : "All clear"}
-                        warn={stats.pendingOrders > 0} warnColor="blue"
-                        iconBg="bg-sky-50" iconColor="text-sky-500"
                     />
                 </div>
 

@@ -1,11 +1,12 @@
 import { useEffect, useMemo, useState } from "react";
 import { supabase } from "../../services/supabase/client";
+import { SkeletonAdminList } from "../../components/Skeleton";
 
 export default function AdminReviews({ onCountChange }) {
-    const [reviews, setReviews]     = useState([]);
-    const [loading, setLoading]     = useState(true);
-    const [err, setErr]             = useState("");
-    const [search, setSearch]       = useState("");
+    const [reviews, setReviews] = useState([]);
+    const [loading, setLoading] = useState(true);
+    const [err, setErr] = useState("");
+    const [search, setSearch] = useState("");
 
     const load = async () => {
         setLoading(true); setErr("");
@@ -68,7 +69,7 @@ export default function AdminReviews({ onCountChange }) {
             {err && <div className="mt-3 rounded-xl bg-red-50 border border-red-200 px-4 py-3 text-sm text-red-600">{err}</div>}
 
             {loading ? (
-                <div className="mt-6 text-sm text-stone-400 animate-pulse">Loading reviews…</div>
+                <div className="mt-4"><SkeletonAdminList rows={4} /></div>
             ) : filtered.length === 0 ? (
                 <div className="mt-6 text-sm text-stone-400">{search ? "No matches." : "No reviews yet."}</div>
             ) : (
@@ -93,7 +94,7 @@ export default function AdminReviews({ onCountChange }) {
                                         {r.created_at ? new Date(r.created_at).toLocaleDateString("en-IN", { day: "numeric", month: "short", year: "numeric" }) : "—"}
                                     </div>
                                     {r.title && <p className="mt-2 text-sm font-semibold text-stone-800">{r.title}</p>}
-                                    {r.body  && <p className="mt-1 text-sm text-stone-500 leading-relaxed">{r.body}</p>}
+                                    {r.body && <p className="mt-1 text-sm text-stone-500 leading-relaxed">{r.body}</p>}
                                 </div>
                                 <button type="button" onClick={() => remove(r.id)}
                                     className="shrink-0 rounded-xl border border-red-200 bg-red-50 px-3 py-1.5 text-xs font-semibold text-red-600 hover:bg-red-100">

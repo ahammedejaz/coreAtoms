@@ -1,6 +1,8 @@
 import { Fragment, useEffect, useMemo, useRef, useState } from "react";
 import { supabase } from "../../services/supabase/client";
 import ImagePositionAdjuster from "../../components/ImagePositionAdjuster";
+import { SkeletonAdminTable } from "../../components/Skeleton";
+
 
 const LOW_STOCK_THRESHOLD = 5;
 const PRODUCT_BUCKET = "product-images";
@@ -1047,7 +1049,7 @@ export default function AdminProducts({ onProductsChange }) {
                     {/* List */}
                     <div className="mt-4">
                         {loadingProducts ? (
-                            <div className="text-sm text-stone-400">Loading products...</div>
+                            <SkeletonAdminTable rows={4} />
                         ) : productErr ? (
                             <div className="text-sm text-red-600">{productErr}</div>
                         ) : products.length === 0 ? (

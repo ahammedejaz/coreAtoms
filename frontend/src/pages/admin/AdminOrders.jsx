@@ -343,7 +343,7 @@ export default function AdminOrders({ onOrdersChange }) {
     };
 
     return (
-        <div className="rounded-2xl border border-[#E8E4DE] bg-white p-5">
+        <div className="rounded-2xl border border-[#E8E4DE] bg-white p-4 sm:p-5">
             <div className="text-base font-semibold text-stone-900">Orders</div>
 
             <div className="mt-4">
@@ -352,15 +352,15 @@ export default function AdminOrders({ onOrdersChange }) {
                 </div>
 
                 {/* Filter Bar */}
-                <div className="mt-3 grid gap-3 md:grid-cols-4">
-                    <div>
+                <div className="mt-3 grid grid-cols-2 gap-3 md:grid-cols-4">
+                    <div className="col-span-2 md:col-span-1">
                         <div className="text-xs text-stone-400">
                             Search (Order ID / User)
                         </div>
                         <input
                             value={orderSearch}
                             onChange={(e) => setOrderSearch(e.target.value)}
-                            placeholder="Search by order id, user id, name, or email..."
+                            placeholder="Search by order id, name, or email..."
                             className="mt-1 w-full rounded-xl border border-[#E8E4DE] bg-white px-3 py-2 text-sm text-stone-900 focus:ring-2 focus:ring-[#1e3a5f]/20 outline-none"
                         />
                     </div>
@@ -492,15 +492,8 @@ export default function AdminOrders({ onOrdersChange }) {
                             {filteredOrders.map((o) => {
                                 const st = String(o.status || "").trim().toLowerCase();
 
-                                const badge = [
-                                    "inline-flex items-center rounded-full px-2 py-1 text-[11px] font-semibold",
-                                    st === "placed" && "bg-green-50 text-green-700",
-                                    st === "processing" && "bg-yellow-50 text-yellow-700",
-                                    st === "shipped" && "bg-purple-50 text-purple-700",
-                                    st === "delivered" && "bg-green-50 text-green-700",
-                                ]
-                                    .filter(Boolean)
-                                    .join(" ");
+                                const badgeCls = STATUS_BADGE[st] || "bg-stone-100 text-stone-600";
+                                const badge = `inline-flex items-center rounded-full px-2 py-1 text-[11px] font-semibold ${badgeCls}`;
 
                                 const displayName = o.user_full_name || o.shipping_name || "";
                                 const displayEmail = o.user_email || "";
@@ -675,15 +668,8 @@ export default function AdminOrders({ onOrdersChange }) {
                                     {filteredOrders.map((o) => {
                                         const st = String(o.status || "").trim().toLowerCase();
 
-                                        const badge = [
-                                            "inline-flex items-center rounded-full px-2 py-1 text-xs font-semibold",
-                                            st === "placed" && "bg-green-50 text-green-700",
-                                            st === "processing" && "bg-yellow-50 text-yellow-700",
-                                            st === "shipped" && "bg-purple-50 text-purple-700",
-                                            st === "delivered" && "bg-green-50 text-green-700",
-                                        ]
-                                            .filter(Boolean)
-                                            .join(" ");
+                                        const badgeCls = STATUS_BADGE[st] || "bg-stone-100 text-stone-600";
+                                        const badge = `inline-flex items-center rounded-full px-2 py-1 text-xs font-semibold ${badgeCls}`;
 
                                         const displayName = o.user_full_name || o.shipping_name || "";
                                         const displayEmail = o.user_email || "";
@@ -754,7 +740,7 @@ export default function AdminOrders({ onOrdersChange }) {
 
                                                 {expandedOrderIds.has(o.id) && (
                                                     <tr className="border-b bg-stone-50/50">
-                                                        <td colSpan={6} className="py-3 px-2">
+                                                        <td colSpan={7} className="py-3 px-2">
                                                             <div className="grid gap-4 md:grid-cols-3">
                                                                 {/* Customer */}
                                                                 <div className="rounded-xl border border-[#E8E4DE] bg-white p-4">

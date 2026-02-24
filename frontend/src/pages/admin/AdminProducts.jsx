@@ -685,7 +685,7 @@ export default function AdminProducts({ onProductsChange }) {
                                                 <span>Label</span><span>Price (₹)</span><span>Stock</span><span>SKU</span><span />
                                             </div>
                                             {variants.map((v, i) => (
-                                                <div key={v.id || i} className="grid grid-cols-[1fr_100px_80px_90px_32px] gap-2 items-center bg-white rounded-xl border border-[#E8E4DE] px-3 py-2.5">
+                                                <div key={v.id || i} className="grid grid-cols-2 sm:grid-cols-[1fr_100px_80px_90px_32px] gap-2 items-center bg-white rounded-xl border border-[#E8E4DE] px-3 py-2.5">
                                                     {/* Label */}
                                                     <input
                                                         value={v.label || ""}

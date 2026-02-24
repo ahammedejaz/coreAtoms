@@ -224,14 +224,14 @@ export default function AdminHomepage({ products = [] }) {
         <div className="space-y-5 max-w-4xl">
 
             {/* ── Sticky save bar ── */}
-            <div className="sticky top-0 z-20 -mx-1 flex items-center justify-between rounded-2xl border border-[#E8E4DE] bg-white/90 backdrop-blur px-5 py-3 shadow-sm">
-                <div>
+            <div className="sticky top-0 z-20 -mx-1 flex flex-col sm:flex-row sm:items-center justify-between gap-3 rounded-2xl border border-[#E8E4DE] bg-white/90 backdrop-blur px-4 sm:px-5 py-3 shadow-sm">
+                <div className="min-w-0">
                     <div className="text-sm font-semibold text-stone-900">Homepage Editor</div>
-                    <div className="text-xs text-stone-400">Editing sections below in order — matches your live homepage layout.</div>
+                    <div className="text-xs text-stone-400 hidden sm:block">Editing sections below in order — matches your live homepage layout.</div>
                 </div>
-                <div className="flex items-center gap-3">
-                    {msg && <span className={`text-sm ${msg.includes("failed") ? "text-red-600" : "text-emerald-600"}`}>{msg}</span>}
-                    <button type="button" onClick={save} disabled={saving} className="btn-primary disabled:opacity-50 px-5 py-2">
+                <div className="flex items-center gap-3 shrink-0">
+                    {msg && <span className={`text-xs sm:text-sm truncate max-w-[180px] sm:max-w-none ${msg.includes("failed") ? "text-red-600" : "text-emerald-600"}`}>{msg}</span>}
+                    <button type="button" onClick={save} disabled={saving} className="btn-primary disabled:opacity-50 px-5 py-2 text-sm">
                         {saving ? "Saving…" : "Save all"}
                     </button>
                 </div>
@@ -240,7 +240,7 @@ export default function AdminHomepage({ products = [] }) {
             {/* ══ 1 · SITE LOGO ══════════════════════════════════════════════ */}
             <div className="rounded-2xl border border-[#E8E4DE] bg-white p-6">
                 <SectionHeader step="1" title="Site Logo" desc="Shown in the navbar. Falls back to the CA text mark if not set." />
-                <div className="flex items-start gap-6">
+                <div className="flex flex-col sm:flex-row sm:items-start gap-4 sm:gap-6">
                     <div className="shrink-0 h-20 w-44 rounded-xl border border-[#E8E4DE] bg-stone-50 flex items-center justify-center overflow-hidden">
                         {logoPreview ? (
                             <img src={logoPreview} alt="Logo" className="h-full w-full object-contain p-3" />
@@ -363,7 +363,7 @@ export default function AdminHomepage({ products = [] }) {
                 <SectionHeader step="4" title="Value Pillars" desc='The 4 cards shown below the hero — "Clean Labels", "Lab Tested", etc.' />
                 <div className="space-y-3">
                     {pillars.map((p, i) => (
-                        <div key={i} className="grid gap-2 sm:grid-cols-[48px_1fr_2fr_32px] items-center rounded-xl border border-[#E8E4DE] bg-stone-50 px-3 py-2.5">
+                        <div key={i} className="grid gap-2 grid-cols-1 sm:grid-cols-[48px_1fr_2fr_32px] items-start sm:items-center rounded-xl border border-[#E8E4DE] bg-stone-50 px-3 py-2.5">
                             <input value={p.icon} onChange={(e) => setPillars((prev) => prev.map((x, j) => j === i ? { ...x, icon: e.target.value } : x))}
                                 className="w-10 text-center rounded-lg border border-[#E8E4DE] bg-white px-1 py-1.5 text-lg outline-none" title="Icon/emoji" />
                             <input value={p.title} onChange={(e) => setPillars((prev) => prev.map((x, j) => j === i ? { ...x, title: e.target.value } : x))}
@@ -435,7 +435,7 @@ export default function AdminHomepage({ products = [] }) {
                 <SectionHeader step="6" title="Shop by Category" desc="The category tiles shown on the homepage. The 'Category' value must match your product categories exactly." />
                 <div className="space-y-2 mb-3">
                     {categories.map((cat, i) => (
-                        <div key={i} className="grid gap-2 grid-cols-[48px_1fr_1fr_32px] items-center rounded-xl border border-[#E8E4DE] bg-stone-50 px-3 py-2">
+                        <div key={i} className="grid gap-2 grid-cols-1 sm:grid-cols-[48px_1fr_1fr_32px] items-start sm:items-center rounded-xl border border-[#E8E4DE] bg-stone-50 px-3 py-2.5">
                             <input value={cat.emoji} onChange={(e) => setCategories((prev) => prev.map((x, j) => j === i ? { ...x, emoji: e.target.value } : x))}
                                 className="w-10 text-center rounded-lg border border-[#E8E4DE] bg-white px-1 py-1.5 text-lg outline-none" title="Emoji" />
                             <input value={cat.label} onChange={(e) => setCategories((prev) => prev.map((x, j) => j === i ? { ...x, label: e.target.value } : x))}

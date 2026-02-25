@@ -16,6 +16,7 @@ import { useToast } from "../context/ToastContext";
 import SEO from "../components/SEO";
 import { SkeletonOrderCard } from "../components/Skeleton";
 import OrderTimeline from "../components/OrderTimeline";
+import ScrollReveal from "../components/ScrollReveal";
 
 import { money } from "../utils/format";
 
@@ -125,11 +126,13 @@ export default function MyOrders() {
     <div>
       <SEO title="My Orders | Core Atoms" description="Track and manage all your orders." />
       {/* Header */}
-      <div className="mb-8">
-        <p className="section-label">Account</p>
-        <h1 className="mt-1.5 text-2xl font-semibold tracking-tight text-stone-900">My Orders</h1>
-        <p className="mt-1 text-sm text-stone-500">Track and manage all your orders.</p>
-      </div>
+      <ScrollReveal>
+        <div className="mb-8">
+          <p className="section-label">Account</p>
+          <h1 className="mt-1.5 text-2xl font-semibold tracking-tight text-stone-900">My Orders</h1>
+          <p className="mt-1 text-sm text-stone-500">Track and manage all your orders.</p>
+        </div>
+      </ScrollReveal>
 
       {/* Filters */}
       <div className="card p-5 mb-6">
@@ -189,93 +192,95 @@ export default function MyOrders() {
           const waUrl = `https://wa.me/918331833102?text=${waMsg}`;
 
           return (
-            <div key={o.id} className="card p-6">
-              {/* Order header */}
-              <div className="flex items-start justify-between gap-4">
-                <div>
-                  <p className="text-xs text-stone-400 mb-1">Order ID</p>
-                  <p className="font-semibold text-stone-900 font-mono text-sm">{String(o.id).slice(0, 8).toUpperCase()}</p>
-                  <p className="text-xs text-stone-400 mt-1">{o.created_at ? new Date(o.created_at).toLocaleDateString("en-IN", { day: "numeric", month: "short", year: "numeric" }) : ""}</p>
+            <ScrollReveal key={o.id}>
+              <div key={o.id} className="card p-6">
+                {/* Order header */}
+                <div className="flex items-start justify-between gap-4">
+                  <div>
+                    <p className="text-xs text-stone-400 mb-1">Order ID</p>
+                    <p className="font-semibold text-stone-900 font-mono text-sm">{String(o.id).slice(0, 8).toUpperCase()}</p>
+                    <p className="text-xs text-stone-400 mt-1">{o.created_at ? new Date(o.created_at).toLocaleDateString("en-IN", { day: "numeric", month: "short", year: "numeric" }) : ""}</p>
+                  </div>
+                  <div className="flex items-center gap-2 flex-wrap justify-end">
+                    <span className={`px-3 py-1 rounded-full text-[11px] font-semibold capitalize ${statusCls}`}>{o.status}</span>
+                    {isPrepaid && (
+                      <span className="px-2.5 py-1 rounded-full text-[10px] font-bold uppercase tracking-wide bg-emerald-50 text-emerald-700 border border-emerald-200">
+                        ✓ Paid
+                      </span>
+                    )}
+                  </div>
                 </div>
-                <div className="flex items-center gap-2 flex-wrap justify-end">
-                  <span className={`px-3 py-1 rounded-full text-[11px] font-semibold capitalize ${statusCls}`}>{o.status}</span>
-                  {isPrepaid && (
-                    <span className="px-2.5 py-1 rounded-full text-[10px] font-bold uppercase tracking-wide bg-emerald-50 text-emerald-700 border border-emerald-200">
-                      ✓ Paid
-                    </span>
+
+                {/* Order tracking timeline */}
+                <div className="mt-4 border-t border-[#E8E4DE] pt-2">
+                  <OrderTimeline status={status} />
+                </div>
+
+                {/* Summary row */}
+                <div className="mt-4 flex flex-wrap items-center gap-x-6 gap-y-2 text-sm border-t border-[#E8E4DE] pt-4">
+                  <div><span className="text-stone-400 text-xs block">Total</span><span className="font-semibold text-stone-900">{money(totalAmount)}</span></div>
+                  <div><span className="text-stone-400 text-xs block">Items</span><span className="font-semibold text-stone-900">{totalCount}</span></div>
+                  <div><span className="text-stone-400 text-xs block">Payment</span><span className="font-semibold text-stone-900">{isPrepaid ? "Prepaid" : "COD"}</span></div>
+                  {isPrepaid && txnId && (
+                    <div><span className="text-stone-400 text-xs block">Transaction ID</span><span className="font-mono text-xs font-semibold text-stone-700">{txnId}</span></div>
                   )}
+                  <div className="ml-auto">
+                    <a href={waUrl} target="_blank" rel="noopener noreferrer"
+                      className="inline-flex items-center gap-1.5 rounded-full bg-green-50 border border-green-200 px-3 py-1.5 text-[11px] font-semibold text-green-700 hover:bg-green-100 transition-colors">
+                      <svg className="h-3.5 w-3.5" viewBox="0 0 24 24" fill="currentColor">
+                        <path d="M17.472 14.382c-.297-.149-1.758-.867-2.03-.967-.273-.099-.471-.148-.67.15-.197.297-.767.966-.94 1.164-.173.199-.347.223-.644.075-.297-.15-1.255-.463-2.39-1.475-.883-.788-1.48-1.761-1.653-2.059-.173-.297-.018-.458.13-.606.134-.133.298-.347.446-.52.149-.174.198-.298.298-.497.099-.198.05-.371-.025-.52-.075-.149-.669-1.612-.916-2.207-.242-.579-.487-.5-.669-.51-.173-.008-.371-.01-.57-.01-.198 0-.52.074-.792.372-.272.297-1.04 1.016-1.04 2.479 0 1.462 1.065 2.875 1.213 3.074.149.198 2.096 3.2 5.077 4.487.709.306 1.262.489 1.694.625.712.227 1.36.195 1.871.118.571-.085 1.758-.719 2.006-1.413.248-.694.248-1.289.173-1.413-.074-.124-.272-.198-.57-.347z" />
+                        <path d="M12 0C5.373 0 0 5.373 0 12c0 2.127.555 4.125 1.527 5.86L.05 23.706a.5.5 0 00.607.607l5.845-1.477A11.94 11.94 0 0012 24c6.627 0 12-5.373 12-12S18.627 0 12 0zm0 22a9.94 9.94 0 01-5.38-1.574l-.386-.232-3.466.877.893-3.467-.24-.394A9.94 9.94 0 012 12C2 6.486 6.486 2 12 2s10 4.486 10 10-4.486 10-10 10z" />
+                      </svg>
+                      Support
+                    </a>
+                  </div>
                 </div>
-              </div>
 
-              {/* Order tracking timeline */}
-              <div className="mt-4 border-t border-[#E8E4DE] pt-2">
-                <OrderTimeline status={status} />
-              </div>
+                {/* Items */}
+                <div className="mt-4 space-y-3 border-t border-[#E8E4DE] pt-4">
+                  {items.map((it) => {
+                    const reviewKey = `${it.product_id}_${o.id}`;
+                    const alreadyReviewed = existingReviews.has(reviewKey) || reviewedKeys.has(reviewKey);
+                    const reviewOpen = openReviews[reviewKey];
 
-              {/* Summary row */}
-              <div className="mt-4 flex flex-wrap items-center gap-x-6 gap-y-2 text-sm border-t border-[#E8E4DE] pt-4">
-                <div><span className="text-stone-400 text-xs block">Total</span><span className="font-semibold text-stone-900">{money(totalAmount)}</span></div>
-                <div><span className="text-stone-400 text-xs block">Items</span><span className="font-semibold text-stone-900">{totalCount}</span></div>
-                <div><span className="text-stone-400 text-xs block">Payment</span><span className="font-semibold text-stone-900">{isPrepaid ? "Prepaid" : "COD"}</span></div>
-                {isPrepaid && txnId && (
-                  <div><span className="text-stone-400 text-xs block">Transaction ID</span><span className="font-mono text-xs font-semibold text-stone-700">{txnId}</span></div>
-                )}
-                <div className="ml-auto">
-                  <a href={waUrl} target="_blank" rel="noopener noreferrer"
-                    className="inline-flex items-center gap-1.5 rounded-full bg-green-50 border border-green-200 px-3 py-1.5 text-[11px] font-semibold text-green-700 hover:bg-green-100 transition-colors">
-                    <svg className="h-3.5 w-3.5" viewBox="0 0 24 24" fill="currentColor">
-                      <path d="M17.472 14.382c-.297-.149-1.758-.867-2.03-.967-.273-.099-.471-.148-.67.15-.197.297-.767.966-.94 1.164-.173.199-.347.223-.644.075-.297-.15-1.255-.463-2.39-1.475-.883-.788-1.48-1.761-1.653-2.059-.173-.297-.018-.458.13-.606.134-.133.298-.347.446-.52.149-.174.198-.298.298-.497.099-.198.05-.371-.025-.52-.075-.149-.669-1.612-.916-2.207-.242-.579-.487-.5-.669-.51-.173-.008-.371-.01-.57-.01-.198 0-.52.074-.792.372-.272.297-1.04 1.016-1.04 2.479 0 1.462 1.065 2.875 1.213 3.074.149.198 2.096 3.2 5.077 4.487.709.306 1.262.489 1.694.625.712.227 1.36.195 1.871.118.571-.085 1.758-.719 2.006-1.413.248-.694.248-1.289.173-1.413-.074-.124-.272-.198-.57-.347z" />
-                      <path d="M12 0C5.373 0 0 5.373 0 12c0 2.127.555 4.125 1.527 5.86L.05 23.706a.5.5 0 00.607.607l5.845-1.477A11.94 11.94 0 0012 24c6.627 0 12-5.373 12-12S18.627 0 12 0zm0 22a9.94 9.94 0 01-5.38-1.574l-.386-.232-3.466.877.893-3.467-.24-.394A9.94 9.94 0 012 12C2 6.486 6.486 2 12 2s10 4.486 10 10-4.486 10-10 10z" />
-                    </svg>
-                    Support
-                  </a>
-                </div>
-              </div>
-
-              {/* Items */}
-              <div className="mt-4 space-y-3 border-t border-[#E8E4DE] pt-4">
-                {items.map((it) => {
-                  const reviewKey = `${it.product_id}_${o.id}`;
-                  const alreadyReviewed = existingReviews.has(reviewKey) || reviewedKeys.has(reviewKey);
-                  const reviewOpen = openReviews[reviewKey];
-
-                  return (
-                    <div key={it.id}>
-                      <div className="flex items-center justify-between gap-3">
-                        <div className="flex items-center gap-3 min-w-0">
-                          {it.image_url && (
-                            <div className="h-12 w-12 rounded-xl border border-[#E8E4DE] bg-stone-50 overflow-hidden shrink-0">
-                              <img src={it.image_url} alt={it.product_name} className="h-full w-full object-cover" />
-                            </div>
-                          )}
-                          <div className="min-w-0">
-                            <p className="text-sm font-semibold text-stone-900 truncate">{it.product_name || "Product"} <span className="text-stone-400 font-normal">×{it.qty}</span></p>
-                            <p className="text-xs text-stone-400">{money(it.unit_price_inr)} each</p>
-                            {isDelivered && it.product_id && (
-                              alreadyReviewed
-                                ? <p className="text-[11px] text-emerald-600 font-medium mt-0.5">✓ Reviewed</p>
-                                : <button type="button" onClick={() => setOpenReviews(p => ({ ...p, [reviewKey]: !p[reviewKey] }))}
-                                  className="text-[11px] font-semibold text-[#1e3a5f] hover:underline mt-0.5 block">
-                                  {reviewOpen ? "▲ Close" : "★ Write a review"}
-                                </button>
+                    return (
+                      <div key={it.id}>
+                        <div className="flex items-center justify-between gap-3">
+                          <div className="flex items-center gap-3 min-w-0">
+                            {it.image_url && (
+                              <div className="h-12 w-12 rounded-xl border border-[#E8E4DE] bg-stone-50 overflow-hidden shrink-0">
+                                <img src={it.image_url} alt={it.product_name} className="h-full w-full object-cover" />
+                              </div>
                             )}
+                            <div className="min-w-0">
+                              <p className="text-sm font-semibold text-stone-900 truncate">{it.product_name || "Product"} <span className="text-stone-400 font-normal">×{it.qty}</span></p>
+                              <p className="text-xs text-stone-400">{money(it.unit_price_inr)} each</p>
+                              {isDelivered && it.product_id && (
+                                alreadyReviewed
+                                  ? <p className="text-[11px] text-emerald-600 font-medium mt-0.5">✓ Reviewed</p>
+                                  : <button type="button" onClick={() => setOpenReviews(p => ({ ...p, [reviewKey]: !p[reviewKey] }))}
+                                    className="text-[11px] font-semibold text-[#1e3a5f] hover:underline mt-0.5 block">
+                                    {reviewOpen ? "▲ Close" : "★ Write a review"}
+                                  </button>
+                              )}
+                            </div>
                           </div>
+                          <p className="text-sm font-semibold text-stone-900 shrink-0">{money(it.line_total_inr)}</p>
                         </div>
-                        <p className="text-sm font-semibold text-stone-900 shrink-0">{money(it.line_total_inr)}</p>
+                        {isDelivered && reviewOpen && !alreadyReviewed && (
+                          <InlineReviewForm productId={it.product_id} orderId={o.id} productName={it.product_name || "product"}
+                            onDone={() => {
+                              setOpenReviews(p => ({ ...p, [reviewKey]: false }));
+                              setReviewedKeys(p => new Set([...p, reviewKey]));
+                              setExistingReviews(p => new Set([...p, reviewKey]));
+                            }} />
+                        )}
                       </div>
-                      {isDelivered && reviewOpen && !alreadyReviewed && (
-                        <InlineReviewForm productId={it.product_id} orderId={o.id} productName={it.product_name || "product"}
-                          onDone={() => {
-                            setOpenReviews(p => ({ ...p, [reviewKey]: false }));
-                            setReviewedKeys(p => new Set([...p, reviewKey]));
-                            setExistingReviews(p => new Set([...p, reviewKey]));
-                          }} />
-                      )}
-                    </div>
-                  );
-                })}
+                    );
+                  })}
+                </div>
               </div>
-            </div>
+            </ScrollReveal>
           );
         })}
       </div>

@@ -63,7 +63,6 @@ export default function Navbar() {
 
   const toastText = useMemo(() => {
     if (!lastAction) return null;
-    if (lastAction.type === "add") return `Added ${lastAction.qty} × ${lastAction.name}`;
     if (lastAction.type === "limit") return lastAction.message || `Max ${maxItems} items per order`;
     return null;
   }, [lastAction, maxItems]);

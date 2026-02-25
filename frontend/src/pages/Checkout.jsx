@@ -54,6 +54,7 @@ export default function Checkout() {
   const [form, setForm] = useState(EMPTY_ADDRESS);
   const [savingAddress, setSavingAddress] = useState(false);
   const [addressSaved, setAddressSaved] = useState(false);
+  const [editingAddressId, setEditingAddressId] = useState(null); // id of address being edited
 
   // Confirmation state for address deletion (replaces window.confirm)
   const [pendingDeleteId, setPendingDeleteId] = useState(null);
@@ -139,17 +140,34 @@ export default function Checkout() {
   // Start a new blank address form
   const startNewAddress = () => {
     setSelectedAddressId(null);
+    setEditingAddressId(null);
     setForm(EMPTY_ADDRESS);
     setAddressSaved(false);
     setPendingDeleteId(null);
   };
 
-  // Save current form as a new address in Supabase
+  // Start editing a saved address
+  const startEditAddress = (addr) => {
+    setEditingAddressId(addr.id);
+    setSelectedAddressId(addr.id);
+    setForm({
+      fullName: addr.full_name || "",
+      phone: addr.phone || "",
+      line1: addr.line1 || "",
+      line2: addr.line2 || "",
+      city: addr.city || "",
+      state: addr.state || "",
+      pincode: addr.pincode || "",
+    });
+    setAddressSaved(false);
+    setPendingDeleteId(null);
+  };
+
+  // Save current form — insert new or update existing
   const saveAddress = async () => {
     if (!isValidAddress(form) || !user?.id) return;
     setSavingAddress(true);
     const payload = {
-      user_id: user.id,
       full_name: form.fullName.trim(),
       phone: form.phone.trim(),
       line1: form.line1.trim(),
@@ -158,17 +176,35 @@ export default function Checkout() {
       state: form.state.trim(),
       pincode: form.pincode.trim(),
     };
-    const { data, error } = await supabase
-      .from("addresses")
-      .insert([payload])
-      .select()
-      .single();
-    setSavingAddress(false);
-    if (error) { showToast(error.message, "error"); return; }
-    setAddressSaved(true);
-    showToast("Address saved", "success");
-    await loadAddresses();
-    setSelectedAddressId(data.id);
+
+    if (editingAddressId) {
+      // Update existing address
+      const { error } = await supabase
+        .from("addresses")
+        .update(payload)
+        .eq("id", editingAddressId)
+        .eq("user_id", user.id);
+      setSavingAddress(false);
+      if (error) { showToast(error.message, "error"); return; }
+      setAddressSaved(true);
+      showToast("Address updated", "success");
+      setEditingAddressId(null);
+      await loadAddresses();
+      setSelectedAddressId(editingAddressId);
+    } else {
+      // Insert new address
+      const { data, error } = await supabase
+        .from("addresses")
+        .insert([{ user_id: user.id, ...payload }])
+        .select()
+        .single();
+      setSavingAddress(false);
+      if (error) { showToast(error.message, "error"); return; }
+      setAddressSaved(true);
+      showToast("Address saved", "success");
+      await loadAddresses();
+      setSelectedAddressId(data.id);
+    }
   };
 
   // Delete a saved address (with inline confirmation instead of window.confirm)
@@ -369,18 +405,22 @@ export default function Checkout() {
                     <p className="text-xs text-stone-500 mt-0.5">{addr.line1}{addr.line2 ? `, ${addr.line2}` : ""}, {addr.city}, {addr.state} — {addr.pincode}</p>
                     <p className="text-xs text-stone-500">{addr.phone}</p>
                   </div>
-                  {/* Delete button with inline confirmation */}
-                  {pendingDeleteId === addr.id ? (
-                    <div className="flex items-center gap-2 shrink-0" onClick={(e) => e.stopPropagation()}>
-                      <button type="button" onClick={() => confirmDeleteAddress(addr.id)}
-                        className="text-xs font-semibold text-red-600 hover:text-red-700 transition-colors">Remove</button>
-                      <button type="button" onClick={() => setPendingDeleteId(null)}
-                        className="text-xs text-stone-400 hover:text-stone-600 transition-colors">Cancel</button>
-                    </div>
-                  ) : (
-                    <button type="button" onClick={(e) => { e.stopPropagation(); setPendingDeleteId(addr.id); }}
-                      className="text-xs text-stone-300 hover:text-red-400 transition-colors shrink-0">✕</button>
-                  )}
+                  {/* Edit & Delete buttons */}
+                  <div className="flex items-center gap-2 shrink-0" onClick={(e) => e.stopPropagation()}>
+                    <button type="button" onClick={() => startEditAddress(addr)}
+                      className="text-xs text-stone-400 hover:text-[#1e3a5f] transition-colors" title="Edit address">✎</button>
+                    {pendingDeleteId === addr.id ? (
+                      <>
+                        <button type="button" onClick={() => confirmDeleteAddress(addr.id)}
+                          className="text-xs font-semibold text-red-600 hover:text-red-700 transition-colors">Remove</button>
+                        <button type="button" onClick={() => setPendingDeleteId(null)}
+                          className="text-xs text-stone-400 hover:text-stone-600 transition-colors">Cancel</button>
+                      </>
+                    ) : (
+                      <button type="button" onClick={() => setPendingDeleteId(addr.id)}
+                        className="text-xs text-stone-300 hover:text-red-400 transition-colors" title="Delete address">✕</button>
+                    )}
+                  </div>
                 </div>
               ))}
               <button type="button" onClick={startNewAddress}
@@ -394,10 +434,18 @@ export default function Checkout() {
             </div>
           )}
 
-          {/* New address form */}
-          {(selectedAddressId === null || savedAddresses.length === 0) && (
+          {/* Address form — shown for new address OR when editing */}
+          {(selectedAddressId === null || savedAddresses.length === 0 || editingAddressId) && (
             <div className="card p-6 space-y-4">
-              {savedAddresses.length > 0 && <p className="text-xs font-semibold text-stone-500 uppercase tracking-wide">New address</p>}
+              <div className="flex items-center justify-between">
+                <p className="text-xs font-semibold text-stone-500 uppercase tracking-wide">
+                  {editingAddressId ? "Edit address" : savedAddresses.length > 0 ? "New address" : ""}
+                </p>
+                {editingAddressId && (
+                  <button type="button" onClick={() => { setEditingAddressId(null); selectSavedAddress(savedAddresses.find(a => a.id === editingAddressId)); }}
+                    className="text-xs text-stone-400 hover:text-stone-600 transition-colors">Cancel editing</button>
+                )}
+              </div>
 
               <div className="grid gap-4 sm:grid-cols-2">
                 <div>
@@ -435,9 +483,9 @@ export default function Checkout() {
               <div className="flex items-center gap-3 pt-1">
                 <button type="button" onClick={saveAddress} disabled={!isValidAddress(form) || savingAddress || addressSaved}
                   className={`btn-ghost text-sm py-2 px-4 ${addressSaved ? "border-emerald-300 text-emerald-600" : ""}`}>
-                  {savingAddress ? "Saving…" : addressSaved ? "Saved ✓" : "Save address"}
+                  {savingAddress ? "Saving…" : addressSaved ? "Saved ✓" : editingAddressId ? "Update address" : "Save address"}
                 </button>
-                {addressSaved && <span className="text-xs text-emerald-600">Address saved for future orders</span>}
+                {addressSaved && <span className="text-xs text-emerald-600">{editingAddressId ? "Address updated" : "Address saved for future orders"}</span>}
               </div>
             </div>
           )}

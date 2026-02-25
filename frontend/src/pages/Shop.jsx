@@ -16,6 +16,7 @@ import { useCart } from "../context/CartContext";
 import useDebounce from "../hooks/useDebounce";
 import SEO from "../components/SEO";
 import { useToast } from "../context/ToastContext";
+import ScrollReveal from "../components/ScrollReveal";
 
 import { money } from "../utils/format";
 
@@ -247,12 +248,14 @@ export default function Shop() {
   return (
     <div>
       {/* Page header */}
-      <div className="mb-8">
-        <SEO title="Shop | Core Atoms" description="Browse our full range of premium nutraceuticals. Clean labels, lab-tested, COD available across India." />
-        <p className="section-label">Our Collection</p>
-        <h1 className="mt-2 text-3xl font-semibold tracking-tight text-stone-900">Shop</h1>
-        <p className="mt-2 text-sm text-stone-500">Premium supplements, clean labels, COD available across India.</p>
-      </div>
+      <ScrollReveal>
+        <div className="mb-8">
+          <SEO title="Shop | Core Atoms" description="Browse our full range of premium nutraceuticals. Clean labels, lab-tested, COD available across India." />
+          <p className="section-label">Our Collection</p>
+          <h1 className="mt-2 text-3xl font-semibold tracking-tight text-stone-900">Shop</h1>
+          <p className="mt-2 text-sm text-stone-500">Premium supplements, clean labels, COD available across India.</p>
+        </div>
+      </ScrollReveal>
 
       {/* Filters */}
       <div className="mb-8 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
@@ -295,19 +298,21 @@ export default function Shop() {
         <div className="card p-6 mb-6 text-sm text-red-600">{err}</div>
       )}
 
-      {active.length === 0 ? (
-        <div className="card p-12 text-center">
-          <p className="text-base font-semibold text-stone-900">No products found</p>
-          <p className="mt-1 text-sm text-stone-500">Try a different search or category.</p>
-          <button onClick={() => { setCategory("All"); setQuery(""); }} className="btn-ghost mt-5">Reset filters</button>
-        </div>
-      ) : (
-        <div className="grid gap-5 sm:grid-cols-2 lg:grid-cols-3">
-          {active.map((p) => (
-            <ProductCard key={p.id} p={p} onAdd={handleAdd} justAdded={justAddedId === p.id} />
-          ))}
-        </div>
-      )}
+      <ScrollReveal delay={100}>
+        {active.length === 0 ? (
+          <div className="card p-12 text-center">
+            <p className="text-base font-semibold text-stone-900">No products found</p>
+            <p className="mt-1 text-sm text-stone-500">Try a different search or category.</p>
+            <button onClick={() => { setCategory("All"); setQuery(""); }} className="btn-ghost mt-5">Reset filters</button>
+          </div>
+        ) : (
+          <div className="grid gap-5 sm:grid-cols-2 lg:grid-cols-3">
+            {active.map((p) => (
+              <ProductCard key={p.id} p={p} onAdd={handleAdd} justAdded={justAddedId === p.id} />
+            ))}
+          </div>
+        )}
+      </ScrollReveal>
 
     </div>
   );

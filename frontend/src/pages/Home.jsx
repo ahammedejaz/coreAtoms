@@ -16,6 +16,7 @@ import { ProductCard } from "./Shop";
 import SEO from "../components/SEO";
 import { SkeletonGrid } from "../components/Skeleton";
 import { useToast } from "../context/ToastContext";
+import ScrollReveal from "../components/ScrollReveal";
 
 // ── Defaults (shown if admin hasn't saved yet) ────────────────────────────────
 const DEFAULT_HERO_IMAGES = [
@@ -294,79 +295,87 @@ export default function Home() {
       </section>
 
       {/* ── PILLARS ───────────────────────────────────────────────────────── */}
-      <section>
-        <div className="grid gap-5 sm:grid-cols-2 lg:grid-cols-4">
-          {pillars.map((p, i) => (
-            <div key={i} className="group rounded-2xl border border-[#E8E4DE] bg-white p-6 hover:shadow-[0_4px_20px_rgba(0,0,0,0.08)] hover:-translate-y-0.5 transition-all duration-200">
-              <div className="text-[#1e3a5f] text-xl mb-4">{p.icon}</div>
-              <div className="text-sm font-semibold text-stone-900">{p.title}</div>
-              <div className="mt-1.5 text-[13px] text-stone-500 leading-relaxed">{p.desc}</div>
-            </div>
-          ))}
-        </div>
-      </section>
-
-      {/* ── FEATURED PRODUCTS ─────────────────────────────────────────────── */}
-      <section>
-        <div className="flex items-end justify-between mb-8">
-          <div>
-            <p className="section-label">Top Picks</p>
-            <h2 className="mt-1.5 text-2xl font-semibold tracking-tight text-stone-900">Featured Products</h2>
-          </div>
-          <Link to="/shop" className="text-sm font-semibold text-[#1e3a5f] hover:underline underline-offset-2">View all →</Link>
-        </div>
-        {loadingProducts ? (
-          <SkeletonGrid count={6} />
-        ) : fetchError ? (
-          <div className="card p-12 text-center">
-            <div className="mx-auto mb-3 h-12 w-12 rounded-xl bg-red-50 border border-red-200 grid place-items-center">
-              <svg className="h-5 w-5 text-red-400" viewBox="0 0 20 20" fill="currentColor"><path fillRule="evenodd" d="M18 10a8 8 0 11-16 0 8 8 0 0116 0zm-7 4a1 1 0 11-2 0 1 1 0 012 0zm-1-9a1 1 0 00-1 1v4a1 1 0 102 0V6a1 1 0 00-1-1z" clipRule="evenodd" /></svg>
-            </div>
-            <p className="font-semibold text-stone-900">Unable to load products</p>
-            <p className="mt-1 text-sm text-stone-500">{fetchError}</p>
-            <button type="button" onClick={loadData} className="btn-primary mt-5 inline-flex">Try again</button>
-          </div>
-        ) : (
-          <div className="grid gap-5 sm:grid-cols-2 lg:grid-cols-3">
-            {products.map((p) => (
-              <ProductCard key={p.id} p={p} onAdd={handleAdd} justAdded={justAddedId === p.id} />
+      <ScrollReveal>
+        <section>
+          <div className="grid gap-5 sm:grid-cols-2 lg:grid-cols-4">
+            {pillars.map((p, i) => (
+              <div key={i} className="group rounded-2xl border border-[#E8E4DE] bg-white p-6 hover:shadow-[0_4px_20px_rgba(0,0,0,0.08)] hover:-translate-y-0.5 transition-all duration-200">
+                <div className="text-[#1e3a5f] text-xl mb-4">{p.icon}</div>
+                <div className="text-sm font-semibold text-stone-900">{p.title}</div>
+                <div className="mt-1.5 text-[13px] text-stone-500 leading-relaxed">{p.desc}</div>
+              </div>
             ))}
           </div>
-        )}
-      </section>
+        </section>
+      </ScrollReveal>
+
+      {/* ── FEATURED PRODUCTS ─────────────────────────────────────────────── */}
+      <ScrollReveal>
+        <section>
+          <div className="flex items-end justify-between mb-8">
+            <div>
+              <p className="section-label">Top Picks</p>
+              <h2 className="mt-1.5 text-2xl font-semibold tracking-tight text-stone-900">Featured Products</h2>
+            </div>
+            <Link to="/shop" className="text-sm font-semibold text-[#1e3a5f] hover:underline underline-offset-2">View all →</Link>
+          </div>
+          {loadingProducts ? (
+            <SkeletonGrid count={6} />
+          ) : fetchError ? (
+            <div className="card p-12 text-center">
+              <div className="mx-auto mb-3 h-12 w-12 rounded-xl bg-red-50 border border-red-200 grid place-items-center">
+                <svg className="h-5 w-5 text-red-400" viewBox="0 0 20 20" fill="currentColor"><path fillRule="evenodd" d="M18 10a8 8 0 11-16 0 8 8 0 0116 0zm-7 4a1 1 0 11-2 0 1 1 0 012 0zm-1-9a1 1 0 00-1 1v4a1 1 0 102 0V6a1 1 0 00-1-1z" clipRule="evenodd" /></svg>
+              </div>
+              <p className="font-semibold text-stone-900">Unable to load products</p>
+              <p className="mt-1 text-sm text-stone-500">{fetchError}</p>
+              <button type="button" onClick={loadData} className="btn-primary mt-5 inline-flex">Try again</button>
+            </div>
+          ) : (
+            <div className="grid gap-5 sm:grid-cols-2 lg:grid-cols-3">
+              {products.map((p) => (
+                <ProductCard key={p.id} p={p} onAdd={handleAdd} justAdded={justAddedId === p.id} />
+              ))}
+            </div>
+          )}
+        </section>
+      </ScrollReveal>
 
       {/* ── SHOP BY CATEGORY ──────────────────────────────────────────────── */}
-      < section >
-        <div className="text-center mb-10">
-          <p className="section-label">Browse by Goal</p>
-          <h2 className="mt-2 text-2xl font-semibold tracking-tight text-stone-900">Shop by Category</h2>
-        </div>
-        <div className="grid grid-cols-2 gap-4 sm:grid-cols-3 lg:grid-cols-6">
-          {categories.map((cat, i) => (
-            <Link key={i} to={`/shop?category=${encodeURIComponent(cat.category)}`}
-              className="group flex flex-col items-center gap-3 rounded-2xl border border-[#E8E4DE] bg-white p-5 text-center hover:border-[#1e3a5f]/30 hover:shadow-[0_4px_20px_rgba(0,0,0,0.08)] hover:-translate-y-0.5 transition-all duration-200">
-              <div className="h-12 w-12 rounded-xl bg-[#EFF6FF] flex items-center justify-center text-2xl group-hover:bg-[#1e3a5f]/10 transition-colors">{cat.emoji}</div>
-              <span className="text-[12px] font-semibold text-stone-700 group-hover:text-[#1e3a5f] leading-snug transition-colors">{cat.label}</span>
-            </Link>
-          ))}
-        </div>
-      </section >
+      <ScrollReveal>
+        < section >
+          <div className="text-center mb-10">
+            <p className="section-label">Browse by Goal</p>
+            <h2 className="mt-2 text-2xl font-semibold tracking-tight text-stone-900">Shop by Category</h2>
+          </div>
+          <div className="grid grid-cols-2 gap-4 sm:grid-cols-3 lg:grid-cols-6">
+            {categories.map((cat, i) => (
+              <Link key={i} to={`/shop?category=${encodeURIComponent(cat.category)}`}
+                className="group flex flex-col items-center gap-3 rounded-2xl border border-[#E8E4DE] bg-white p-5 text-center hover:border-[#1e3a5f]/30 hover:shadow-[0_4px_20px_rgba(0,0,0,0.08)] hover:-translate-y-0.5 transition-all duration-200">
+                <div className="h-12 w-12 rounded-xl bg-[#EFF6FF] flex items-center justify-center text-2xl group-hover:bg-[#1e3a5f]/10 transition-colors">{cat.emoji}</div>
+                <span className="text-[12px] font-semibold text-stone-700 group-hover:text-[#1e3a5f] leading-snug transition-colors">{cat.label}</span>
+              </Link>
+            ))}
+          </div>
+        </section >
+      </ScrollReveal>
 
       {/* ── PHILOSOPHY ────────────────────────────────────────────────────── */}
-      < section className="rounded-3xl border border-[#E8E4DE] bg-white p-12 lg:p-16 text-center" >
-        <div className="mx-auto max-w-2xl">
-          <p className="section-label mb-4">{philosophy.label || "Our Philosophy"}</p>
-          <h2 className="text-2xl lg:text-3xl font-semibold tracking-tight text-stone-900 leading-snug whitespace-pre-line">
-            {philosophy.heading || DEFAULT_PHILOSOPHY.heading}
-          </h2>
-          <p className="mt-5 text-[15px] text-stone-500 leading-relaxed">
-            {philosophy.body || DEFAULT_PHILOSOPHY.body}
-          </p>
-          <Link to="/shop" className="btn-primary mt-8 inline-flex px-8 py-3">
-            {philosophy.cta || "Explore the range"}
-          </Link>
-        </div>
-      </section >
+      <ScrollReveal variant="scale">
+        < section className="rounded-3xl border border-[#E8E4DE] bg-white p-12 lg:p-16 text-center" >
+          <div className="mx-auto max-w-2xl">
+            <p className="section-label mb-4">{philosophy.label || "Our Philosophy"}</p>
+            <h2 className="text-2xl lg:text-3xl font-semibold tracking-tight text-stone-900 leading-snug whitespace-pre-line">
+              {philosophy.heading || DEFAULT_PHILOSOPHY.heading}
+            </h2>
+            <p className="mt-5 text-[15px] text-stone-500 leading-relaxed">
+              {philosophy.body || DEFAULT_PHILOSOPHY.body}
+            </p>
+            <Link to="/shop" className="btn-primary mt-8 inline-flex px-8 py-3">
+              {philosophy.cta || "Explore the range"}
+            </Link>
+          </div>
+        </section >
+      </ScrollReveal>
 
 
     </div >

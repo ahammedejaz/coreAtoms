@@ -391,6 +391,16 @@ export default function AdminOrders({ onOrdersChange }) {
         return list;
     }, [orders, orderSearch, orderStatusFilter, orderDateFrom, orderDateTo]);
 
+    // Pagination
+    const ORDER_PAGE_SIZE = 10;
+    const [orderPage, setOrderPage] = useState(1);
+    const orderTotalPages = Math.max(1, Math.ceil(filteredOrders.length / ORDER_PAGE_SIZE));
+    const orderSafePage = Math.min(orderPage, orderTotalPages);
+    const paginatedOrders = filteredOrders.slice((orderSafePage - 1) * ORDER_PAGE_SIZE, orderSafePage * ORDER_PAGE_SIZE);
+
+    // Reset page when filters change
+    useEffect(() => { setOrderPage(1); }, [orderSearch, orderStatusFilter, orderDateFrom, orderDateTo]);
+
     // -------------------- CSV Export --------------------
     const exportOrdersCSV = () => {
         const rows = filteredOrders;
@@ -596,7 +606,7 @@ export default function AdminOrders({ onOrdersChange }) {
                         <div className="mt-3">
                             {/* Mobile cards */}
                             <div className="grid gap-3 md:hidden">
-                                {filteredOrders.map((o) => {
+                                {paginatedOrders.map((o) => {
                                     const st = String(o.status || "").trim().toLowerCase();
 
                                     const badgeCls = STATUS_BADGE[st] || "bg-stone-100 text-stone-600";
@@ -818,7 +828,7 @@ export default function AdminOrders({ onOrdersChange }) {
                                     </thead>
 
                                     <tbody>
-                                        {filteredOrders.map((o) => {
+                                        {paginatedOrders.map((o) => {
                                             const st = String(o.status || "").trim().toLowerCase();
 
                                             const badgeCls = STATUS_BADGE[st] || "bg-stone-100 text-stone-600";
@@ -864,8 +874,8 @@ export default function AdminOrders({ onOrdersChange }) {
 
                                                         <td className="py-2 pr-4">
                                                             <span className={`inline-flex items-center gap-1 rounded-full px-2.5 py-1 text-[10px] font-bold uppercase tracking-wide ${o.payment_method === 'prepaid'
-                                                                    ? 'bg-emerald-50 text-emerald-700 border border-emerald-200'
-                                                                    : 'bg-amber-50 text-amber-700 border border-amber-200'
+                                                                ? 'bg-emerald-50 text-emerald-700 border border-emerald-200'
+                                                                : 'bg-amber-50 text-amber-700 border border-amber-200'
                                                                 }`}>
                                                                 {o.payment_method === 'prepaid' ? (
                                                                     <><svg className="h-3 w-3" viewBox="0 0 20 20" fill="currentColor"><path fillRule="evenodd" d="M4 4a2 2 0 00-2 2v4a2 2 0 002 2V6h10a2 2 0 00-2-2H4zm2 6a2 2 0 012-2h8a2 2 0 012 2v4a2 2 0 01-2 2H8a2 2 0 01-2-2v-4zm6 4a2 2 0 100-4 2 2 0 000 4z" clipRule="evenodd" /></svg> Prepaid</>
@@ -1038,16 +1048,24 @@ export default function AdminOrders({ onOrdersChange }) {
                         </div>
                     )}
                 </div>
+
+                {filteredOrders.length > ORDER_PAGE_SIZE && (
+                    <div className="mt-4 flex items-center justify-between">
+                        <button type="button" onClick={() => setOrderPage(p => Math.max(1, p - 1))} disabled={orderSafePage <= 1}
+                            className="rounded-xl border border-[#E8E4DE] bg-white px-3 py-2 text-xs font-semibold text-stone-700 hover:bg-stone-50 disabled:opacity-30 disabled:cursor-not-allowed">← Previous</button>
+                        <span className="text-xs text-stone-400">Page {orderSafePage} of {orderTotalPages}</span>
+                        <button type="button" onClick={() => setOrderPage(p => Math.min(orderTotalPages, p + 1))} disabled={orderSafePage >= orderTotalPages}
+                            className="rounded-xl border border-[#E8E4DE] bg-white px-3 py-2 text-xs font-semibold text-stone-700 hover:bg-stone-50 disabled:opacity-30 disabled:cursor-not-allowed">Next →</button>
+                    </div>
+                )}
             </div>
 
-            {
-                confirmDlg && (
-                    <ConfirmDialog
-                        {...confirmDlg}
-                        onCancel={() => setConfirmDlg(null)}
-                    />
-                )
-            }
+            {confirmDlg && (
+                <ConfirmDialog
+                    {...confirmDlg}
+                    onCancel={() => setConfirmDlg(null)}
+                />
+            )}
         </>
     );
 }

@@ -198,7 +198,7 @@ export default function AdminDashboard() {
                         warn={stats.pendingSalesAmount > 0} warnColor="blue"
                         iconBg="bg-sky-50" iconColor="text-sky-500"
                     />
-                    <div className="rounded-2xl border border-[#E8E4DE] bg-white p-4 shadow-sm transition-shadow hover:shadow-md">
+                    <div className="rounded-2xl border border-[#E8E4DE] bg-white p-4 shadow-sm transition-shadow hover:shadow-md h-full flex flex-col justify-center">
                         <div className="text-[11px] font-medium uppercase tracking-wide text-stone-400 mb-3">Order Status</div>
                         <div className="space-y-2">
                             <div className="flex items-center justify-between gap-2">
@@ -272,17 +272,13 @@ function StatCard({ icon, label, value, sub, warn, warnColor, iconBg, iconColor 
     };
     const p = warn && warnColor ? palette[warnColor] : null;
     return (
-        <div className={["rounded-2xl border p-4 shadow-sm transition-shadow hover:shadow-md", p ? p.wrap : "border-[#E8E4DE] bg-white"].join(" ")}>
-            <div className="flex items-center gap-3">
-                <div className={["h-9 w-9 rounded-xl grid place-items-center shrink-0", p ? p.wrap : (iconBg || "bg-stone-100")].join(" ")}>
-                    <span className={p ? p.lbl : (iconColor || "text-stone-500")}>{icon}</span>
-                </div>
-                <div className="min-w-0">
-                    <div className={["text-[11px] font-medium uppercase tracking-wide", p ? p.lbl : "text-stone-400"].join(" ")}>{label}</div>
-                    <div className={["text-xl font-bold leading-tight", p ? p.val : "text-stone-900"].join(" ")}>{value}</div>
-                </div>
+        <div className={["rounded-2xl border p-4 shadow-sm transition-shadow hover:shadow-md h-full flex flex-col items-center justify-center text-center", p ? p.wrap : "border-[#E8E4DE] bg-white"].join(" ")}>
+            <div className={["h-9 w-9 rounded-xl grid place-items-center shrink-0 mx-auto", p ? p.wrap : (iconBg || "bg-stone-100")].join(" ")}>
+                <span className={p ? p.lbl : (iconColor || "text-stone-500")}>{icon}</span>
             </div>
-            {sub && <div className={["mt-2 text-[11px]", p ? p.sub : "text-stone-400"].join(" ")}>{sub}</div>}
+            <div className={["mt-2 text-[11px] font-medium uppercase tracking-wide", p ? p.lbl : "text-stone-400"].join(" ")}>{label}</div>
+            <div className={["mt-1 text-xl font-bold leading-tight", p ? p.val : "text-stone-900"].join(" ")}>{value}</div>
+            {sub && <div className={["mt-1.5 text-[11px]", p ? p.sub : "text-stone-400"].join(" ")}>{sub}</div>}
         </div>
     );
 }

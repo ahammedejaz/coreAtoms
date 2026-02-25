@@ -42,8 +42,10 @@ import { useAuth } from "../context/AuthContext";
 
 // Redirects admins away from the public home page to /admin
 function HomeRoute() {
-  const { loading, isAdmin } = useAuth();
-  if (loading) return null; // wait silently — no flash
+  const { loading, isAdmin, user, profile } = useAuth();
+  // Wait for both auth session AND profile to resolve before rendering
+  if (loading) return null;
+  if (user && !profile) return null; // profile still being fetched
   if (isAdmin) return <Navigate to="/admin" replace />;
   return <Home />;
 }

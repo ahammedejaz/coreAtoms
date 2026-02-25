@@ -1,9 +1,9 @@
 /**
- * Checkout.jsx — Complete checkout flow with saved addresses + COD order placement.
+ * Checkout.jsx — Complete checkout flow with saved addresses + COD / Razorpay.
  *
  * Loads the user's saved addresses from Supabase, allows picking one or entering
  * a new address, validates form fields (Indian phone + 6-digit pincode), and
- * places the order via the `place_order_cod` RPC.
+ * places the order via COD or Razorpay online payment.
  *
  * @module pages/Checkout
  */
@@ -13,6 +13,7 @@ import { useAuth } from "../context/AuthContext";
 import { useCart } from "../context/CartContext";
 import { useToast } from "../context/ToastContext";
 import { supabase } from "../services/supabase/client";
+import { getRazorpayKeyId, openRazorpayCheckout } from "../services/razorpay";
 import SEO from "../components/SEO";
 
 const money = (n) => `₹${Number(n || 0).toLocaleString("en-IN")}`;
@@ -60,6 +61,21 @@ export default function Checkout() {
   // Order state
   const [placed, setPlaced] = useState(false);
   const [loading, setLoading] = useState(false);
+  const [payingOnline, setPayingOnline] = useState(false);
+
+  // Razorpay toggle (read from app_settings)
+  const [razorpayAvailable, setRazorpayAvailable] = useState(false);
+
+  useEffect(() => {
+    // Check if Razorpay is both enabled in admin AND key is configured
+    supabase.from("app_settings").select("value")
+      .eq("key", "razorpay_enabled").maybeSingle()
+      .then(({ data }) => {
+        const enabled = data?.value?.enabled === true;
+        const hasKey = !!getRazorpayKeyId();
+        setRazorpayAvailable(enabled && hasKey);
+      });
+  }, []);
 
   const shipping = 0;
   const total = Number(subtotal || 0) + shipping;
@@ -164,44 +180,105 @@ export default function Checkout() {
     totalItems > 0 &&
     isValidAddress(activeAddress);
 
+  // Build the items payload (shared between COD and Razorpay)
+  const buildPayloadItems = () => (items || []).map((x) => {
+    const rawId = String(x.id);
+    const parts = rawId.split("_");
+    const isComposite = parts.length === 2 &&
+      parts[0].length === 36 && parts[1].length === 36;
+    return {
+      product_id: isComposite ? parts[0] : rawId,
+      variant_id: isComposite ? parts[1] : null,
+      qty: Number(x.qty || 0),
+      unit_price_inr: Number(x.unitPrice ?? x.price ?? 0),
+    };
+  });
+
+  // ── COD Order ──
   const onPlaceOrder = async () => {
     if (!canPlace || loading) return;
     setLoading(true);
     try {
-      // Cart ids for variant items are "productId_variantId" composites.
-      // The RPC expects a pure product UUID + optional variant_id separately.
-      const payloadItems = (items || []).map((x) => {
-        const rawId = String(x.id);
-        const parts = rawId.split("_");
-        // UUID format: 8-4-4-4-12 chars = 36 chars total
-        const isComposite = parts.length === 2 &&
-          parts[0].length === 36 && parts[1].length === 36;
-        return {
-          product_id: isComposite ? parts[0] : rawId,
-          variant_id: isComposite ? parts[1] : null,
-          qty: Number(x.qty || 0),
-          unit_price_inr: Number(x.unitPrice ?? x.price ?? 0),
-        };
-      });
-
       const { error } = await supabase.rpc("place_order_cod", {
         p_user_id: user.id,
         p_address: activeAddress,
-        p_items: payloadItems,
+        p_items: buildPayloadItems(),
       });
-
       if (error) throw error;
       setPlaced(true);
       setTimeout(() => { clear(); navigate("/orders"); }, 1400);
     } catch (e) {
       const msg = e?.message || "Unknown error";
       if (msg.toLowerCase().includes("insufficient")) {
-        showToast("⚠️ Some items are out of stock. Please reduce quantity and try again.", "warning", 4000);
+        showToast("Some items are out of stock. Please reduce quantity and try again.", "warning", 4000);
       } else {
         showToast(`Order failed: ${msg}`, "error", 4000);
       }
     } finally {
       setLoading(false);
+    }
+  };
+
+  // ── Razorpay Online Payment ──
+  const onPayOnline = async () => {
+    if (!canPlace || payingOnline) return;
+    setPayingOnline(true);
+    try {
+      const amountPaise = Math.round(total * 100);
+
+      // 1. Create Razorpay order via Edge Function
+      const { data: rzpOrder, error: rzpErr } = await supabase.functions.invoke(
+        "create-razorpay-order",
+        { body: { amount: amountPaise, receipt: `user_${user.id}_${Date.now()}` } }
+      );
+      if (rzpErr) throw new Error(rzpErr.message || "Failed to create payment order");
+      if (!rzpOrder?.id) throw new Error("Invalid payment order response");
+
+      // 2. Open Razorpay Checkout popup
+      await openRazorpayCheckout({
+        razorpayOrderId: rzpOrder.id,
+        amount: amountPaise,
+        name: "Core Atoms",
+        description: `Order — ${totalItems} item${totalItems > 1 ? "s" : ""}`,
+        prefill: {
+          name: activeAddress.fullName,
+          email: user.email || "",
+          contact: activeAddress.phone,
+        },
+        onSuccess: async (response) => {
+          try {
+            // 3. Verify payment + create order via Edge Function
+            const { data: verifyData, error: verifyErr } = await supabase.functions.invoke(
+              "verify-razorpay-payment",
+              {
+                body: {
+                  razorpay_order_id: response.razorpay_order_id,
+                  razorpay_payment_id: response.razorpay_payment_id,
+                  razorpay_signature: response.razorpay_signature,
+                  user_id: user.id,
+                  address: activeAddress,
+                  items: buildPayloadItems(),
+                },
+              }
+            );
+            if (verifyErr) throw new Error(verifyErr.message || "Payment verification failed");
+            setPlaced(true);
+            setTimeout(() => { clear(); navigate("/orders"); }, 1400);
+          } catch (vErr) {
+            showToast(`Payment received but order failed: ${vErr.message}. Contact support.`, "error", 6000);
+          } finally {
+            setPayingOnline(false);
+          }
+        },
+        onDismiss: () => {
+          setPayingOnline(false);
+          showToast("Payment cancelled", "info");
+        },
+      });
+    } catch (e) {
+      const msg = e?.message || "Unknown error";
+      showToast(`Payment failed: ${msg}`, "error", 4000);
+      setPayingOnline(false);
     }
   };
 
@@ -367,10 +444,33 @@ export default function Checkout() {
               <div className="flex justify-between text-base font-semibold text-stone-900 pt-1"><span>Total</span><span>{money(total)}</span></div>
             </div>
 
-            <button onClick={onPlaceOrder} disabled={!canPlace || loading}
-              className="btn-primary w-full py-3 text-[14px] disabled:opacity-40 disabled:cursor-not-allowed disabled:hover:translate-y-0">
-              {loading ? "Placing order…" : "Place order · COD"}
-            </button>
+            <div className="space-y-3">
+              <button onClick={onPlaceOrder} disabled={!canPlace || loading || payingOnline}
+                className="btn-primary w-full py-3 text-[14px] disabled:opacity-40 disabled:cursor-not-allowed disabled:hover:translate-y-0">
+                {loading ? "Placing order…" : "Place order · COD"}
+              </button>
+
+              {razorpayAvailable && (
+                <button onClick={onPayOnline} disabled={!canPlace || loading || payingOnline}
+                  className="w-full rounded-xl bg-[#2563EB] px-4 py-3 text-[14px] font-semibold text-white shadow-md hover:bg-[#1d4ed8] active:scale-[0.98] transition-all duration-150 disabled:opacity-40 disabled:cursor-not-allowed flex items-center justify-center gap-2">
+                  {payingOnline ? (
+                    <>
+                      <svg className="h-4 w-4 animate-spin" viewBox="0 0 24 24" fill="none"><circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" /><path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" /></svg>
+                      Processing payment…
+                    </>
+                  ) : (
+                    <>
+                      <svg className="h-4 w-4" viewBox="0 0 20 20" fill="currentColor"><path fillRule="evenodd" d="M4 4a2 2 0 00-2 2v4a2 2 0 002 2V6h10a2 2 0 00-2-2H4zm2 6a2 2 0 012-2h8a2 2 0 012 2v4a2 2 0 01-2 2H8a2 2 0 01-2-2v-4zm6 4a2 2 0 100-4 2 2 0 000 4z" clipRule="evenodd" /></svg>
+                      Pay now · Online
+                    </>
+                  )}
+                </button>
+              )}
+
+              {razorpayAvailable && (
+                <div className="text-center text-[11px] text-stone-400">Choose COD or pay securely online via Razorpay</div>
+              )}
+            </div>
 
             {!canPlace && !form.fullName && (
               <p className="mt-3 text-xs text-stone-400 text-center">Select or fill an address above to continue.</p>

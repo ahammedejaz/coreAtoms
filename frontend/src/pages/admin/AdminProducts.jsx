@@ -576,7 +576,7 @@ export default function AdminProducts({ onProductsChange }) {
                                         resetProductForm();
                                         setShowProductForm(false);
                                     }}
-                                    className="rounded-lg border border-[#E8E4DE] px-3 py-1.5 text-xs text-stone-600 hover:bg-stone-50"
+                                    className="rounded-lg border border-[#1e3a5f]/30 px-3 py-1.5 text-xs font-semibold text-[#1e3a5f] hover:bg-[#EFF6FF] active:scale-95 transition-all duration-150"
                                 >
                                     Close
                                 </button>
@@ -1029,7 +1029,7 @@ export default function AdminProducts({ onProductsChange }) {
                                             <button
                                                 type="button"
                                                 onClick={() => deleteProduct(editingId)}
-                                                className="rounded-xl border border-[#E8E4DE] px-4 py-2.5 text-sm hover:bg-stone-50"
+                                                className="rounded-xl bg-red-600 px-4 py-2.5 text-sm font-semibold text-white shadow-sm hover:bg-red-700 active:scale-95 transition-all duration-150"
                                             >
                                                 Delete
                                             </button>
@@ -1280,7 +1280,7 @@ export default function AdminProducts({ onProductsChange }) {
                                                             <button
                                                                 type="button"
                                                                 onClick={() => openEditProduct(p)}
-                                                                className="rounded-xl border border-[#E8E4DE] bg-white px-3 py-2 text-xs font-semibold text-stone-900 hover:bg-stone-50 active:scale-95 transition-transform duration-100"
+                                                                className="rounded-xl bg-[#1e3a5f] px-3 py-2 text-xs font-semibold text-white shadow-sm hover:bg-[#162d4a] active:scale-95 transition-all duration-150"
                                                             >
                                                                 Edit
                                                             </button>
@@ -1440,7 +1440,7 @@ export default function AdminProducts({ onProductsChange }) {
                                                             <button
                                                                 type="button"
                                                                 onClick={() => openEditProduct(p)}
-                                                                className="rounded-lg border border-[#E8E4DE] px-3 py-1.5 text-xs hover:bg-stone-50 active:scale-95 transition-transform duration-100"
+                                                                className="rounded-lg bg-[#1e3a5f] px-3 py-1.5 text-xs font-semibold text-white shadow-sm hover:bg-[#162d4a] active:scale-95 transition-all duration-150"
                                                             >
                                                                 Edit
                                                             </button>

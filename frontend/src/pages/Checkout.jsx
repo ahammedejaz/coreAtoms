@@ -75,7 +75,9 @@ export default function Checkout() {
 
   // Coupon / discount
   const [couponInput, setCouponInput] = useState("");
-  const [appliedCoupon, setAppliedCoupon] = useState(null); // { code, percentage }
+  const [appliedCoupon, setAppliedCoupon] = useState(() => {
+    try { const c = sessionStorage.getItem("coreatoms_coupon"); return c ? JSON.parse(c) : null; } catch { return null; }
+  });
   const [couponError, setCouponError] = useState("");
   const [discountCodes, setDiscountCodes] = useState([]);
   const [validatingCoupon, setValidatingCoupon] = useState(false);
@@ -129,6 +131,7 @@ export default function Checkout() {
       const found = codes.find(c => c.code === code && c.active);
       if (!found) { setCouponError("Invalid or expired coupon code"); setValidatingCoupon(false); return; }
       setAppliedCoupon({ code: found.code, percentage: found.percentage });
+      sessionStorage.setItem("coreatoms_coupon", JSON.stringify({ code: found.code, percentage: found.percentage }));
       setCouponInput("");
       showToast(`Coupon "${found.code}" applied — ${found.percentage}% off!`, "success");
     } catch {
@@ -140,6 +143,7 @@ export default function Checkout() {
 
   const removeCoupon = () => {
     setAppliedCoupon(null);
+    sessionStorage.removeItem("coreatoms_coupon");
     setCouponError("");
     showToast("Coupon removed", "info");
   };

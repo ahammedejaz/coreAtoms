@@ -633,7 +633,12 @@ export default function AdminOrders({ onOrdersChange }) {
                                                 </div>
 
                                                 <div className="shrink-0 flex flex-col items-end gap-2">
-                                                    <span className={badge}>{st || "—"}</span>
+                                                    <div className="flex items-center gap-1.5">
+                                                        <span className={badge}>{st || "—"}</span>
+                                                        <span className={`inline-flex items-center rounded-full px-1.5 py-0.5 text-[9px] font-bold uppercase tracking-wide ${o.payment_method === 'prepaid' ? 'bg-blue-50 text-blue-600' : 'bg-stone-100 text-stone-500'}`}>
+                                                            {o.payment_method === 'prepaid' ? 'Paid' : 'COD'}
+                                                        </span>
+                                                    </div>
                                                     <div className="text-[11px] text-stone-400">
                                                         {o.created_at ? new Date(o.created_at).toLocaleString() : "—"}
                                                     </div>
@@ -706,6 +711,17 @@ export default function AdminOrders({ onOrdersChange }) {
                                                                 <div className="mt-1 text-xs text-stone-500">
                                                                     Phone: {o.shipping_phone || "(No phone)"}
                                                                 </div>
+                                                            </div>
+                                                        </div>
+
+                                                        {/* Payment info */}
+                                                        <div className="rounded-xl border border-[#E8E4DE] bg-white p-3">
+                                                            <div className="text-xs font-semibold text-stone-400">Payment</div>
+                                                            <div className="mt-2 text-xs text-stone-600">
+                                                                <div>Method: <span className="font-semibold text-stone-900">{o.payment_method === 'prepaid' ? 'Online (Razorpay)' : 'Cash on Delivery'}</span></div>
+                                                                {o.razorpay_payment_id && (
+                                                                    <div className="mt-1">Payment ID: <span className="font-mono text-[11px] text-stone-500">{o.razorpay_payment_id}</span></div>
+                                                                )}
                                                             </div>
                                                         </div>
 
@@ -840,7 +856,12 @@ export default function AdminOrders({ onOrdersChange }) {
                                                         </td>
 
                                                         <td className="py-2 pr-4">
-                                                            <span className={badge}>{st || "—"}</span>
+                                                            <div className="flex items-center gap-1.5">
+                                                                <span className={badge}>{st || "—"}</span>
+                                                                <span className={`inline-flex items-center rounded-full px-1.5 py-0.5 text-[9px] font-bold uppercase tracking-wide ${o.payment_method === 'prepaid' ? 'bg-blue-50 text-blue-600' : 'bg-stone-100 text-stone-500'}`}>
+                                                                    {o.payment_method === 'prepaid' ? 'Paid' : 'COD'}
+                                                                </span>
+                                                            </div>
                                                         </td>
 
                                                         <td className="py-2 pr-4 text-xs text-stone-400">
@@ -916,6 +937,17 @@ export default function AdminOrders({ onOrdersChange }) {
                                                                             <div className="mt-1 text-xs text-stone-500">
                                                                                 Phone: {o.shipping_phone || "(No phone)"}
                                                                             </div>
+                                                                        </div>
+                                                                    </div>
+
+                                                                    {/* Payment info */}
+                                                                    <div className="rounded-xl border border-[#E8E4DE] bg-white p-4">
+                                                                        <div className="text-xs font-semibold text-stone-400">Payment</div>
+                                                                        <div className="mt-2 text-xs text-stone-600">
+                                                                            <div>Method: <span className="font-semibold text-stone-900">{o.payment_method === 'prepaid' ? 'Online (Razorpay)' : 'Cash on Delivery'}</span></div>
+                                                                            {o.razorpay_payment_id && (
+                                                                                <div className="mt-1">Payment ID: <span className="font-mono text-[11px] text-stone-500">{o.razorpay_payment_id}</span></div>
+                                                                            )}
                                                                         </div>
                                                                     </div>
 

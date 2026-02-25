@@ -120,6 +120,16 @@ export default function MyOrders() {
       (o.order_items || []).some((it) => (it.product_name || "").toLowerCase().includes(q));
   });
 
+  // Pagination
+  const PAGE_SIZE = 5;
+  const [page, setPage] = useState(1);
+  const totalPages = Math.max(1, Math.ceil(filtered.length / PAGE_SIZE));
+  const safePage = Math.min(page, totalPages);
+  const paginated = filtered.slice((safePage - 1) * PAGE_SIZE, safePage * PAGE_SIZE);
+
+  // Reset to page 1 when filters change
+  useEffect(() => { setPage(1); }, [statusFilter, search]);
+
   const STATUS_OPTIONS = ["all", "placed", "processing", "shipped", "delivered", "cancelled"];
 
   return (
@@ -176,7 +186,7 @@ export default function MyOrders() {
       )}
 
       <div className="space-y-4">
-        {filtered.map((o) => {
+        {paginated.map((o) => {
           const items = o.order_items || [];
           const totalAmount = Number(o.total_amount_inr || items.reduce((s, it) => s + Number(it.line_total_inr || 0), 0));
           const totalCount = Number(o.total_items || items.reduce((s, it) => s + Number(it.qty || 0), 0));
@@ -284,6 +294,17 @@ export default function MyOrders() {
           );
         })}
       </div>
+
+      {/* Pagination */}
+      {filtered.length > PAGE_SIZE && (
+        <div className="mt-6 flex items-center justify-between">
+          <button type="button" onClick={() => { setPage(p => Math.max(1, p - 1)); window.scrollTo(0, 0); }} disabled={safePage <= 1}
+            className="btn-ghost text-sm py-2 px-4 disabled:opacity-30 disabled:cursor-not-allowed">← Previous</button>
+          <span className="text-sm text-stone-500">Page {safePage} of {totalPages}</span>
+          <button type="button" onClick={() => { setPage(p => Math.min(totalPages, p + 1)); window.scrollTo(0, 0); }} disabled={safePage >= totalPages}
+            className="btn-ghost text-sm py-2 px-4 disabled:opacity-30 disabled:cursor-not-allowed">Next →</button>
+        </div>
+      )}
     </div>
   );
 }

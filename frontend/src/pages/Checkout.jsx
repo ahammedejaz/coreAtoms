@@ -229,9 +229,19 @@ export default function Checkout() {
       // 1. Create Razorpay order via Edge Function
       const { data: rzpOrder, error: rzpErr } = await supabase.functions.invoke(
         "create-razorpay-order",
-        { body: { amount: amountPaise, receipt: `user_${user.id}_${Date.now()}` } }
+        { body: { amount: amountPaise, receipt: `rcpt_${user.id.slice(0, 8)}_${Date.now()}` } }
       );
-      if (rzpErr) throw new Error(rzpErr.message || "Failed to create payment order");
+      if (rzpErr) {
+        // Try to read the actual error body from the Edge Function response
+        let detail = rzpErr.message || "Failed to create payment order";
+        if (rzpErr.context && typeof rzpErr.context.json === "function") {
+          try {
+            const errBody = await rzpErr.context.json();
+            detail = errBody?.error || errBody?.message || detail;
+          } catch (_) { /* ignore parse errors */ }
+        }
+        throw new Error(detail);
+      }
       if (!rzpOrder?.id) throw new Error("Invalid payment order response");
 
       // 2. Open Razorpay Checkout popup
@@ -261,7 +271,16 @@ export default function Checkout() {
                 },
               }
             );
-            if (verifyErr) throw new Error(verifyErr.message || "Payment verification failed");
+            if (verifyErr) {
+              let detail = verifyErr.message || "Payment verification failed";
+              if (verifyErr.context && typeof verifyErr.context.json === "function") {
+                try {
+                  const errBody = await verifyErr.context.json();
+                  detail = errBody?.error || errBody?.message || detail;
+                } catch (_) { /* ignore parse errors */ }
+              }
+              throw new Error(detail);
+            }
             setPlaced(true);
             setTimeout(() => { clear(); navigate("/orders"); }, 1400);
           } catch (vErr) {

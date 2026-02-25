@@ -212,6 +212,8 @@ export default function AdminOrders({ onOrdersChange }) {
           total_inr,
           total_items,
           shipping_address,
+          payment_method,
+          razorpay_payment_id,
           profiles (
             id,
             email,
@@ -805,11 +807,12 @@ export default function AdminOrders({ onOrdersChange }) {
                                                     className="h-4 w-4 rounded"
                                                 />
                                             </th>
-                                            <th className="py-2 pr-4 w-[16%]">Order ID</th>
-                                            <th className="py-2 pr-4 w-[26%]">Customer</th>
-                                            <th className="py-2 pr-4 w-[11%]">Total</th>
-                                            <th className="py-2 pr-4 w-[11%]">Status</th>
-                                            <th className="py-2 pr-4 w-[16%]">Created</th>
+                                            <th className="py-2 pr-4 w-[14%]">Order ID</th>
+                                            <th className="py-2 pr-4 w-[22%]">Customer</th>
+                                            <th className="py-2 pr-4 w-[9%]">Total</th>
+                                            <th className="py-2 pr-4 w-[10%]">Status</th>
+                                            <th className="py-2 pr-4 w-[10%]">Payment</th>
+                                            <th className="py-2 pr-4 w-[15%]">Created</th>
                                             <th className="py-2 w-[12%]">Actions</th>
                                         </tr>
                                     </thead>
@@ -856,12 +859,20 @@ export default function AdminOrders({ onOrdersChange }) {
                                                         </td>
 
                                                         <td className="py-2 pr-4">
-                                                            <div className="flex items-center gap-1.5">
-                                                                <span className={badge}>{st || "—"}</span>
-                                                                <span className={`inline-flex items-center rounded-full px-1.5 py-0.5 text-[9px] font-bold uppercase tracking-wide ${o.payment_method === 'prepaid' ? 'bg-blue-50 text-blue-600' : 'bg-stone-100 text-stone-500'}`}>
-                                                                    {o.payment_method === 'prepaid' ? 'Paid' : 'COD'}
-                                                                </span>
-                                                            </div>
+                                                            <span className={badge}>{st || "—"}</span>
+                                                        </td>
+
+                                                        <td className="py-2 pr-4">
+                                                            <span className={`inline-flex items-center gap-1 rounded-full px-2.5 py-1 text-[10px] font-bold uppercase tracking-wide ${o.payment_method === 'prepaid'
+                                                                    ? 'bg-emerald-50 text-emerald-700 border border-emerald-200'
+                                                                    : 'bg-amber-50 text-amber-700 border border-amber-200'
+                                                                }`}>
+                                                                {o.payment_method === 'prepaid' ? (
+                                                                    <><svg className="h-3 w-3" viewBox="0 0 20 20" fill="currentColor"><path fillRule="evenodd" d="M4 4a2 2 0 00-2 2v4a2 2 0 002 2V6h10a2 2 0 00-2-2H4zm2 6a2 2 0 012-2h8a2 2 0 012 2v4a2 2 0 01-2 2H8a2 2 0 01-2-2v-4zm6 4a2 2 0 100-4 2 2 0 000 4z" clipRule="evenodd" /></svg> Prepaid</>
+                                                                ) : (
+                                                                    <><svg className="h-3 w-3" viewBox="0 0 20 20" fill="currentColor"><path d="M4 4a2 2 0 00-2 2v1h16V6a2 2 0 00-2-2H4z" /><path fillRule="evenodd" d="M18 9H2v5a2 2 0 002 2h12a2 2 0 002-2V9zM4 13a1 1 0 011-1h1a1 1 0 110 2H5a1 1 0 01-1-1zm5-1a1 1 0 100 2h1a1 1 0 100-2H9z" clipRule="evenodd" /></svg> COD</>
+                                                                )}
+                                                            </span>
                                                         </td>
 
                                                         <td className="py-2 pr-4 text-xs text-stone-400">

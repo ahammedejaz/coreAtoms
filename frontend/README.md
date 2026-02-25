@@ -60,14 +60,18 @@ Create a `.env.local` file in the project root with the following:
 ```env
 VITE_SUPABASE_URL=https://your-project.supabase.co
 VITE_SUPABASE_ANON_KEY=your-anon-key-here
+VITE_RAZORPAY_KEY_ID=rzp_live_xxxxxxxxxxxxxxx   # Optional — enables online payment
 ```
 
 | Variable                  | Required | Description                                                  |
 |--------------------------|----------|--------------------------------------------------------------|
 | `VITE_SUPABASE_URL`      | ✅       | Your Supabase project URL (from Project Settings → API)     |
 | `VITE_SUPABASE_ANON_KEY` | ✅       | Supabase publishable anon key (safe for client-side use)    |
+| `VITE_RAZORPAY_KEY_ID`   | Optional | Razorpay Key ID — enables the "Pay Now" button on checkout  |
 
-> The app validates these on startup and throws a clear error if either is missing — see `src/services/supabase/client.js`.
+> The app validates Supabase vars on startup and throws a clear error if either is missing — see `src/services/supabase/client.js`.
+>
+> **Razorpay:** The "Pay Now" button only appears when both `VITE_RAZORPAY_KEY_ID` is set AND `razorpay_enabled` is turned on in Admin Settings.
 
 ---
 
@@ -144,7 +148,7 @@ frontend/
     │   ├── Shop.jsx            # Product listing with search + category filter
     │   ├── ProductDetail.jsx   # Single product page (variants, gallery, reviews)
     │   ├── Cart.jsx            # Cart management + order summary
-    │   ├── Checkout.jsx        # Address form + COD order placement
+    │   ├── Checkout.jsx        # Address form + COD / Razorpay order placement
     │   ├── Login.jsx           # Email/password + Google OAuth authentication
     │   ├── MyOrders.jsx        # Order history, cancellation, review submission
     │   ├── AdminDashboard.jsx  # Admin shell with tab navigation + stats
@@ -155,11 +159,12 @@ frontend/
     │       ├── AdminOrders.jsx      # Order list, status updates, CSV export
     │       ├── AdminHomepage.jsx    # Homepage CMS: hero, pillars, categories
     │       ├── AdminReviews.jsx     # Review moderation
-    │       └── AdminSettings.jsx    # App-wide settings
+    │       └── AdminSettings.jsx    # App-wide settings + Razorpay toggle
     │
     ├── services/               # Data access layer (all Supabase calls)
     │   ├── supabase/
     │   │   └── client.js       # Supabase client singleton (validates env vars)
+    │   ├── razorpay.js         # Razorpay SDK loader + checkout popup utility
     │   ├── products.js         # Product queries + DB→frontend data mapping
     │   ├── addresses.js        # User address CRUD (with RLS guards)
     │   ├── orders.js           # Order queries, cancellation, review submission
@@ -176,6 +181,19 @@ frontend/
     └── data/                   # Static / seed data
         ├── products.seed.json       # Sample product data for development
         └── products.seed_backup.json
+```
+
+```
+supabase/
+├── README.md                         # Database & Edge Functions documentation
+├── functions/
+│   ├── create-razorpay-order/
+│   │   └── index.ts                  # Edge Function: creates Razorpay order
+│   └── verify-razorpay-payment/
+│       └── index.ts                  # Edge Function: verifies payment + creates order
+└── migrations/
+    ├── add_razorpay_columns.sql       # Razorpay schema migration
+    └── create_wa_notifications.sql    # WhatsApp notification tracking
 ```
 
 ---
@@ -344,8 +362,11 @@ Global toast notification system with variants and auto-dismiss.
 - **Address management:** Loads saved addresses from Supabase, allows selecting or adding a new one. New addresses can be saved for future use
 - **Address deletion:** Inline confirmation UI (no browser `confirm()` dialog). Includes `.eq("user_id")` RLS guard
 - **Validation:** Indian phone (10 digits starting with 6-9) + 6-digit pincode + required fields
-- **Order placement:** Calls the `place_order_cod` Supabase RPC function. On success, shows an animated "Order placed!" screen and redirects to `/orders`
-- **Error handling:** Uses toast notifications for all errors (stock issues, validation failures)
+- **Dual payment options:**
+  - **COD (Cash on Delivery):** Calls the `place_order_cod` RPC function directly
+  - **Razorpay (Online):** Creates a Razorpay order → opens payment popup → verifies payment → creates order. Only shown when Razorpay is enabled in admin settings AND `VITE_RAZORPAY_KEY_ID` is configured
+- **Order placement:** On success, shows an animated "Order placed!" screen and redirects to `/orders`
+- **Error handling:** Uses toast notifications for all errors (stock issues, payment failures, validation errors). Surfaces actual error details from Edge Function responses
 
 ### Login (`src/pages/Login.jsx`)
 - **Auth methods:** Email/password (sign up and sign in) + Google OAuth
@@ -359,10 +380,10 @@ Global toast notification system with variants and auto-dismiss.
 
 ### Admin Pages (`src/pages/admin/`)
 - **AdminProducts.jsx** — Full CRUD for products: name, description, price, stock, category, images (drag to reposition), variants (label, price, stock, SKU), highlights
-- **AdminOrders.jsx** — View all orders, update status (pending → confirmed → shipped → delivered), CSV export
+- **AdminOrders.jsx** — View all orders, update status (placed → processing → shipped → delivered), CSV export, dedicated Payment column (Prepaid/COD badges), Razorpay payment ID display, WhatsApp notifications
 - **AdminHomepage.jsx** — CMS editor for the homepage: hero images, hero copy text, featured product picker, pillars, categories, philosophy section
 - **AdminReviews.jsx** — Review moderation dashboard
-- **AdminSettings.jsx** — App-wide settings like max items per order
+- **AdminSettings.jsx** — App-wide settings: max items per order, Razorpay payment toggle
 
 ---
 
@@ -450,6 +471,11 @@ All Supabase database calls are centralized in service modules under `src/servic
 
 ### `homepage.js`
 - `fetchHomepageSettings()` — Fetches all homepage CMS settings from `app_settings`
+
+### `razorpay.js`
+- `loadRazorpay()` — Dynamically loads the Razorpay `checkout.js` SDK script into the page
+- `getRazorpayKeyId()` — Returns `VITE_RAZORPAY_KEY_ID` from environment variables
+- `openRazorpayCheckout(options)` — Opens the Razorpay payment popup with the given order details, prefill info, and success/dismiss callbacks
 
 ### `api/settings.js`
 - `getMaxItemsPerOrder()` — Reads the max items per order from `app_settings`
@@ -562,14 +588,15 @@ The `<SEO>` component (`src/components/SEO.jsx`) uses `react-helmet-async` to in
 
 1. **Row Level Security (RLS):** All Supabase mutations include `.eq("user_id", user.id)` as a defense-in-depth measure. Even if RLS policies are misconfigured on the Supabase side, the client-side queries will only affect the authenticated user's data
 2. **Environment variables:** Supabase credentials are stored in `.env.local` (git-ignored). Only the publishable `anon` key is used client-side — never the `service_role` key
-3. **Session timeout:** Users are automatically signed out after 1 hour of inactivity (tracked via `localStorage`)
-4. **Protected routes:** Server-side RPC functions (`place_order_cod`, `cancel_order`) accept `p_user_id` parameters and should validate ownership on the database side
+3. **Razorpay security:** The Razorpay Key Secret is **never exposed on the frontend**. It is stored as a Supabase secret and only accessed by Edge Functions. Payment signatures are verified server-side using HMAC-SHA256 before creating any order
+4. **Session timeout:** Users are automatically signed out after 1 hour of inactivity (tracked via `localStorage`)
+5. **Protected routes:** Server-side RPC functions (`place_order_cod`, `place_order_prepaid`, `cancel_order`) accept `p_user_id` parameters and validate ownership on the database side
 
 ---
 
 ## Supabase — Database Tables & RPC Functions
 
-The frontend interacts with these Supabase resources:
+The frontend interacts with these Supabase resources. For full schema details, see [`supabase/README.md`](supabase/README.md).
 
 ### Tables
 
@@ -578,18 +605,27 @@ The frontend interacts with these Supabase resources:
 | `products`         | Shop, Home, ProductDetail   | SELECT (with joins)   |
 | `product_variants` | ProductDetail, Admin        | SELECT, INSERT, UPDATE, DELETE |
 | `product_reviews`  | ProductDetail, MyOrders     | SELECT, INSERT        |
-| `orders`           | MyOrders, Checkout          | SELECT                |
-| `order_items`      | MyOrders                    | SELECT (via join)     |
+| `orders`           | MyOrders, Checkout, Admin   | SELECT                |
+| `order_items`      | MyOrders, Admin             | SELECT (via join)     |
 | `addresses`        | Checkout                    | SELECT, INSERT, DELETE |
 | `profiles`         | AuthContext, Login           | SELECT                |
 | `app_settings`     | Home, CartContext, Admin    | SELECT, UPSERT        |
+| `wa_notifications` | AdminOrders                 | SELECT, UPSERT        |
 
 ### RPC Functions
 
-| Function            | Called From     | Parameters                        | Purpose                    |
-|---------------------|-----------------|-----------------------------------|----------------------------|
-| `place_order_cod`   | Checkout.jsx    | `p_user_id`, `p_address`, `p_items` | Places a COD order, deducts stock |
-| `cancel_order`      | MyOrders.jsx    | `p_order_id`, `p_user_id`         | Cancels an order, restores stock  |
+| Function              | Called From          | Purpose                                 |
+|-----------------------|----------------------|------------------------------------------|
+| `place_order_cod`     | Checkout.jsx         | Places a COD order, deducts stock        |
+| `place_order_prepaid` | verify-razorpay-payment (Edge Function) | Places a prepaid order after payment verification |
+| `cancel_order`        | MyOrders.jsx         | Cancels an order, restores stock         |
+
+### Edge Functions
+
+| Function                    | Purpose                                           |
+|----------------------------|---------------------------------------------------|
+| `create-razorpay-order`    | Creates a Razorpay order via their API            |
+| `verify-razorpay-payment`  | Verifies payment signature + calls `place_order_prepaid` |
 
 ### Storage Buckets
 
@@ -672,6 +708,9 @@ dist/
 | Forms don't submit                      | Validation not passing                 | Check browser console + ensure all required fields follow the Indian phone/pincode format |
 | Images don't load                       | Supabase storage URLs expired/incorrect | Check image URLs in the admin dashboard     |
 | Build warning about large chunks        | Main bundle > 500KB                    | Expected — includes React + router + Tailwind runtime |
+| "Pay Now" button not showing           | Razorpay not configured                | Set `VITE_RAZORPAY_KEY_ID` in `.env.local` + enable in Admin Settings |
+| Edge Function returns 502              | Old Deno imports or missing secrets    | See [`supabase/README.md` troubleshooting](supabase/README.md#troubleshooting) |
+| Payment succeeds but order fails       | DB schema mismatch in `place_order_prepaid` | Ensure the RPC matches actual `orders` table columns |
 
 ---
 

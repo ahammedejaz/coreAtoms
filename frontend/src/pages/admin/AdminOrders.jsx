@@ -476,11 +476,11 @@ export default function AdminOrders({ onOrdersChange }) {
                                 type="button"
                                 onClick={exportOrdersCSV}
                                 disabled={filteredOrders.length === 0}
-                                className="rounded-xl border border-[#E8E4DE] bg-white px-3 py-2 text-xs font-semibold text-stone-900 hover:bg-stone-50 disabled:opacity-40 flex items-center gap-1.5"
+                                className="rounded-xl bg-[#1e3a5f] px-3 py-2 text-xs font-semibold text-white shadow-sm hover:bg-[#162d4a] active:scale-95 transition-all duration-150 disabled:opacity-40 flex items-center gap-1.5"
                             >
                                 ↓ Export CSV
                                 {filteredOrders.length > 0 && (
-                                    <span className="text-stone-400">({filteredOrders.length})</span>
+                                    <span className="text-white/60">({filteredOrders.length})</span>
                                 )}
                             </button>
 
@@ -494,7 +494,7 @@ export default function AdminOrders({ onOrdersChange }) {
                                     setSelectedOrderIds(new Set());
                                     setBulkStatus("");
                                 }}
-                                className="rounded-xl border border-[#E8E4DE] bg-white px-3 py-2 text-xs font-semibold text-stone-900 hover:bg-stone-50"
+                                className="rounded-xl border border-[#1e3a5f]/30 bg-white px-3 py-2 text-xs font-semibold text-[#1e3a5f] hover:bg-[#EFF6FF] active:scale-95 transition-all duration-150"
                             >
                                 Clear filters
                             </button>
@@ -579,7 +579,7 @@ export default function AdminOrders({ onOrdersChange }) {
                                                 <button
                                                     type="button"
                                                     onClick={() => toggleOrderExpanded(o.id)}
-                                                    className="w-full rounded-xl border border-[#E8E4DE] bg-white px-3 py-2 text-xs font-semibold text-stone-900 hover:bg-stone-50"
+                                                    className="w-full rounded-xl bg-[#1e3a5f] px-3 py-2 text-xs font-semibold text-white shadow-sm hover:bg-[#162d4a] active:scale-95 transition-all duration-150"
                                                 >
                                                     {isOpen ? "Hide details" : "View details"}
                                                 </button>
@@ -758,7 +758,7 @@ export default function AdminOrders({ onOrdersChange }) {
                                                                 <button
                                                                     type="button"
                                                                     onClick={() => toggleOrderExpanded(o.id)}
-                                                                    className="w-full rounded-lg border border-[#E8E4DE] bg-white px-2 py-1.5 text-xs font-semibold text-stone-900 hover:bg-stone-50"
+                                                                    className="w-full rounded-lg bg-[#1e3a5f] px-2 py-1.5 text-xs font-semibold text-white shadow-sm hover:bg-[#162d4a] active:scale-95 transition-all duration-150"
                                                                 >
                                                                     {expandedOrderIds.has(o.id) ? "Hide details" : "View details"}
                                                                 </button>

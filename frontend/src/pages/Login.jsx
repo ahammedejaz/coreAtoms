@@ -7,20 +7,34 @@
  *
  * @module pages/Login
  */
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { useNavigate, useSearchParams } from "react-router-dom";
 import { supabase } from "../services/supabase/client";
+import { useAuth } from "../context/AuthContext";
 import SEO from "../components/SEO";
 
 export default function Login() {
   const navigate = useNavigate();
   const [searchParams] = useSearchParams();
   const redirectTo = searchParams.get("redirect") || null;
+  const { loading: authLoading, isAuthenticated, isAdmin, profile } = useAuth();
   const [isSignup, setIsSignup] = useState(false);
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [loading, setLoading] = useState(false);
   const [message, setMessage] = useState({ text: "", type: "" });
+
+  // Redirect already-authenticated users (e.g. after Google OAuth callback)
+  useEffect(() => {
+    if (authLoading || !isAuthenticated || !profile) return;
+    if (redirectTo) {
+      navigate(decodeURIComponent(redirectTo), { replace: true });
+    } else if (isAdmin) {
+      navigate("/admin", { replace: true });
+    } else {
+      navigate("/", { replace: true });
+    }
+  }, [authLoading, isAuthenticated, isAdmin, profile, redirectTo, navigate]);
 
   const redirectAfterLogin = async (uid) => {
     // If there's a redirect URL from ProtectedRoute, go there first

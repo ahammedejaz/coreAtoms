@@ -90,14 +90,13 @@ export default function MyOrders() {
   const [reviewedKeys, setReviewedKeys] = useState(new Set());
   const [openReviews, setOpenReviews] = useState({});
   const [existingReviews, setExistingReviews] = useState(new Set());
-  const [pendingCancelId, setPendingCancelId] = useState(null);
 
   const load = async () => {
     if (!userId) return;
     setLoading(true);
     const { data } = await supabase
       .from("orders")
-      .select("id,status,created_at,total_amount_inr,total_items,order_items(id,product_id,product_name,qty,unit_price_inr,line_total_inr,image_url)")
+      .select("id,status,created_at,total_amount_inr,total_items,payment_method,razorpay_payment_id,order_items(id,product_id,product_name,qty,unit_price_inr,line_total_inr,image_url)")
       .eq("user_id", userId)
       .order("created_at", { ascending: false });
     setOrders(data || []);
@@ -108,22 +107,6 @@ export default function MyOrders() {
 
   useEffect(() => { load(); }, [userId]);
 
-  const onCancel = async (orderId, status) => {
-    if (["shipped", "delivered"].includes(status.toLowerCase())) {
-      showToast("Cannot cancel after shipment.", "warning");
-      return;
-    }
-    // Use inline confirmation via pendingCancelId
-    setPendingCancelId(orderId);
-  };
-
-  const confirmCancel = async (orderId) => {
-    const { error } = await supabase.rpc("cancel_order", { p_order_id: orderId, p_user_id: userId });
-    setPendingCancelId(null);
-    if (error) { showToast(error.message, "error"); return; }
-    showToast("Order cancelled", "info");
-    load();
-  };
 
   const filtered = orders.filter((o) => {
     const s = (o.status || "").toLowerCase();
@@ -195,8 +178,14 @@ export default function MyOrders() {
           const totalCount = Number(o.total_items || items.reduce((s, it) => s + Number(it.qty || 0), 0));
           const status = (o.status || "placed").toLowerCase();
           const isDelivered = status === "delivered";
-          const cancellable = ["placed", "processing"].includes(status);
+          const isPrepaid = o.payment_method === "prepaid";
           const statusCls = STATUS_STYLES[status] || "bg-stone-100 text-stone-600 border border-stone-200";
+          const txnId = o.razorpay_payment_id;
+
+          // Build WhatsApp support message with product details
+          const itemsList = items.map((it) => `• ${it.product_name || "Product"} ×${it.qty} — ${money(it.unit_price_inr)}`).join("%0A");
+          const waMsg = `Hi, I need help with my order.%0A%0AOrder ID: ${String(o.id).slice(0, 8).toUpperCase()}%0AStatus: ${o.status}%0APayment: ${isPrepaid ? "Prepaid" : "COD"}${isPrepaid && txnId ? `%0ATransaction ID: ${txnId}` : ""}%0ATotal: ${money(totalAmount)}%0A%0AItems:%0A${itemsList}`;
+          const waUrl = `https://wa.me/918331833102?text=${waMsg}`;
 
           return (
             <div key={o.id} className="card p-6">
@@ -209,24 +198,32 @@ export default function MyOrders() {
                 </div>
                 <div className="flex items-center gap-2 flex-wrap justify-end">
                   <span className={`px-3 py-1 rounded-full text-[11px] font-semibold capitalize ${statusCls}`}>{o.status}</span>
-                  {cancellable && pendingCancelId === o.id ? (
-                    <div className="flex items-center gap-2">
-                      <button type="button" onClick={() => confirmCancel(o.id)}
-                        className="rounded-lg bg-red-600 px-3 py-1 text-xs font-semibold text-white hover:bg-red-700 transition">Confirm cancel</button>
-                      <button type="button" onClick={() => setPendingCancelId(null)}
-                        className="text-xs text-stone-400 hover:text-stone-600 transition">Keep</button>
-                    </div>
-                  ) : cancellable && (
-                    <button type="button" onClick={() => onCancel(o.id, o.status)} className="btn-ghost py-1 px-3 text-xs">Cancel</button>
+                  {isPrepaid && (
+                    <span className="px-2.5 py-1 rounded-full text-[10px] font-bold uppercase tracking-wide bg-emerald-50 text-emerald-700 border border-emerald-200">
+                      ✓ Paid
+                    </span>
                   )}
                 </div>
               </div>
 
               {/* Summary row */}
-              <div className="mt-4 flex items-center gap-6 text-sm border-t border-[#E8E4DE] pt-4">
+              <div className="mt-4 flex flex-wrap items-center gap-x-6 gap-y-2 text-sm border-t border-[#E8E4DE] pt-4">
                 <div><span className="text-stone-400 text-xs block">Total</span><span className="font-semibold text-stone-900">{money(totalAmount)}</span></div>
                 <div><span className="text-stone-400 text-xs block">Items</span><span className="font-semibold text-stone-900">{totalCount}</span></div>
-                <div><span className="text-stone-400 text-xs block">Payment</span><span className="font-semibold text-stone-900">COD</span></div>
+                <div><span className="text-stone-400 text-xs block">Payment</span><span className="font-semibold text-stone-900">{isPrepaid ? "Prepaid" : "COD"}</span></div>
+                {isPrepaid && txnId && (
+                  <div><span className="text-stone-400 text-xs block">Transaction ID</span><span className="font-mono text-xs font-semibold text-stone-700">{txnId}</span></div>
+                )}
+                <div className="ml-auto">
+                  <a href={waUrl} target="_blank" rel="noopener noreferrer"
+                    className="inline-flex items-center gap-1.5 rounded-full bg-green-50 border border-green-200 px-3 py-1.5 text-[11px] font-semibold text-green-700 hover:bg-green-100 transition-colors">
+                    <svg className="h-3.5 w-3.5" viewBox="0 0 24 24" fill="currentColor">
+                      <path d="M17.472 14.382c-.297-.149-1.758-.867-2.03-.967-.273-.099-.471-.148-.67.15-.197.297-.767.966-.94 1.164-.173.199-.347.223-.644.075-.297-.15-1.255-.463-2.39-1.475-.883-.788-1.48-1.761-1.653-2.059-.173-.297-.018-.458.13-.606.134-.133.298-.347.446-.52.149-.174.198-.298.298-.497.099-.198.05-.371-.025-.52-.075-.149-.669-1.612-.916-2.207-.242-.579-.487-.5-.669-.51-.173-.008-.371-.01-.57-.01-.198 0-.52.074-.792.372-.272.297-1.04 1.016-1.04 2.479 0 1.462 1.065 2.875 1.213 3.074.149.198 2.096 3.2 5.077 4.487.709.306 1.262.489 1.694.625.712.227 1.36.195 1.871.118.571-.085 1.758-.719 2.006-1.413.248-.694.248-1.289.173-1.413-.074-.124-.272-.198-.57-.347z" />
+                      <path d="M12 0C5.373 0 0 5.373 0 12c0 2.127.555 4.125 1.527 5.86L.05 23.706a.5.5 0 00.607.607l5.845-1.477A11.94 11.94 0 0012 24c6.627 0 12-5.373 12-12S18.627 0 12 0zm0 22a9.94 9.94 0 01-5.38-1.574l-.386-.232-3.466.877.893-3.467-.24-.394A9.94 9.94 0 012 12C2 6.486 6.486 2 12 2s10 4.486 10 10-4.486 10-10 10z" />
+                    </svg>
+                    Support
+                  </a>
+                </div>
               </div>
 
               {/* Items */}

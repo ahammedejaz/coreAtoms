@@ -9,8 +9,10 @@
 import { Link, useNavigate } from "react-router-dom";
 import { useCart } from "../context/CartContext";
 import { useAuth } from "../context/AuthContext";
+import { supabase } from "../services/supabase/client";
 import SEO from "../components/SEO";
 import ScrollReveal from "../components/ScrollReveal";
+import { useEffect, useState } from "react";
 
 import { money } from "../utils/format";
 
@@ -18,6 +20,18 @@ export default function Cart() {
   const navigate = useNavigate();
   const { isAuthenticated } = useAuth();
   const { items, totalItems, subtotal, updateQty, removeItem, clear } = useCart();
+  const [shipping, setShipping] = useState(0);
+
+  useEffect(() => {
+    supabase.from("app_settings").select("value")
+      .eq("key", "shipping_amount").maybeSingle()
+      .then(({ data }) => {
+        const n = Number(data?.value?.amount);
+        if (Number.isFinite(n) && n >= 0) setShipping(n);
+      });
+  }, []);
+
+  const total = Number(subtotal || 0) + shipping;
 
   return (
     <div>
@@ -104,11 +118,7 @@ export default function Cart() {
                   </div>
                   <div className="flex justify-between text-stone-600">
                     <span>Shipping</span>
-                    <span className="font-semibold text-emerald-600">Free</span>
-                  </div>
-                  <div className="flex justify-between text-stone-600">
-                    <span>Payment</span>
-                    <span className="font-semibold text-stone-900">Cash on Delivery</span>
+                    <span className={`font-semibold ${shipping === 0 ? "text-emerald-600" : "text-stone-900"}`}>{shipping === 0 ? "Free" : money(shipping)}</span>
                   </div>
                 </div>
 
@@ -116,7 +126,7 @@ export default function Cart() {
 
                 <div className="flex justify-between mb-6">
                   <span className="font-semibold text-stone-900">Total</span>
-                  <span className="text-xl font-semibold text-stone-900">{money(subtotal)}</span>
+                  <span className="text-xl font-semibold text-stone-900">{money(total)}</span>
                 </div>
 
                 <button

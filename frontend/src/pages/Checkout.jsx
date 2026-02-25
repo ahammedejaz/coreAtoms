@@ -64,11 +64,21 @@ export default function Checkout() {
   const [loading, setLoading] = useState(false);
   const [payingOnline, setPayingOnline] = useState(false);
 
+  // Shipping amount (from app_settings)
+  const [shipping, setShipping] = useState(0);
+
   // Razorpay toggle (read from app_settings)
   const [razorpayAvailable, setRazorpayAvailable] = useState(false);
 
   // COD toggle (read from app_settings, defaults to true)
   const [codAvailable, setCodAvailable] = useState(true);
+
+  // Coupon / discount
+  const [couponInput, setCouponInput] = useState("");
+  const [appliedCoupon, setAppliedCoupon] = useState(null); // { code, percentage }
+  const [couponError, setCouponError] = useState("");
+  const [discountCodes, setDiscountCodes] = useState([]);
+  const [validatingCoupon, setValidatingCoupon] = useState(false);
 
   useEffect(() => {
     // Check if Razorpay is both enabled in admin AND key is configured
@@ -86,10 +96,53 @@ export default function Checkout() {
       .then(({ data }) => {
         setCodAvailable(data?.value?.enabled !== false);
       });
+
+    // Load discount codes
+    supabase.from("app_settings").select("value")
+      .eq("key", "discount_codes").maybeSingle()
+      .then(({ data }) => {
+        setDiscountCodes(Array.isArray(data?.value) ? data.value : []);
+      });
+
+    // Load shipping amount
+    supabase.from("app_settings").select("value")
+      .eq("key", "shipping_amount").maybeSingle()
+      .then(({ data }) => {
+        const n = Number(data?.value?.amount);
+        if (Number.isFinite(n) && n >= 0) setShipping(n);
+      });
   }, []);
 
-  const shipping = 0;
-  const total = Number(subtotal || 0) + shipping;
+  const discountAmount = appliedCoupon ? Math.round((Number(subtotal || 0) * appliedCoupon.percentage) / 100) : 0;
+  const total = Math.max(0, Number(subtotal || 0) + shipping - discountAmount);
+
+  // Coupon apply handler — fetches fresh from DB to ensure latest codes
+  const applyCoupon = async () => {
+    const code = couponInput.trim().toUpperCase();
+    setCouponError("");
+    if (!code) { setCouponError("Enter a coupon code"); return; }
+    setValidatingCoupon(true);
+    try {
+      const { data } = await supabase.from("app_settings").select("value")
+        .eq("key", "discount_codes").maybeSingle();
+      const codes = Array.isArray(data?.value) ? data.value : [];
+      const found = codes.find(c => c.code === code && c.active);
+      if (!found) { setCouponError("Invalid or expired coupon code"); setValidatingCoupon(false); return; }
+      setAppliedCoupon({ code: found.code, percentage: found.percentage });
+      setCouponInput("");
+      showToast(`Coupon "${found.code}" applied — ${found.percentage}% off!`, "success");
+    } catch {
+      setCouponError("Failed to validate coupon. Try again.");
+    } finally {
+      setValidatingCoupon(false);
+    }
+  };
+
+  const removeCoupon = () => {
+    setAppliedCoupon(null);
+    setCouponError("");
+    showToast("Coupon removed", "info");
+  };
 
   // Load saved addresses from Supabase
   const loadAddresses = useCallback(async () => {
@@ -515,9 +568,42 @@ export default function Checkout() {
 
             <div className="my-5 h-px bg-[#E8E4DE]" />
 
+            {/* Coupon code input */}
+            <div className="mb-5">
+              {appliedCoupon ? (
+                <div className="flex items-center justify-between rounded-xl border border-emerald-200 bg-emerald-50 px-4 py-3">
+                  <div className="flex items-center gap-2">
+                    <span className="text-xs font-bold text-emerald-700">🎉</span>
+                    <span className="font-mono text-sm font-semibold text-emerald-800">{appliedCoupon.code}</span>
+                    <span className="text-xs text-emerald-600">{appliedCoupon.percentage}% off</span>
+                  </div>
+                  <button type="button" onClick={removeCoupon}
+                    className="text-xs text-emerald-600 hover:text-red-500 transition-colors">✕ Remove</button>
+                </div>
+              ) : (
+                <div>
+                  <div className="flex gap-2">
+                    <input value={couponInput} onChange={(e) => { setCouponInput(e.target.value.toUpperCase()); setCouponError(""); }}
+                      placeholder="Coupon code"
+                      onKeyDown={(e) => { if (e.key === "Enter") applyCoupon(); }}
+                      className="flex-1 rounded-xl border border-[#E8E4DE] bg-white px-3 py-2.5 text-sm font-mono text-stone-900 uppercase placeholder:text-stone-400 placeholder:normal-case focus:ring-2 focus:ring-[#1e3a5f]/10 focus:border-[#1e3a5f] outline-none transition" />
+                    <button type="button" onClick={applyCoupon} disabled={validatingCoupon}
+                      className="btn-ghost text-sm py-2.5 px-4 shrink-0 disabled:opacity-50">{validatingCoupon ? "Checking…" : "Apply"}</button>
+                  </div>
+                  {couponError && <p className="text-xs text-red-500 mt-1.5">{couponError}</p>}
+                </div>
+              )}
+            </div>
+
             <div className="space-y-2 text-sm mb-5">
               <div className="flex justify-between text-stone-600"><span>Subtotal</span><span className="font-semibold text-stone-900">{money(subtotal)}</span></div>
-              <div className="flex justify-between text-stone-600"><span>Shipping</span><span className="font-semibold text-emerald-600">Free</span></div>
+              <div className="flex justify-between text-stone-600"><span>Shipping</span><span className={`font-semibold ${shipping === 0 ? "text-emerald-600" : "text-stone-900"}`}>{shipping === 0 ? "Free" : money(shipping)}</span></div>
+              {appliedCoupon && (
+                <div className="flex justify-between text-emerald-600">
+                  <span>Discount ({appliedCoupon.percentage}%)</span>
+                  <span className="font-semibold">-{money(discountAmount)}</span>
+                </div>
+              )}
               <div className="flex justify-between text-base font-semibold text-stone-900 pt-1"><span>Total</span><span>{money(total)}</span></div>
             </div>
 

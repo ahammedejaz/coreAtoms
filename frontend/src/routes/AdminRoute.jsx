@@ -10,9 +10,11 @@ import { Navigate } from "react-router-dom";
 import { useAuth } from "../context/AuthContext";
 
 export default function AdminRoute({ children }) {
-  const { loading, isAuthenticated, isAdmin } = useAuth();
+  const { loading, isAuthenticated, isAdmin, user, profile } = useAuth();
 
+  // Wait for auth + profile to fully resolve
   if (loading) return <div className="text-neutral-300">Loading...</div>;
+  if (user && !profile) return <div className="text-neutral-300">Loading...</div>;
   if (!isAuthenticated) return <Navigate to="/login" replace />;
   if (!isAdmin) return <Navigate to="/" replace />;
 

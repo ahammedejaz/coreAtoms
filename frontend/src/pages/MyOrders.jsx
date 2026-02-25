@@ -194,7 +194,7 @@ export default function MyOrders() {
                 <div>
                   <p className="text-xs text-stone-400 mb-1">Order ID</p>
                   <p className="font-semibold text-stone-900 font-mono text-sm">{String(o.id).slice(0, 8).toUpperCase()}</p>
-                  <p classNam e="text-xs text-stone-400 mt-1">{o.created_at ? new Date(o.created_at).toLocaleDateString("en-IN", { day: "numeric", month: "short", year: "numeric" }) : ""}</p>
+                  <p className="text-xs text-stone-400 mt-1">{o.created_at ? new Date(o.created_at).toLocaleDateString("en-IN", { day: "numeric", month: "short", year: "numeric" }) : ""}</p>
                 </div>
                 <div className="flex items-center gap-2 flex-wrap justify-end">
                   <span className={`px-3 py-1 rounded-full text-[11px] font-semibold capitalize ${statusCls}`}>{o.status}</span>

@@ -66,6 +66,9 @@ export default function Checkout() {
   // Razorpay toggle (read from app_settings)
   const [razorpayAvailable, setRazorpayAvailable] = useState(false);
 
+  // COD toggle (read from app_settings, defaults to true)
+  const [codAvailable, setCodAvailable] = useState(true);
+
   useEffect(() => {
     // Check if Razorpay is both enabled in admin AND key is configured
     supabase.from("app_settings").select("value")
@@ -74,6 +77,13 @@ export default function Checkout() {
         const enabled = data?.value?.enabled === true;
         const hasKey = !!getRazorpayKeyId();
         setRazorpayAvailable(enabled && hasKey);
+      });
+
+    // Check if COD is enabled (defaults to true if setting doesn't exist)
+    supabase.from("app_settings").select("value")
+      .eq("key", "cod_enabled").maybeSingle()
+      .then(({ data }) => {
+        setCodAvailable(data?.value?.enabled !== false);
       });
   }, []);
 
@@ -464,10 +474,12 @@ export default function Checkout() {
             </div>
 
             <div className="space-y-3">
-              <button onClick={onPlaceOrder} disabled={!canPlace || loading || payingOnline}
-                className="btn-primary w-full py-3 text-[14px] disabled:opacity-40 disabled:cursor-not-allowed disabled:hover:translate-y-0">
-                {loading ? "Placing order…" : "Place order · COD"}
-              </button>
+              {codAvailable && (
+                <button onClick={onPlaceOrder} disabled={!canPlace || loading || payingOnline}
+                  className="btn-primary w-full py-3 text-[14px] disabled:opacity-40 disabled:cursor-not-allowed disabled:hover:translate-y-0">
+                  {loading ? "Placing order…" : "Place order · COD"}
+                </button>
+              )}
 
               {razorpayAvailable && (
                 <button onClick={onPayOnline} disabled={!canPlace || loading || payingOnline}
@@ -484,6 +496,13 @@ export default function Checkout() {
                     </>
                   )}
                 </button>
+              )}
+
+              {!codAvailable && !razorpayAvailable && (
+                <div className="rounded-xl border border-amber-200 bg-amber-50 p-4 text-center">
+                  <p className="text-sm font-semibold text-amber-800">No payment methods available</p>
+                  <p className="text-xs text-amber-600 mt-1">Please contact support or try again later.</p>
+                </div>
               )}
 
               {razorpayAvailable && (

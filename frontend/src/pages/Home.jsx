@@ -67,6 +67,7 @@ export default function Home() {
   const [justAddedId, setJustAddedId] = useState(null);
 
   // Settings state
+  const [heroReady, setHeroReady] = useState(false);
   const [heroImages, setHeroImages] = useState(
     DEFAULT_HERO_IMAGES.map((url) => ({ url, position: "50% 50%" }))
   );
@@ -147,6 +148,15 @@ export default function Home() {
 
   useEffect(() => { loadData(); }, [loadData]);
 
+  // Preload hero images into browser cache so carousel transitions are instant
+  useEffect(() => {
+    if (!heroImages.length) return;
+    heroImages.forEach((slide) => {
+      const img = new window.Image();
+      img.src = slide.url;
+    });
+  }, [heroImages]);
+
   // Carousel auto-advance
   useEffect(() => {
     if (heroImages.length <= 1) return;
@@ -194,6 +204,22 @@ export default function Home() {
 
           {/* LEFT — carousel: aspect-ratio on mobile, stretch to full card height on desktop */}
           <div className="relative overflow-hidden aspect-[4/3] lg:aspect-auto">
+            {/* Shimmer skeleton — visible until first hero image loads */}
+            <div
+              className={`absolute inset-0 bg-stone-100 transition-opacity duration-500 ${heroReady ? "opacity-0 pointer-events-none" : "opacity-100"
+                }`}
+              style={{ zIndex: 5 }}
+            >
+              <div
+                className="absolute inset-0"
+                style={{
+                  background: "linear-gradient(90deg, transparent 0%, rgba(255,255,255,0.5) 50%, transparent 100%)",
+                  backgroundSize: "200% 100%",
+                  animation: "shimmer 1.5s infinite",
+                }}
+              />
+            </div>
+
             <div className="absolute inset-0">
               {heroImages.map((slide, i) => (
                 <div
@@ -206,8 +232,10 @@ export default function Home() {
                     alt={`Hero ${i + 1}`}
                     className="absolute inset-0 h-full w-full object-cover"
                     style={{ objectPosition: slide.position || "50% 50%" }}
-                    loading={i === 0 ? "eager" : "lazy"}
+                    loading="eager"
+                    fetchpriority={i === 0 ? "high" : "auto"}
                     sizes="(max-width: 1024px) 100vw, 50vw"
+                    onLoad={i === 0 ? () => setHeroReady(true) : undefined}
                   />
                   <div className="absolute inset-0 bg-gradient-to-r from-white/20 via-transparent to-transparent" />
                 </div>

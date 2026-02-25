@@ -13,6 +13,11 @@ export default function AdminSettings() {
     const [razorpayLoading, setRazorpayLoading] = useState(true);
     const [razorpaySaving, setRazorpaySaving] = useState(false);
 
+    // COD toggle
+    const [codEnabled, setCodEnabled] = useState(true);
+    const [codLoading, setCodLoading] = useState(true);
+    const [codSaving, setCodSaving] = useState(false);
+
     useEffect(() => {
         supabase.from("app_settings").select("value")
             .eq("key", "max_items_per_order").maybeSingle()
@@ -27,6 +32,14 @@ export default function AdminSettings() {
             .then(({ data }) => {
                 setRazorpayEnabled(data?.value?.enabled === true);
                 setRazorpayLoading(false);
+            });
+
+        // Load COD toggle (defaults to true if not set)
+        supabase.from("app_settings").select("value")
+            .eq("key", "cod_enabled").maybeSingle()
+            .then(({ data }) => {
+                setCodEnabled(data?.value?.enabled !== false);
+                setCodLoading(false);
             });
     }, []);
 
@@ -62,6 +75,20 @@ export default function AdminSettings() {
         setRazorpaySaving(false);
     };
 
+    const toggleCod = async () => {
+        setCodSaving(true);
+        const newVal = !codEnabled;
+        const { error } = await supabase.from("app_settings")
+            .upsert({ key: "cod_enabled", value: { enabled: newVal } }, { onConflict: "key" });
+        if (error) {
+            showToast(error.message, "error");
+        } else {
+            setCodEnabled(newVal);
+            showToast(newVal ? "Cash on Delivery enabled" : "Cash on Delivery disabled", "success");
+        }
+        setCodSaving(false);
+    };
+
     // Ctrl+S to save
     const saveRef = useRef(save);
     saveRef.current = save;
@@ -89,45 +116,89 @@ export default function AdminSettings() {
                 </div>
             </div>
 
-            {/* ── Payment Gateway ── */}
+            {/* ── Payment Methods ── */}
             <div className="rounded-2xl border border-[#E8E4DE] bg-white p-5">
-                <div className="flex items-center justify-between gap-4">
-                    <div>
-                        <div className="text-base font-semibold text-stone-900 flex items-center gap-2">
-                            Payment Gateway
-                            <span className={[
-                                "inline-flex items-center rounded-full px-2 py-0.5 text-[10px] font-bold uppercase tracking-wide",
-                                razorpayEnabled
-                                    ? "bg-emerald-50 text-emerald-700"
-                                    : "bg-stone-100 text-stone-400",
-                            ].join(" ")}>
-                                {razorpayLoading ? "..." : razorpayEnabled ? "Active" : "Inactive"}
-                            </span>
-                        </div>
-                        <div className="mt-1 text-sm text-stone-500">
-                            Enable or disable Razorpay online payments at checkout.
-                        </div>
-                    </div>
+                <div className="text-base font-semibold text-stone-900 mb-1">Payment Methods</div>
+                <div className="text-sm text-stone-500 mb-5">Control which payment options are available to customers at checkout.</div>
 
-                    {/* Toggle switch */}
-                    <button
-                        type="button"
-                        role="switch"
-                        aria-checked={razorpayEnabled}
-                        disabled={razorpayLoading || razorpaySaving}
-                        onClick={toggleRazorpay}
-                        className={[
-                            "relative inline-flex h-7 w-12 shrink-0 cursor-pointer items-center rounded-full transition-colors duration-200 ease-in-out focus:outline-none focus:ring-2 focus:ring-[#1e3a5f]/30 focus:ring-offset-2 disabled:opacity-50 disabled:cursor-not-allowed",
-                            razorpayEnabled ? "bg-emerald-500" : "bg-stone-300",
-                        ].join(" ")}
-                    >
-                        <span
+                {/* COD Toggle */}
+                <div className="rounded-xl border border-[#E8E4DE] p-4 mb-4">
+                    <div className="flex items-center justify-between gap-4">
+                        <div>
+                            <div className="text-sm font-semibold text-stone-900 flex items-center gap-2">
+                                Cash on Delivery
+                                <span className={[
+                                    "inline-flex items-center rounded-full px-2 py-0.5 text-[10px] font-bold uppercase tracking-wide",
+                                    codEnabled
+                                        ? "bg-emerald-50 text-emerald-700"
+                                        : "bg-stone-100 text-stone-400",
+                                ].join(" ")}>
+                                    {codLoading ? "..." : codEnabled ? "Active" : "Inactive"}
+                                </span>
+                            </div>
+                            <div className="mt-0.5 text-xs text-stone-500">
+                                Allow customers to pay at the time of delivery.
+                            </div>
+                        </div>
+                        <button
+                            type="button"
+                            role="switch"
+                            aria-checked={codEnabled}
+                            disabled={codLoading || codSaving}
+                            onClick={toggleCod}
                             className={[
-                                "inline-block h-5 w-5 rounded-full bg-white shadow-md transform transition-transform duration-200 ease-in-out",
-                                razorpayEnabled ? "translate-x-6" : "translate-x-1",
+                                "relative inline-flex h-7 w-12 shrink-0 cursor-pointer items-center rounded-full transition-colors duration-200 ease-in-out focus:outline-none focus:ring-2 focus:ring-[#1e3a5f]/30 focus:ring-offset-2 disabled:opacity-50 disabled:cursor-not-allowed",
+                                codEnabled ? "bg-emerald-500" : "bg-stone-300",
                             ].join(" ")}
-                        />
-                    </button>
+                        >
+                            <span
+                                className={[
+                                    "inline-block h-5 w-5 rounded-full bg-white shadow-md transform transition-transform duration-200 ease-in-out",
+                                    codEnabled ? "translate-x-6" : "translate-x-1",
+                                ].join(" ")}
+                            />
+                        </button>
+                    </div>
+                </div>
+
+                {/* Razorpay Toggle */}
+                <div className="rounded-xl border border-[#E8E4DE] p-4">
+                    <div className="flex items-center justify-between gap-4">
+                        <div>
+                            <div className="text-sm font-semibold text-stone-900 flex items-center gap-2">
+                                Razorpay (Online)
+                                <span className={[
+                                    "inline-flex items-center rounded-full px-2 py-0.5 text-[10px] font-bold uppercase tracking-wide",
+                                    razorpayEnabled
+                                        ? "bg-emerald-50 text-emerald-700"
+                                        : "bg-stone-100 text-stone-400",
+                                ].join(" ")}>
+                                    {razorpayLoading ? "..." : razorpayEnabled ? "Active" : "Inactive"}
+                                </span>
+                            </div>
+                            <div className="mt-0.5 text-xs text-stone-500">
+                                Accept online payments via UPI, cards, and net banking.
+                            </div>
+                        </div>
+                        <button
+                            type="button"
+                            role="switch"
+                            aria-checked={razorpayEnabled}
+                            disabled={razorpayLoading || razorpaySaving}
+                            onClick={toggleRazorpay}
+                            className={[
+                                "relative inline-flex h-7 w-12 shrink-0 cursor-pointer items-center rounded-full transition-colors duration-200 ease-in-out focus:outline-none focus:ring-2 focus:ring-[#1e3a5f]/30 focus:ring-offset-2 disabled:opacity-50 disabled:cursor-not-allowed",
+                                razorpayEnabled ? "bg-emerald-500" : "bg-stone-300",
+                            ].join(" ")}
+                        >
+                            <span
+                                className={[
+                                    "inline-block h-5 w-5 rounded-full bg-white shadow-md transform transition-transform duration-200 ease-in-out",
+                                    razorpayEnabled ? "translate-x-6" : "translate-x-1",
+                                ].join(" ")}
+                            />
+                        </button>
+                    </div>
                 </div>
 
                 {/* Info panel */}

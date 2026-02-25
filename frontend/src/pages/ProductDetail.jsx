@@ -15,7 +15,7 @@ import { fetchProductById } from "../services/products";
 import SEO from "../components/SEO";
 import { SkeletonProductDetail } from "../components/Skeleton";
 
-const money = (n) => `₹${Number(n || 0).toLocaleString("en-IN")}`;
+import { money } from "../utils/format";
 
 function cartKey(productId, variantId) {
   return variantId ? `${productId}_${variantId}` : String(productId);

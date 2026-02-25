@@ -11,7 +11,7 @@ import { useCart } from "../context/CartContext";
 import { useAuth } from "../context/AuthContext";
 import SEO from "../components/SEO";
 
-const money = (n) => `₹${Number(n || 0).toLocaleString("en-IN")}`;
+import { money } from "../utils/format";
 
 export default function Cart() {
   const navigate = useNavigate();

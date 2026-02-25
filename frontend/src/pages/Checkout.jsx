@@ -16,7 +16,7 @@ import { supabase } from "../services/supabase/client";
 import { getRazorpayKeyId, openRazorpayCheckout } from "../services/razorpay";
 import SEO from "../components/SEO";
 
-const money = (n) => `₹${Number(n || 0).toLocaleString("en-IN")}`;
+import { money } from "../utils/format";
 
 const EMPTY_ADDRESS = {
   fullName: "",

@@ -15,8 +15,9 @@ import { fetchProducts } from "../services/products";
 import { useCart } from "../context/CartContext";
 import useDebounce from "../hooks/useDebounce";
 import SEO from "../components/SEO";
+import { useToast } from "../context/ToastContext";
 
-const money = (n) => `₹${Number(n || 0).toLocaleString("en-IN")}`;
+import { money } from "../utils/format";
 
 export function Stars({ rating, count }) {
   if (!count) return null;
@@ -159,6 +160,7 @@ export const ProductCard = React.memo(function ProductCard({ p, onAdd, justAdded
 
 export default function Shop() {
   const { addItem } = useCart();
+  const { showToast } = useToast();
   const [searchParams, setSearchParams] = useSearchParams();
   const [products, setProducts] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -183,7 +185,6 @@ export default function Shop() {
   // Debounce search for performance
   const debouncedQuery = useDebounce(query, 300);
 
-  const [toast, setToast] = useState({ show: false, text: "" });
   const [justAddedId, setJustAddedId] = useState(null);
 
   useEffect(() => {
@@ -210,25 +211,19 @@ export default function Shop() {
     return list;
   }, [products, category, debouncedQuery]);
 
-  /** Refs for toast/button timers so we can clear them without polluting `window`. */
-  const toastTimerRef = useRef(null);
+  /** Ref for button feedback timer. */
   const btnTimerRef = useRef(null);
 
-  /** Cleanup timers on unmount. */
+  /** Cleanup timer on unmount. */
   useEffect(() => {
-    return () => {
-      clearTimeout(toastTimerRef.current);
-      clearTimeout(btnTimerRef.current);
-    };
+    return () => clearTimeout(btnTimerRef.current);
   }, []);
 
   /** Handles adding a product to cart with toast + button feedback. */
   const handleAdd = (p) => {
     addItem(p, 1);
     setJustAddedId(p.id);
-    setToast({ show: true, text: `${p.name} added` });
-    clearTimeout(toastTimerRef.current);
-    toastTimerRef.current = setTimeout(() => setToast({ show: false, text: "" }), 1600);
+    showToast(`${p.name} added to cart`, "success");
     clearTimeout(btnTimerRef.current);
     btnTimerRef.current = setTimeout(() => setJustAddedId(null), 1000);
   };
@@ -314,19 +309,6 @@ export default function Shop() {
         </div>
       )}
 
-      {/* Toast */}
-      <div className={`fixed bottom-6 right-6 z-50 card px-5 py-3.5 transition-all duration-300 ${toast.show ? "opacity-100 translate-y-0" : "opacity-0 translate-y-3 pointer-events-none"
-        }`} style={{ animation: toast.show ? "toastIn 0.2s ease-out" : undefined }}>
-        <div className="flex items-center gap-3">
-          <div className="h-8 w-8 rounded-lg bg-emerald-50 grid place-items-center">
-            <svg className="h-4 w-4 text-emerald-600" viewBox="0 0 20 20" fill="currentColor"><path fillRule="evenodd" d="M16.707 5.293a1 1 0 00-1.414 0L8 12.586 4.707 9.293a1 1 0 00-1.414 1.414l4 4a1 1 0 001.414 0l8-8a1 1 0 000-1.414z" clipRule="evenodd" /></svg>
-          </div>
-          <div>
-            <div className="text-sm font-semibold text-stone-900">Added to cart</div>
-            <div className="text-xs text-stone-500">{toast.text}</div>
-          </div>
-        </div>
-      </div>
     </div>
   );
 }

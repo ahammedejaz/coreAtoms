@@ -15,6 +15,7 @@ import { supabase } from "../services/supabase/client";
 import { ProductCard } from "./Shop";
 import SEO from "../components/SEO";
 import { SkeletonGrid } from "../components/Skeleton";
+import { useToast } from "../context/ToastContext";
 
 // ── Defaults (shown if admin hasn't saved yet) ────────────────────────────────
 const DEFAULT_HERO_IMAGES = [
@@ -59,11 +60,11 @@ const DEFAULT_PHILOSOPHY = {
 
 export default function Home() {
   const { addItem } = useCart();
+  const { showToast } = useToast();
 
   const [products, setProducts] = useState([]);
   const [loadingProducts, setLoadingProducts] = useState(true);
   const [fetchError, setFetchError] = useState("");
-  const [toast, setToast] = useState({ open: false, message: "" });
   const [justAddedId, setJustAddedId] = useState(null);
 
   // Settings state
@@ -166,27 +167,21 @@ export default function Home() {
 
   useEffect(() => { setHeroIndex(0); }, [heroImages]);
 
-  /** Refs for toast / button feedback timers (avoid polluting `window`). */
+  /** Ref for button feedback timer (avoid polluting `window`). */
   const btnTimerRef = useRef(null);
-  const toastTimerRef = useRef(null);
 
-  /** Cleanup timers on unmount. */
+  /** Cleanup timer on unmount. */
   useEffect(() => {
-    return () => {
-      clearTimeout(btnTimerRef.current);
-      clearTimeout(toastTimerRef.current);
-    };
+    return () => clearTimeout(btnTimerRef.current);
   }, []);
 
   /** Handles adding a product to cart with toast + button feedback. */
   const handleAdd = (p) => {
     addItem(p, 1);
     setJustAddedId(p.id);
-    setToast({ open: true, message: `${p.name} added to cart` });
+    showToast(`${p.name} added to cart`, "success");
     clearTimeout(btnTimerRef.current);
     btnTimerRef.current = setTimeout(() => setJustAddedId(null), 900);
-    clearTimeout(toastTimerRef.current);
-    toastTimerRef.current = setTimeout(() => setToast({ open: false, message: "" }), 1800);
   };
 
   const trust = heroCopy.trustIcons || DEFAULT_HERO_COPY.trustIcons;
@@ -373,19 +368,7 @@ export default function Home() {
         </div>
       </section >
 
-      {/* ── TOAST ─────────────────────────────────────────────────────────── */}
-      < div className={`fixed bottom-6 right-6 z-50 card px-5 py-3.5 transition-all duration-300 ${toast.open ? "opacity-100 translate-y-0" : "opacity-0 translate-y-3 pointer-events-none"
-        }`}>
-        <div className="flex items-center gap-3">
-          <div className="h-8 w-8 rounded-lg bg-emerald-50 grid place-items-center">
-            <svg className="h-4 w-4 text-emerald-600" viewBox="0 0 20 20" fill="currentColor"><path fillRule="evenodd" d="M16.707 5.293a1 1 0 00-1.414 0L8 12.586 4.707 9.293a1 1 0 00-1.414 1.414l4 4a1 1 0 001.414 0l8-8a1 1 0 000-1.414z" clipRule="evenodd" /></svg>
-          </div>
-          <div>
-            <div className="text-sm font-semibold text-stone-900">Added to cart</div>
-            <div className="text-xs text-stone-500">{toast.message}</div>
-          </div>
-        </div>
-      </div >
+
     </div >
   );
 }

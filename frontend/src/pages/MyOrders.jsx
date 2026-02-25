@@ -15,8 +15,9 @@ import { useAuth } from "../context/AuthContext";
 import { useToast } from "../context/ToastContext";
 import SEO from "../components/SEO";
 import { SkeletonOrderCard } from "../components/Skeleton";
+import OrderTimeline from "../components/OrderTimeline";
 
-const money = (n) => `₹${Number(n || 0).toLocaleString("en-IN")}`;
+import { money } from "../utils/format";
 
 function InlineReviewForm({ productId, orderId, productName, onDone }) {
   const { user } = useAuth();
@@ -204,6 +205,11 @@ export default function MyOrders() {
                     </span>
                   )}
                 </div>
+              </div>
+
+              {/* Order tracking timeline */}
+              <div className="mt-4 border-t border-[#E8E4DE] pt-2">
+                <OrderTimeline status={status} />
               </div>
 
               {/* Summary row */}

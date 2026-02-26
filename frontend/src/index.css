@@ -20,6 +20,47 @@
     background-color: #FAFAF8;
     color: #1C1917;
   }
+
+  /* ═══ PREMIUM SCROLLBAR ═══ */
+  /* WebKit (Chrome, Safari, Edge) */
+  ::-webkit-scrollbar {
+    width: 8px;
+    height: 8px;
+  }
+
+  ::-webkit-scrollbar-track {
+    background: transparent;
+  }
+
+  ::-webkit-scrollbar-thumb {
+    background: rgba(30, 58, 95, 0.18);
+    border-radius: 100px;
+    border: 2px solid transparent;
+    background-clip: content-box;
+    transition: background 0.2s ease;
+  }
+
+  ::-webkit-scrollbar-thumb:hover {
+    background: rgba(30, 58, 95, 0.35);
+    border: 2px solid transparent;
+    background-clip: content-box;
+  }
+
+  ::-webkit-scrollbar-thumb:active {
+    background: rgba(30, 58, 95, 0.50);
+    border: 1px solid transparent;
+    background-clip: content-box;
+  }
+
+  ::-webkit-scrollbar-corner {
+    background: transparent;
+  }
+
+  /* Firefox */
+  * {
+    scrollbar-width: thin;
+    scrollbar-color: rgba(30, 58, 95, 0.18) transparent;
+  }
 }
 
 @layer components {
@@ -398,5 +439,86 @@
 
   50% {
     box-shadow: 0 0 40px rgba(30, 58, 95, 0.18);
+  }
+}
+
+@keyframes floatOrb {
+
+  0%,
+  100% {
+    transform: translate(0, 0);
+  }
+
+  25% {
+    transform: translate(30px, -20px);
+  }
+
+  50% {
+    transform: translate(-20px, 30px);
+  }
+
+  75% {
+    transform: translate(20px, 20px);
+  }
+}
+
+/* ═══ FLOATING GRADIENT BLOBS — drift paths ═══ */
+@keyframes driftA {
+
+  0%,
+  100% {
+    transform: translate(0, 0);
+  }
+
+  25% {
+    transform: translate(80px, -60px);
+  }
+
+  50% {
+    transform: translate(-40px, 50px);
+  }
+
+  75% {
+    transform: translate(60px, 20px);
+  }
+}
+
+@keyframes driftB {
+
+  0%,
+  100% {
+    transform: translate(0, 0);
+  }
+
+  25% {
+    transform: translate(-70px, 50px);
+  }
+
+  50% {
+    transform: translate(50px, -30px);
+  }
+
+  75% {
+    transform: translate(-30px, -60px);
+  }
+}
+
+@keyframes driftC {
+
+  0%,
+  100% {
+    transform: translate(0, 0);
+  }
+
+  25% {
+    transform: translate(40px, 80px);
+  }
+
+  50% {
+    transform: translate(-60px, -20px);
+  }
+
+  75% {
+    transform: translate(30px, -70px);
   }
 }

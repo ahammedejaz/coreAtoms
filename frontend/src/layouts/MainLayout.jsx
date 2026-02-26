@@ -13,6 +13,7 @@ import { useEffect } from "react";
 import Navbar from "../components/Navbar";
 import Footer from "../components/Footer";
 import ErrorBoundary from "../components/ErrorBoundary";
+import FloatingShapes from "../components/FloatingShapes";
 
 /** Scrolls to top on every route change. */
 function ScrollToTop() {
@@ -32,19 +33,25 @@ function PageFallback() {
 
 export default function MainLayout() {
   return (
-    <div className="min-h-screen flex flex-col" style={{ backgroundColor: "#FAFAF8" }}>
-      <ScrollToTop />
-      <Navbar />
-      <main className="flex-1 py-12">
-        <div className="mx-auto max-w-6xl px-6">
-          <ErrorBoundary>
-            <Suspense fallback={<PageFallback />}>
-              <Outlet />
-            </Suspense>
-          </ErrorBoundary>
-        </div>
-      </main>
-      <Footer />
-    </div>
+    <>
+      {/* Floating gradient blobs — fixed behind everything */}
+      <FloatingShapes />
+
+      {/* Page shell — sits above the gradients */}
+      <div className="min-h-screen flex flex-col relative" style={{ zIndex: 1 }}>
+        <ScrollToTop />
+        <Navbar />
+        <main className="flex-1 py-12">
+          <div className="mx-auto max-w-6xl px-6">
+            <ErrorBoundary>
+              <Suspense fallback={<PageFallback />}>
+                <Outlet />
+              </Suspense>
+            </ErrorBoundary>
+          </div>
+        </main>
+        <Footer />
+      </div>
+    </>
   );
 }

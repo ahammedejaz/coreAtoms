@@ -13,7 +13,10 @@ export default function Footer() {
   const year = new Date().getFullYear();
 
   return (
-    <footer className="mt-auto border-t border-[#E8E4DE] bg-white">
+    <footer className="mt-auto bg-gradient-to-b from-[#FAFAF8] via-white to-[#f5f3ef] relative">
+      {/* Top glow line */}
+      <div className="absolute top-0 left-0 right-0 h-px bg-gradient-to-r from-transparent via-[#1e3a5f]/10 to-transparent" />
+      <div className="absolute top-0 left-1/4 right-1/4 h-px bg-gradient-to-r from-transparent via-[#1e3a5f]/8 to-transparent blur-sm" />
       <div className="mx-auto max-w-6xl px-6 py-14">
         <div className="grid gap-12 md:grid-cols-4">
 

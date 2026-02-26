@@ -72,6 +72,15 @@ export default function AdminReviews({ onCountChange }) {
         );
     }, [reviews, search]);
 
+    // Pagination
+    const REVIEW_PAGE_SIZE = 10;
+    const [reviewPage, setReviewPage] = useState(1);
+    const reviewTotalPages = Math.max(1, Math.ceil(filtered.length / REVIEW_PAGE_SIZE));
+    const reviewSafePage = Math.min(reviewPage, reviewTotalPages);
+    const paginatedReviews = filtered.slice((reviewSafePage - 1) * REVIEW_PAGE_SIZE, reviewSafePage * REVIEW_PAGE_SIZE);
+
+    useEffect(() => { setReviewPage(1); }, [search]);
+
     return (
         <>
             <div className="rounded-2xl border border-[#E8E4DE] bg-white p-5">
@@ -101,7 +110,7 @@ export default function AdminReviews({ onCountChange }) {
                     </div>
                 ) : (
                     <div className="mt-5 space-y-4">
-                        {filtered.map((r) => (
+                        {paginatedReviews.map((r) => (
                             <div key={r.id} className="rounded-2xl border border-[#E8E4DE] bg-white p-4 shadow-sm">
                                 <div className="flex items-start justify-between gap-3">
                                     <div className="min-w-0">
@@ -130,6 +139,16 @@ export default function AdminReviews({ onCountChange }) {
                                 </div>
                             </div>
                         ))}
+                    </div>
+                )}
+
+                {filtered.length > REVIEW_PAGE_SIZE && (
+                    <div className="mt-4 flex items-center justify-between">
+                        <button type="button" onClick={() => setReviewPage(p => Math.max(1, p - 1))} disabled={reviewSafePage <= 1}
+                            className="rounded-xl border border-[#E8E4DE] bg-white px-3 py-2 text-xs font-semibold text-stone-700 hover:bg-stone-50 disabled:opacity-30 disabled:cursor-not-allowed">← Previous</button>
+                        <span className="text-xs text-stone-400">Page {reviewSafePage} of {reviewTotalPages}</span>
+                        <button type="button" onClick={() => setReviewPage(p => Math.min(reviewTotalPages, p + 1))} disabled={reviewSafePage >= reviewTotalPages}
+                            className="rounded-xl border border-[#E8E4DE] bg-white px-3 py-2 text-xs font-semibold text-stone-700 hover:bg-stone-50 disabled:opacity-30 disabled:cursor-not-allowed">Next →</button>
                     </div>
                 )}
             </div>

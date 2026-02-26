@@ -476,6 +476,15 @@ export default function AdminProducts({ onProductsChange }) {
         );
     }, [products, productSearch]);
 
+    // Pagination
+    const PRODUCT_PAGE_SIZE = 10;
+    const [productPage, setProductPage] = useState(1);
+    const productTotalPages = Math.max(1, Math.ceil(filteredProducts.length / PRODUCT_PAGE_SIZE));
+    const productSafePage = Math.min(productPage, productTotalPages);
+    const paginatedProducts = filteredProducts.slice((productSafePage - 1) * PRODUCT_PAGE_SIZE, productSafePage * PRODUCT_PAGE_SIZE);
+
+    useEffect(() => { setProductPage(1); }, [productSearch]);
+
     const isDirty = useMemo(() => {
         const init = initialFormState.current;
         if (!init) return false;
@@ -1191,7 +1200,7 @@ export default function AdminProducts({ onProductsChange }) {
                             <div className="mt-2">
                                 {/* Mobile cards */}
                                 <div className="grid gap-3 md:hidden">
-                                    {filteredProducts.map((p) => {
+                                    {paginatedProducts.map((p) => {
                                         const out = Number(p.stock_qty || 0) <= 0;
                                         return (
                                             <div
@@ -1312,7 +1321,7 @@ export default function AdminProducts({ onProductsChange }) {
                                         </thead>
 
                                         <tbody>
-                                            {filteredProducts.map((p) => {
+                                            {paginatedProducts.map((p) => {
                                                 const out = Number(p.stock_qty || 0) <= 0;
                                                 return (
                                                     <tr key={p.id} className="border-b align-top">
@@ -1454,6 +1463,16 @@ export default function AdminProducts({ onProductsChange }) {
                             </div>
                         )}
                     </div>
+
+                    {filteredProducts.length > PRODUCT_PAGE_SIZE && (
+                        <div className="mt-4 flex items-center justify-between">
+                            <button type="button" onClick={() => setProductPage(p => Math.max(1, p - 1))} disabled={productSafePage <= 1}
+                                className="rounded-xl border border-[#E8E4DE] bg-white px-3 py-2 text-xs font-semibold text-stone-700 hover:bg-stone-50 disabled:opacity-30 disabled:cursor-not-allowed">← Previous</button>
+                            <span className="text-xs text-stone-400">Page {productSafePage} of {productTotalPages}</span>
+                            <button type="button" onClick={() => setProductPage(p => Math.min(productTotalPages, p + 1))} disabled={productSafePage >= productTotalPages}
+                                className="rounded-xl border border-[#E8E4DE] bg-white px-3 py-2 text-xs font-semibold text-stone-700 hover:bg-stone-50 disabled:opacity-30 disabled:cursor-not-allowed">Next →</button>
+                        </div>
+                    )}
                 </div>
             </div>
 

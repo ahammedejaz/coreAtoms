@@ -15,8 +15,10 @@ import { fetchProducts } from "../services/products";
 import { useCart } from "../context/CartContext";
 import useDebounce from "../hooks/useDebounce";
 import SEO from "../components/SEO";
+import { useToast } from "../context/ToastContext";
+import ScrollReveal from "../components/ScrollReveal";
 
-const money = (n) => `₹${Number(n || 0).toLocaleString("en-IN")}`;
+import { money } from "../utils/format";
 
 export function Stars({ rating, count }) {
   if (!count) return null;
@@ -36,9 +38,8 @@ export const ProductCard = React.memo(function ProductCard({ p, onAdd, justAdded
     "Premium daily supplement with clean ingredients and reliable quality.";
 
   return (
-    <div className="group flex flex-col rounded-2xl border border-[#E8E4DE] bg-white overflow-hidden shadow-[0_2px_12px_rgba(0,0,0,0.06)] hover:shadow-[0_8px_30px_rgba(0,0,0,0.10)] hover:-translate-y-0.5 transition-all duration-250">
+    <div className="group flex flex-col rounded-2xl border border-[#E8E4DE] bg-white overflow-hidden shadow-[0_2px_12px_rgba(0,0,0,0.06)] hover:shadow-[0_4px_20px_rgba(30,58,95,0.12),0_0_0_1px_rgba(30,58,95,0.08)] hover:border-[#1e3a5f]/20 hover:scale-[1.02] transition-all duration-300 ease-out">
 
-      {/* Image */}
       <Link to={`/product/${p.id}`} className="block relative overflow-hidden bg-stone-50" style={{ height: "220px" }}>
         <img
           src={p.image}
@@ -129,10 +130,9 @@ export const ProductCard = React.memo(function ProductCard({ p, onAdd, justAdded
           )}
 
           {p.variants && p.variants.length > 0 ? (
-            // Has variants → must pick on detail page
             <Link
               to={`/product/${p.id}`}
-              className="block w-full text-center rounded-xl px-4 py-2.5 text-sm font-semibold border border-[#1e3a5f] bg-[#1e3a5f] text-white hover:bg-[#162d4a] shadow-sm hover:shadow transition-all duration-200"
+              className="btn-primary block w-full text-center"
             >
               Select option →
             </Link>
@@ -145,7 +145,7 @@ export const ProductCard = React.memo(function ProductCard({ p, onAdd, justAdded
                 ? "border-stone-200 bg-stone-100 text-stone-400 cursor-not-allowed"
                 : justAdded
                   ? "border-emerald-300 bg-emerald-50 text-emerald-700"
-                  : "border-[#1e3a5f] bg-[#1e3a5f] text-white hover:bg-[#162d4a] shadow-sm hover:shadow"
+                  : "btn-primary"
                 }`}
             >
               {justAdded ? "Added to cart ✓" : out ? "Out of stock" : "Add to cart"}
@@ -159,6 +159,7 @@ export const ProductCard = React.memo(function ProductCard({ p, onAdd, justAdded
 
 export default function Shop() {
   const { addItem } = useCart();
+  const { showToast } = useToast();
   const [searchParams, setSearchParams] = useSearchParams();
   const [products, setProducts] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -183,7 +184,6 @@ export default function Shop() {
   // Debounce search for performance
   const debouncedQuery = useDebounce(query, 300);
 
-  const [toast, setToast] = useState({ show: false, text: "" });
   const [justAddedId, setJustAddedId] = useState(null);
 
   useEffect(() => {
@@ -210,25 +210,19 @@ export default function Shop() {
     return list;
   }, [products, category, debouncedQuery]);
 
-  /** Refs for toast/button timers so we can clear them without polluting `window`. */
-  const toastTimerRef = useRef(null);
+  /** Ref for button feedback timer. */
   const btnTimerRef = useRef(null);
 
-  /** Cleanup timers on unmount. */
+  /** Cleanup timer on unmount. */
   useEffect(() => {
-    return () => {
-      clearTimeout(toastTimerRef.current);
-      clearTimeout(btnTimerRef.current);
-    };
+    return () => clearTimeout(btnTimerRef.current);
   }, []);
 
   /** Handles adding a product to cart with toast + button feedback. */
   const handleAdd = (p) => {
     addItem(p, 1);
     setJustAddedId(p.id);
-    setToast({ show: true, text: `${p.name} added` });
-    clearTimeout(toastTimerRef.current);
-    toastTimerRef.current = setTimeout(() => setToast({ show: false, text: "" }), 1600);
+    showToast(`${p.name} added to cart`, "success");
     clearTimeout(btnTimerRef.current);
     btnTimerRef.current = setTimeout(() => setJustAddedId(null), 1000);
   };
@@ -252,12 +246,14 @@ export default function Shop() {
   return (
     <div>
       {/* Page header */}
-      <div className="mb-8">
-        <SEO title="Shop | Core Atoms" description="Browse our full range of premium nutraceuticals. Clean labels, lab-tested, COD available across India." />
-        <p className="section-label">Our Collection</p>
-        <h1 className="mt-2 text-3xl font-semibold tracking-tight text-stone-900">Shop</h1>
-        <p className="mt-2 text-sm text-stone-500">Premium supplements, clean labels, COD available across India.</p>
-      </div>
+      <ScrollReveal>
+        <div className="mb-8">
+          <SEO title="Shop | Core Atoms" description="Browse our full range of premium nutraceuticals. Clean labels, lab-tested, COD available across India." />
+          <p className="section-label">Our Collection</p>
+          <h1 className="mt-2 text-3xl font-semibold tracking-tight text-stone-900">Shop</h1>
+          <p className="mt-2 text-sm text-stone-500">Premium supplements, clean labels, COD available across India.</p>
+        </div>
+      </ScrollReveal>
 
       {/* Filters */}
       <div className="mb-8 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
@@ -300,33 +296,22 @@ export default function Shop() {
         <div className="card p-6 mb-6 text-sm text-red-600">{err}</div>
       )}
 
-      {active.length === 0 ? (
-        <div className="card p-12 text-center">
-          <p className="text-base font-semibold text-stone-900">No products found</p>
-          <p className="mt-1 text-sm text-stone-500">Try a different search or category.</p>
-          <button onClick={() => { setCategory("All"); setQuery(""); }} className="btn-ghost mt-5">Reset filters</button>
-        </div>
-      ) : (
-        <div className="grid gap-5 sm:grid-cols-2 lg:grid-cols-3">
-          {active.map((p) => (
-            <ProductCard key={p.id} p={p} onAdd={handleAdd} justAdded={justAddedId === p.id} />
-          ))}
-        </div>
-      )}
+      <ScrollReveal delay={100}>
+        {active.length === 0 ? (
+          <div className="card p-12 text-center">
+            <p className="text-base font-semibold text-stone-900">No products found</p>
+            <p className="mt-1 text-sm text-stone-500">Try a different search or category.</p>
+            <button onClick={() => { setCategory("All"); setQuery(""); }} className="btn-ghost mt-5">Reset filters</button>
+          </div>
+        ) : (
+          <div className="grid gap-5 sm:grid-cols-2 lg:grid-cols-3">
+            {active.map((p) => (
+              <ProductCard key={p.id} p={p} onAdd={handleAdd} justAdded={justAddedId === p.id} />
+            ))}
+          </div>
+        )}
+      </ScrollReveal>
 
-      {/* Toast */}
-      <div className={`fixed bottom-6 right-6 z-50 card px-5 py-3.5 transition-all duration-300 ${toast.show ? "opacity-100 translate-y-0" : "opacity-0 translate-y-3 pointer-events-none"
-        }`} style={{ animation: toast.show ? "toastIn 0.2s ease-out" : undefined }}>
-        <div className="flex items-center gap-3">
-          <div className="h-8 w-8 rounded-lg bg-emerald-50 grid place-items-center">
-            <svg className="h-4 w-4 text-emerald-600" viewBox="0 0 20 20" fill="currentColor"><path fillRule="evenodd" d="M16.707 5.293a1 1 0 00-1.414 0L8 12.586 4.707 9.293a1 1 0 00-1.414 1.414l4 4a1 1 0 001.414 0l8-8a1 1 0 000-1.414z" clipRule="evenodd" /></svg>
-          </div>
-          <div>
-            <div className="text-sm font-semibold text-stone-900">Added to cart</div>
-            <div className="text-xs text-stone-500">{toast.text}</div>
-          </div>
-        </div>
-      </div>
     </div>
   );
 }

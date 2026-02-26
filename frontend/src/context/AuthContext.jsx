@@ -28,10 +28,20 @@ const ACTIVITY_THROTTLE_MS = 30_000;
 
 const AuthContext = createContext(null);
 
+const PROFILE_CACHE_KEY = "coreatoms_profile";
+
+function getCachedProfile() {
+  try {
+    const raw = localStorage.getItem(PROFILE_CACHE_KEY);
+    return raw ? JSON.parse(raw) : null;
+  } catch { return null; }
+}
+
 export function AuthProvider({ children }) {
+  const cachedRef = useRef(getCachedProfile());
   const [loading, setLoading] = useState(true);
   const [session, setSession] = useState(null);
-  const [profile, setProfile] = useState(null);
+  const [profile, setProfile] = useState(cachedRef.current);
 
   const user = session?.user ?? null;
   const isAuthenticated = !!user;
@@ -39,11 +49,18 @@ export function AuthProvider({ children }) {
 
   const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
-  const fetchProfileWithRetry = async (uid, attempts = 5) => {
-    if (!uid) {
-      setProfile(null);
-      return;
+  // Update profile + persist to cache
+  const updateProfile = useCallback((data) => {
+    setProfile(data);
+    if (data) {
+      try { localStorage.setItem(PROFILE_CACHE_KEY, JSON.stringify(data)); } catch { }
+    } else {
+      localStorage.removeItem(PROFILE_CACHE_KEY);
     }
+  }, []);
+
+  const fetchProfileWithRetry = useCallback(async (uid, attempts = 3) => {
+    if (!uid) { updateProfile(null); return; }
 
     for (let i = 0; i < attempts; i++) {
       const { data, error } = await supabase
@@ -52,46 +69,61 @@ export function AuthProvider({ children }) {
         .eq("id", uid)
         .maybeSingle();
 
-      if (!error && data) {
-        setProfile(data);
-        return;
-      }
+      if (!error && data) { updateProfile(data); return; }
 
-      const msg = error
-        ? `${error.message} (code: ${error.code || "n/a"})`
-        : "no row yet";
-
-      console.warn(`Profile fetch attempt ${i + 1}/${attempts} failed:`, msg);
-
-      await sleep(250 * (i + 1));
+      console.warn(`Profile fetch ${i + 1}/${attempts}:`, error?.message || "no row");
+      await sleep(200 * (i + 1));
     }
 
-    setProfile(null);
-  };
+    updateProfile(null);
+  }, [updateProfile]);
 
   useEffect(() => {
     let mounted = true;
+    let initialDone = false; // prevents INITIAL_SESSION from racing with getSession
 
-    supabase.auth.getSession().then(({ data }) => {
+    // getSession() reads from local storage, NOT network — near-instant
+    supabase.auth.getSession().then(async ({ data }) => {
       if (!mounted) return;
+      initialDone = true;
       const s = data.session ?? null;
       setSession(s);
-      if (s?.user?.id) fetchProfileWithRetry(s.user.id);
-      setLoading(false);
+
+      if (s?.user?.id) {
+        const cached = cachedRef.current;
+        if (cached && cached.id === s.user.id) {
+          // Cache hit — render immediately, verify in background
+          setLoading(false);
+          fetchProfileWithRetry(s.user.id);
+        } else {
+          // No cache or different user — must wait for profile
+          await fetchProfileWithRetry(s.user.id);
+          if (mounted) setLoading(false);
+        }
+      } else {
+        // No session
+        updateProfile(null);
+        if (mounted) setLoading(false);
+      }
     });
 
+    // Listen for subsequent auth changes (login, logout, token refresh)
+    // Skip INITIAL_SESSION since getSession handles it above
     const { data: sub } = supabase.auth.onAuthStateChange((_event, newSession) => {
+      if (!initialDone) return; // skip INITIAL_SESSION race
       setSession(newSession ?? null);
-      if (newSession?.user?.id) fetchProfileWithRetry(newSession.user.id);
-      else setProfile(null);
-      setLoading(false);
+      if (newSession?.user?.id) {
+        fetchProfileWithRetry(newSession.user.id);
+      } else {
+        updateProfile(null);
+      }
     });
 
     return () => {
       mounted = false;
       sub.subscription?.unsubscribe?.();
     };
-  }, []);
+  }, [fetchProfileWithRetry, updateProfile]);
 
   // ─── Inactivity session timeout ────────────────────────────────────
   const timerRef = useRef(null);
@@ -99,7 +131,7 @@ export function AuthProvider({ children }) {
 
   const handleSignOut = useCallback(async () => {
     await supabase.auth.signOut();
-    setProfile(null);
+    updateProfile(null);
     localStorage.removeItem(ACTIVITY_STORAGE_KEY);
   }, []);
 

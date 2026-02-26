@@ -15,6 +15,8 @@ import { supabase } from "../services/supabase/client";
 import { ProductCard } from "./Shop";
 import SEO from "../components/SEO";
 import { SkeletonGrid } from "../components/Skeleton";
+import { useToast } from "../context/ToastContext";
+import ScrollReveal from "../components/ScrollReveal";
 
 // ── Defaults (shown if admin hasn't saved yet) ────────────────────────────────
 const DEFAULT_HERO_IMAGES = [
@@ -59,14 +61,15 @@ const DEFAULT_PHILOSOPHY = {
 
 export default function Home() {
   const { addItem } = useCart();
+  const { showToast } = useToast();
 
   const [products, setProducts] = useState([]);
   const [loadingProducts, setLoadingProducts] = useState(true);
   const [fetchError, setFetchError] = useState("");
-  const [toast, setToast] = useState({ open: false, message: "" });
   const [justAddedId, setJustAddedId] = useState(null);
 
   // Settings state
+  const [heroReady, setHeroReady] = useState(false);
   const [heroImages, setHeroImages] = useState(
     DEFAULT_HERO_IMAGES.map((url) => ({ url, position: "50% 50%" }))
   );
@@ -147,6 +150,15 @@ export default function Home() {
 
   useEffect(() => { loadData(); }, [loadData]);
 
+  // Preload hero images into browser cache so carousel transitions are instant
+  useEffect(() => {
+    if (!heroImages.length) return;
+    heroImages.forEach((slide) => {
+      const img = new window.Image();
+      img.src = slide.url;
+    });
+  }, [heroImages]);
+
   // Carousel auto-advance
   useEffect(() => {
     if (heroImages.length <= 1) return;
@@ -156,27 +168,21 @@ export default function Home() {
 
   useEffect(() => { setHeroIndex(0); }, [heroImages]);
 
-  /** Refs for toast / button feedback timers (avoid polluting `window`). */
+  /** Ref for button feedback timer (avoid polluting `window`). */
   const btnTimerRef = useRef(null);
-  const toastTimerRef = useRef(null);
 
-  /** Cleanup timers on unmount. */
+  /** Cleanup timer on unmount. */
   useEffect(() => {
-    return () => {
-      clearTimeout(btnTimerRef.current);
-      clearTimeout(toastTimerRef.current);
-    };
+    return () => clearTimeout(btnTimerRef.current);
   }, []);
 
   /** Handles adding a product to cart with toast + button feedback. */
   const handleAdd = (p) => {
     addItem(p, 1);
     setJustAddedId(p.id);
-    setToast({ open: true, message: `${p.name} added to cart` });
+    showToast(`${p.name} added to cart`, "success");
     clearTimeout(btnTimerRef.current);
     btnTimerRef.current = setTimeout(() => setJustAddedId(null), 900);
-    clearTimeout(toastTimerRef.current);
-    toastTimerRef.current = setTimeout(() => setToast({ open: false, message: "" }), 1800);
   };
 
   const trust = heroCopy.trustIcons || DEFAULT_HERO_COPY.trustIcons;
@@ -189,11 +195,29 @@ export default function Home() {
       />
 
       {/* ── HERO ──────────────────────────────────────────────────────────── */}
-      <section className="rounded-3xl border border-[#E8E4DE] bg-white overflow-hidden shadow-[0_4px_40px_rgba(0,0,0,0.08)]">
+      <section className="rounded-3xl bg-white overflow-hidden relative" style={{ boxShadow: '0 4px 20px rgba(0,0,0,0.06), 0 12px 48px rgba(30,58,95,0.08), inset 0 1px 0 rgba(255,255,255,0.9)', border: '1px solid rgba(232,228,222,0.5)' }}>
+        {/* Subtle gradient mesh overlay */}
+        <div className="absolute inset-0 pointer-events-none z-0 opacity-30" style={{ background: 'radial-gradient(ellipse at 80% 20%, rgba(30,58,95,0.06), transparent 50%), radial-gradient(ellipse at 20% 80%, rgba(30,58,95,0.04), transparent 50%)' }} />
         <div className="grid lg:grid-cols-2 gap-0">
 
           {/* LEFT — carousel: aspect-ratio on mobile, stretch to full card height on desktop */}
           <div className="relative overflow-hidden aspect-[4/3] lg:aspect-auto">
+            {/* Shimmer skeleton — visible until first hero image loads */}
+            <div
+              className={`absolute inset-0 bg-stone-100 transition-opacity duration-500 ${heroReady ? "opacity-0 pointer-events-none" : "opacity-100"
+                }`}
+              style={{ zIndex: 5 }}
+            >
+              <div
+                className="absolute inset-0"
+                style={{
+                  background: "linear-gradient(90deg, transparent 0%, rgba(255,255,255,0.5) 50%, transparent 100%)",
+                  backgroundSize: "200% 100%",
+                  animation: "shimmer 1.5s infinite",
+                }}
+              />
+            </div>
+
             <div className="absolute inset-0">
               {heroImages.map((slide, i) => (
                 <div
@@ -206,8 +230,10 @@ export default function Home() {
                     alt={`Hero ${i + 1}`}
                     className="absolute inset-0 h-full w-full object-cover"
                     style={{ objectPosition: slide.position || "50% 50%" }}
-                    loading={i === 0 ? "eager" : "lazy"}
+                    loading="eager"
+                    fetchpriority={i === 0 ? "high" : "auto"}
                     sizes="(max-width: 1024px) 100vw, 50vw"
+                    onLoad={i === 0 ? () => setHeroReady(true) : undefined}
                   />
                   <div className="absolute inset-0 bg-gradient-to-r from-white/20 via-transparent to-transparent" />
                 </div>
@@ -258,10 +284,10 @@ export default function Home() {
                 {heroCopy.secondaryCta || "View best sellers"} →
               </Link>
             </div>
-            <div className="mt-10 grid grid-cols-3 gap-3 border-t border-[#E8E4DE] pt-8">
+            <div className="mt-10 grid grid-cols-3 gap-3 pt-8" style={{ borderTop: '1px solid rgba(232,228,222,0.5)' }}>
               {trust.slice(0, 3).map((t) => (
-                <div key={t.label} className="text-center">
-                  <div className="text-xl mb-1">{t.icon}</div>
+                <div key={t.label} className="text-center group">
+                  <div className="text-xl mb-1 group-hover:scale-110 transition-transform duration-300">{t.icon}</div>
                   <div className="text-[11px] font-medium text-stone-500">{t.label}</div>
                 </div>
               ))}
@@ -271,93 +297,98 @@ export default function Home() {
       </section>
 
       {/* ── PILLARS ───────────────────────────────────────────────────────── */}
-      <section>
-        <div className="grid gap-5 sm:grid-cols-2 lg:grid-cols-4">
-          {pillars.map((p, i) => (
-            <div key={i} className="group rounded-2xl border border-[#E8E4DE] bg-white p-6 hover:shadow-[0_4px_20px_rgba(0,0,0,0.08)] hover:-translate-y-0.5 transition-all duration-200">
-              <div className="text-[#1e3a5f] text-xl mb-4">{p.icon}</div>
-              <div className="text-sm font-semibold text-stone-900">{p.title}</div>
-              <div className="mt-1.5 text-[13px] text-stone-500 leading-relaxed">{p.desc}</div>
-            </div>
-          ))}
-        </div>
-      </section>
-
-      {/* ── FEATURED PRODUCTS ─────────────────────────────────────────────── */}
-      <section>
-        <div className="flex items-end justify-between mb-8">
-          <div>
-            <p className="section-label">Top Picks</p>
-            <h2 className="mt-1.5 text-2xl font-semibold tracking-tight text-stone-900">Featured Products</h2>
-          </div>
-          <Link to="/shop" className="text-sm font-semibold text-[#1e3a5f] hover:underline underline-offset-2">View all →</Link>
-        </div>
-        {loadingProducts ? (
-          <SkeletonGrid count={6} />
-        ) : fetchError ? (
-          <div className="card p-12 text-center">
-            <div className="mx-auto mb-3 h-12 w-12 rounded-xl bg-red-50 border border-red-200 grid place-items-center">
-              <svg className="h-5 w-5 text-red-400" viewBox="0 0 20 20" fill="currentColor"><path fillRule="evenodd" d="M18 10a8 8 0 11-16 0 8 8 0 0116 0zm-7 4a1 1 0 11-2 0 1 1 0 012 0zm-1-9a1 1 0 00-1 1v4a1 1 0 102 0V6a1 1 0 00-1-1z" clipRule="evenodd" /></svg>
-            </div>
-            <p className="font-semibold text-stone-900">Unable to load products</p>
-            <p className="mt-1 text-sm text-stone-500">{fetchError}</p>
-            <button type="button" onClick={loadData} className="btn-primary mt-5 inline-flex">Try again</button>
-          </div>
-        ) : (
-          <div className="grid gap-5 sm:grid-cols-2 lg:grid-cols-3">
-            {products.map((p) => (
-              <ProductCard key={p.id} p={p} onAdd={handleAdd} justAdded={justAddedId === p.id} />
+      <ScrollReveal>
+        <section>
+          <div className="grid gap-5 sm:grid-cols-2 lg:grid-cols-4">
+            {pillars.map((p, i) => (
+              <div key={i} className="card-shine group rounded-2xl bg-white/80 p-6 relative overflow-hidden transition-all duration-500 hover:-translate-y-1" style={{ border: '1px solid rgba(232,228,222,0.6)', boxShadow: '0 2px 8px rgba(0,0,0,0.03), 0 4px 16px rgba(0,0,0,0.02), inset 0 1px 0 rgba(255,255,255,0.8)', backdropFilter: 'blur(8px)' }}
+                onMouseEnter={(e) => { e.currentTarget.style.boxShadow = '0 8px 24px rgba(0,0,0,0.06), 0 16px 40px rgba(30,58,95,0.06), inset 0 1px 0 rgba(255,255,255,0.9)'; }}
+                onMouseLeave={(e) => { e.currentTarget.style.boxShadow = '0 2px 8px rgba(0,0,0,0.03), 0 4px 16px rgba(0,0,0,0.02), inset 0 1px 0 rgba(255,255,255,0.8)'; }}>
+                <div className="h-10 w-10 rounded-xl bg-gradient-to-br from-[#EFF6FF] to-[#1e3a5f]/10 flex items-center justify-center text-[#1e3a5f] text-xl mb-4 group-hover:scale-110 transition-transform duration-300" style={{ boxShadow: '0 2px 8px rgba(30,58,95,0.1)' }}>{p.icon}</div>
+                <div className="text-sm font-semibold text-stone-900">{p.title}</div>
+                <div className="mt-1.5 text-[13px] text-stone-500 leading-relaxed">{p.desc}</div>
+              </div>
             ))}
           </div>
-        )}
-      </section>
+        </section>
+      </ScrollReveal>
+
+      {/* ── FEATURED PRODUCTS ─────────────────────────────────────────────── */}
+      <ScrollReveal>
+        <section>
+          <div className="flex items-end justify-between mb-8">
+            <div>
+              <p className="section-label">Top Picks</p>
+              <h2 className="mt-1.5 text-2xl font-semibold tracking-tight text-stone-900">Featured Products</h2>
+            </div>
+            <Link to="/shop" className="text-sm font-semibold text-[#1e3a5f] hover:underline underline-offset-2">View all →</Link>
+          </div>
+          {loadingProducts ? (
+            <SkeletonGrid count={6} />
+          ) : fetchError ? (
+            <div className="card p-12 text-center">
+              <div className="mx-auto mb-3 h-12 w-12 rounded-xl bg-red-50 border border-red-200 grid place-items-center">
+                <svg className="h-5 w-5 text-red-400" viewBox="0 0 20 20" fill="currentColor"><path fillRule="evenodd" d="M18 10a8 8 0 11-16 0 8 8 0 0116 0zm-7 4a1 1 0 11-2 0 1 1 0 012 0zm-1-9a1 1 0 00-1 1v4a1 1 0 102 0V6a1 1 0 00-1-1z" clipRule="evenodd" /></svg>
+              </div>
+              <p className="font-semibold text-stone-900">Unable to load products</p>
+              <p className="mt-1 text-sm text-stone-500">{fetchError}</p>
+              <button type="button" onClick={loadData} className="btn-primary mt-5 inline-flex">Try again</button>
+            </div>
+          ) : (
+            <div className="grid gap-5 sm:grid-cols-2 lg:grid-cols-3">
+              {products.map((p) => (
+                <ProductCard key={p.id} p={p} onAdd={handleAdd} justAdded={justAddedId === p.id} />
+              ))}
+            </div>
+          )}
+        </section>
+      </ScrollReveal>
 
       {/* ── SHOP BY CATEGORY ──────────────────────────────────────────────── */}
-      < section >
-        <div className="text-center mb-10">
-          <p className="section-label">Browse by Goal</p>
-          <h2 className="mt-2 text-2xl font-semibold tracking-tight text-stone-900">Shop by Category</h2>
-        </div>
-        <div className="grid grid-cols-2 gap-4 sm:grid-cols-3 lg:grid-cols-6">
-          {categories.map((cat, i) => (
-            <Link key={i} to={`/shop?category=${encodeURIComponent(cat.category)}`}
-              className="group flex flex-col items-center gap-3 rounded-2xl border border-[#E8E4DE] bg-white p-5 text-center hover:border-[#1e3a5f]/30 hover:shadow-[0_4px_20px_rgba(0,0,0,0.08)] hover:-translate-y-0.5 transition-all duration-200">
-              <div className="h-12 w-12 rounded-xl bg-[#EFF6FF] flex items-center justify-center text-2xl group-hover:bg-[#1e3a5f]/10 transition-colors">{cat.emoji}</div>
-              <span className="text-[12px] font-semibold text-stone-700 group-hover:text-[#1e3a5f] leading-snug transition-colors">{cat.label}</span>
-            </Link>
-          ))}
-        </div>
-      </section >
+      <ScrollReveal>
+        < section >
+          <div className="text-center mb-10">
+            <p className="section-label">Browse by Goal</p>
+            <h2 className="mt-2 text-2xl font-semibold tracking-tight text-stone-900">Shop by Category</h2>
+          </div>
+          <div className="grid grid-cols-2 gap-4 sm:grid-cols-3 lg:grid-cols-6">
+            {categories.map((cat, i) => (
+              <div key={i} style={{ perspective: '600px' }}>
+                <Link to={`/shop?category=${encodeURIComponent(cat.category)}`}
+                  className="group flex flex-col items-center gap-3 rounded-2xl bg-white/80 p-5 text-center transition-all duration-500"
+                  style={{ border: '1px solid rgba(232,228,222,0.5)', boxShadow: '0 2px 8px rgba(0,0,0,0.03), inset 0 1px 0 rgba(255,255,255,0.8)', backdropFilter: 'blur(8px)', transformStyle: 'preserve-3d' }}
+                  onMouseEnter={(e) => { e.currentTarget.style.transform = 'rotateY(8deg) translateY(-4px)'; e.currentTarget.style.boxShadow = '0 6px 20px rgba(30,58,95,0.08), 0 0 0 1px rgba(30,58,95,0.08)'; e.currentTarget.style.borderColor = 'rgba(30,58,95,0.15)'; }}
+                  onMouseLeave={(e) => { e.currentTarget.style.transform = 'rotateY(0deg) translateY(0px)'; e.currentTarget.style.boxShadow = '0 2px 8px rgba(0,0,0,0.03), inset 0 1px 0 rgba(255,255,255,0.8)'; e.currentTarget.style.borderColor = 'rgba(232,228,222,0.5)'; }}>
+                  <div className="h-12 w-12 rounded-xl bg-gradient-to-br from-[#EFF6FF] to-[#1e3a5f]/8 flex items-center justify-center text-2xl group-hover:scale-110 group-hover:shadow-[0_4px_12px_rgba(30,58,95,0.12)] transition-all duration-300">{cat.emoji}</div>
+                  <span className="text-[12px] font-semibold text-stone-700 group-hover:text-[#1e3a5f] leading-snug transition-colors">{cat.label}</span>
+                </Link>
+              </div>
+            ))}
+          </div>
+        </section >
+      </ScrollReveal>
 
       {/* ── PHILOSOPHY ────────────────────────────────────────────────────── */}
-      < section className="rounded-3xl border border-[#E8E4DE] bg-white p-12 lg:p-16 text-center" >
-        <div className="mx-auto max-w-2xl">
-          <p className="section-label mb-4">{philosophy.label || "Our Philosophy"}</p>
-          <h2 className="text-2xl lg:text-3xl font-semibold tracking-tight text-stone-900 leading-snug whitespace-pre-line">
-            {philosophy.heading || DEFAULT_PHILOSOPHY.heading}
-          </h2>
-          <p className="mt-5 text-[15px] text-stone-500 leading-relaxed">
-            {philosophy.body || DEFAULT_PHILOSOPHY.body}
-          </p>
-          <Link to="/shop" className="btn-primary mt-8 inline-flex px-8 py-3">
-            {philosophy.cta || "Explore the range"}
-          </Link>
-        </div>
-      </section >
+      <ScrollReveal variant="scale">
+        < section className="rounded-3xl bg-white p-12 lg:p-16 text-center relative overflow-hidden" style={{ border: '1px solid rgba(232,228,222,0.5)', boxShadow: '0 4px 20px rgba(0,0,0,0.04), 0 12px 48px rgba(30,58,95,0.06), inset 0 1px 0 rgba(255,255,255,0.9)' }}>
+          {/* Mesh background */}
+          <div className="absolute inset-0 pointer-events-none" style={{ background: 'radial-gradient(ellipse at 30% 0%, rgba(30,58,95,0.04), transparent 50%), radial-gradient(ellipse at 70% 100%, rgba(30,58,95,0.03), transparent 50%)' }} />
+          <div className="mx-auto max-w-2xl">
+            <p className="section-label mb-4">{philosophy.label || "Our Philosophy"}</p>
+            <h2 className="text-2xl lg:text-3xl font-semibold tracking-tight text-stone-900 leading-snug whitespace-pre-line">
+              {philosophy.heading || DEFAULT_PHILOSOPHY.heading}
+            </h2>
+            <p className="mt-5 text-[15px] text-stone-500 leading-relaxed">
+              {philosophy.body || DEFAULT_PHILOSOPHY.body}
+            </p>
+            <Link to="/shop" className="btn-primary mt-8 inline-flex px-8 py-3">
+              {philosophy.cta || "Explore the range"}
+            </Link>
+          </div>
+        </section >
+      </ScrollReveal>
 
-      {/* ── TOAST ─────────────────────────────────────────────────────────── */}
-      < div className={`fixed bottom-6 right-6 z-50 card px-5 py-3.5 transition-all duration-300 ${toast.open ? "opacity-100 translate-y-0" : "opacity-0 translate-y-3 pointer-events-none"
-        }`}>
-        <div className="flex items-center gap-3">
-          <div className="h-8 w-8 rounded-lg bg-emerald-50 grid place-items-center">
-            <svg className="h-4 w-4 text-emerald-600" viewBox="0 0 20 20" fill="currentColor"><path fillRule="evenodd" d="M16.707 5.293a1 1 0 00-1.414 0L8 12.586 4.707 9.293a1 1 0 00-1.414 1.414l4 4a1 1 0 001.414 0l8-8a1 1 0 000-1.414z" clipRule="evenodd" /></svg>
-          </div>
-          <div>
-            <div className="text-sm font-semibold text-stone-900">Added to cart</div>
-            <div className="text-xs text-stone-500">{toast.message}</div>
-          </div>
-        </div>
-      </div >
+
     </div >
   );
 }

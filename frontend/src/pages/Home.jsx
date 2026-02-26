@@ -301,7 +301,7 @@ export default function Home() {
         <section>
           <div className="grid gap-5 sm:grid-cols-2 lg:grid-cols-4">
             {pillars.map((p, i) => (
-              <div key={i} className="group rounded-2xl bg-white/80 p-6 transition-all duration-500 hover:-translate-y-1" style={{ border: '1px solid rgba(232,228,222,0.6)', boxShadow: '0 2px 8px rgba(0,0,0,0.03), 0 4px 16px rgba(0,0,0,0.02), inset 0 1px 0 rgba(255,255,255,0.8)', backdropFilter: 'blur(8px)' }}
+              <div key={i} className="card-shine group rounded-2xl bg-white/80 p-6 relative overflow-hidden transition-all duration-500 hover:-translate-y-1" style={{ border: '1px solid rgba(232,228,222,0.6)', boxShadow: '0 2px 8px rgba(0,0,0,0.03), 0 4px 16px rgba(0,0,0,0.02), inset 0 1px 0 rgba(255,255,255,0.8)', backdropFilter: 'blur(8px)' }}
                 onMouseEnter={(e) => { e.currentTarget.style.boxShadow = '0 8px 24px rgba(0,0,0,0.06), 0 16px 40px rgba(30,58,95,0.06), inset 0 1px 0 rgba(255,255,255,0.9)'; }}
                 onMouseLeave={(e) => { e.currentTarget.style.boxShadow = '0 2px 8px rgba(0,0,0,0.03), 0 4px 16px rgba(0,0,0,0.02), inset 0 1px 0 rgba(255,255,255,0.8)'; }}>
                 <div className="h-10 w-10 rounded-xl bg-gradient-to-br from-[#EFF6FF] to-[#1e3a5f]/10 flex items-center justify-center text-[#1e3a5f] text-xl mb-4 group-hover:scale-110 transition-transform duration-300" style={{ boxShadow: '0 2px 8px rgba(30,58,95,0.1)' }}>{p.icon}</div>
@@ -353,14 +353,16 @@ export default function Home() {
           </div>
           <div className="grid grid-cols-2 gap-4 sm:grid-cols-3 lg:grid-cols-6">
             {categories.map((cat, i) => (
-              <Link key={i} to={`/shop?category=${encodeURIComponent(cat.category)}`}
-                className="group flex flex-col items-center gap-3 rounded-2xl bg-white/80 p-5 text-center hover:-translate-y-1 transition-all duration-300"
-                style={{ border: '1px solid rgba(232,228,222,0.5)', boxShadow: '0 2px 8px rgba(0,0,0,0.03), inset 0 1px 0 rgba(255,255,255,0.8)', backdropFilter: 'blur(8px)' }}
-                onMouseEnter={(e) => { e.currentTarget.style.boxShadow = '0 6px 20px rgba(30,58,95,0.08), 0 0 0 1px rgba(30,58,95,0.08)'; e.currentTarget.style.borderColor = 'rgba(30,58,95,0.15)'; }}
-                onMouseLeave={(e) => { e.currentTarget.style.boxShadow = '0 2px 8px rgba(0,0,0,0.03), inset 0 1px 0 rgba(255,255,255,0.8)'; e.currentTarget.style.borderColor = 'rgba(232,228,222,0.5)'; }}>
-                <div className="h-12 w-12 rounded-xl bg-gradient-to-br from-[#EFF6FF] to-[#1e3a5f]/8 flex items-center justify-center text-2xl group-hover:scale-110 group-hover:shadow-[0_4px_12px_rgba(30,58,95,0.12)] transition-all duration-300">{cat.emoji}</div>
-                <span className="text-[12px] font-semibold text-stone-700 group-hover:text-[#1e3a5f] leading-snug transition-colors">{cat.label}</span>
-              </Link>
+              <div key={i} style={{ perspective: '600px' }}>
+                <Link to={`/shop?category=${encodeURIComponent(cat.category)}`}
+                  className="group flex flex-col items-center gap-3 rounded-2xl bg-white/80 p-5 text-center transition-all duration-500"
+                  style={{ border: '1px solid rgba(232,228,222,0.5)', boxShadow: '0 2px 8px rgba(0,0,0,0.03), inset 0 1px 0 rgba(255,255,255,0.8)', backdropFilter: 'blur(8px)', transformStyle: 'preserve-3d' }}
+                  onMouseEnter={(e) => { e.currentTarget.style.transform = 'rotateY(8deg) translateY(-4px)'; e.currentTarget.style.boxShadow = '0 6px 20px rgba(30,58,95,0.08), 0 0 0 1px rgba(30,58,95,0.08)'; e.currentTarget.style.borderColor = 'rgba(30,58,95,0.15)'; }}
+                  onMouseLeave={(e) => { e.currentTarget.style.transform = 'rotateY(0deg) translateY(0px)'; e.currentTarget.style.boxShadow = '0 2px 8px rgba(0,0,0,0.03), inset 0 1px 0 rgba(255,255,255,0.8)'; e.currentTarget.style.borderColor = 'rgba(232,228,222,0.5)'; }}>
+                  <div className="h-12 w-12 rounded-xl bg-gradient-to-br from-[#EFF6FF] to-[#1e3a5f]/8 flex items-center justify-center text-2xl group-hover:scale-110 group-hover:shadow-[0_4px_12px_rgba(30,58,95,0.12)] transition-all duration-300">{cat.emoji}</div>
+                  <span className="text-[12px] font-semibold text-stone-700 group-hover:text-[#1e3a5f] leading-snug transition-colors">{cat.label}</span>
+                </Link>
+              </div>
             ))}
           </div>
         </section >

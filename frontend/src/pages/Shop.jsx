@@ -38,7 +38,7 @@ export const ProductCard = React.memo(function ProductCard({ p, onAdd, justAdded
     "Premium daily supplement with clean ingredients and reliable quality.";
 
   return (
-    <div className="group flex flex-col rounded-2xl border border-[#E8E4DE] bg-white overflow-hidden shadow-[0_2px_12px_rgba(0,0,0,0.06)] hover:shadow-[0_8px_30px_rgba(0,0,0,0.10)] hover:-translate-y-0.5 transition-all duration-250">
+    <div className="group flex flex-col rounded-2xl border border-[#E8E4DE] bg-white overflow-hidden shadow-[0_2px_12px_rgba(0,0,0,0.06)] hover:shadow-[0_4px_20px_rgba(30,58,95,0.12),0_0_0_1px_rgba(30,58,95,0.08)] hover:border-[#1e3a5f]/20 hover:scale-[1.02] transition-all duration-300 ease-out">
 
       <Link to={`/product/${p.id}`} className="block relative overflow-hidden bg-stone-50" style={{ height: "220px" }}>
         <img

@@ -18,7 +18,7 @@ import { useAuth } from "../context/AuthContext";
 import { supabase } from "../services/supabase/client";
 
 const navLinkClass = ({ isActive }) =>
-  `text-sm transition ${isActive ? "text-neutral-950 font-semibold" : "text-neutral-600 hover:text-neutral-950"}`;
+  `nav-shine text-sm transition ${isActive ? "text-neutral-950 font-semibold" : "text-neutral-600 hover:text-neutral-950"}`;
 
 const mobileNavLinkClass = ({ isActive }) =>
   `block px-4 py-3 rounded-xl text-sm font-medium transition ${isActive
@@ -125,7 +125,7 @@ export default function Navbar() {
               <>
                 {!isAdmin && <NavLink to="/orders" className={navLinkClass}>My Orders</NavLink>}
                 {isAdmin && <NavLink to="/admin" className={navLinkClass}>Admin</NavLink>}
-                <button onClick={signOut} className="text-sm text-neutral-600 hover:text-neutral-950 transition">Logout</button>
+                <button onClick={signOut} className="nav-shine text-sm text-neutral-600 hover:text-neutral-950 transition">Logout</button>
                 <span className="hidden lg:inline text-xs text-neutral-400 max-w-[140px] truncate">{user?.email}</span>
               </>
             ) : (
@@ -134,7 +134,7 @@ export default function Navbar() {
 
             {!isAdmin && (
               <Link to="/cart"
-                className={`ml-1 inline-flex items-center gap-2 rounded-full border border-neutral-200 bg-white px-3 py-1.5 text-xs text-neutral-900 shadow-sm hover:shadow transition ${bump ? "scale-[1.06]" : "scale-100"}`}
+                className={`cart-shine ml-1 inline-flex items-center gap-2 rounded-full border border-neutral-200 bg-white px-3 py-1.5 text-xs font-medium text-neutral-900 relative overflow-hidden transition-all duration-300 hover:border-[#1e3a5f]/20 hover:shadow-[0_2px_12px_rgba(30,58,95,0.12)] hover:-translate-y-px active:translate-y-0.5 active:scale-[0.97] ${bump ? "scale-[1.06]" : "scale-100"}`}
                 title="Cart">
                 <svg className="h-3.5 w-3.5" viewBox="0 0 20 20" fill="currentColor"><path d="M3 3a1 1 0 000 2h1.22l.305 1.222a.997.997 0 00.01.042l1.358 5.43-.893.892C3.74 13.846 4.632 15 6.414 15H15a1 1 0 000-2H6.414l1-1H14a1 1 0 00.894-.553l3-6A1 1 0 0017 5H6.28l-.31-1.243A1 1 0 005 3H3zM16 16.5a1.5 1.5 0 11-3 0 1.5 1.5 0 013 0zM6.5 18a1.5 1.5 0 100-3 1.5 1.5 0 000 3z" /></svg>
                 Cart

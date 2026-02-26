@@ -40,7 +40,6 @@ export const ProductCard = React.memo(function ProductCard({ p, onAdd, justAdded
   return (
     <div className="group flex flex-col rounded-2xl border border-[#E8E4DE] bg-white overflow-hidden shadow-[0_2px_12px_rgba(0,0,0,0.06)] hover:shadow-[0_8px_30px_rgba(0,0,0,0.10)] hover:-translate-y-0.5 transition-all duration-250">
 
-      {/* Image */}
       <Link to={`/product/${p.id}`} className="block relative overflow-hidden bg-stone-50" style={{ height: "220px" }}>
         <img
           src={p.image}
@@ -131,10 +130,9 @@ export const ProductCard = React.memo(function ProductCard({ p, onAdd, justAdded
           )}
 
           {p.variants && p.variants.length > 0 ? (
-            // Has variants → must pick on detail page
             <Link
               to={`/product/${p.id}`}
-              className="block w-full text-center rounded-xl px-4 py-2.5 text-sm font-semibold border border-[#1e3a5f] bg-[#1e3a5f] text-white hover:bg-[#162d4a] shadow-sm hover:shadow transition-all duration-200"
+              className="btn-primary block w-full text-center"
             >
               Select option →
             </Link>
@@ -147,7 +145,7 @@ export const ProductCard = React.memo(function ProductCard({ p, onAdd, justAdded
                 ? "border-stone-200 bg-stone-100 text-stone-400 cursor-not-allowed"
                 : justAdded
                   ? "border-emerald-300 bg-emerald-50 text-emerald-700"
-                  : "border-[#1e3a5f] bg-[#1e3a5f] text-white hover:bg-[#162d4a] shadow-sm hover:shadow"
+                  : "btn-primary"
                 }`}
             >
               {justAdded ? "Added to cart ✓" : out ? "Out of stock" : "Add to cart"}

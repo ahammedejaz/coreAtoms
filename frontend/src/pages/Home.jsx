@@ -195,7 +195,9 @@ export default function Home() {
       />
 
       {/* ── HERO ──────────────────────────────────────────────────────────── */}
-      <section className="rounded-3xl border border-[#E8E4DE] bg-white overflow-hidden shadow-[0_4px_40px_rgba(0,0,0,0.08)]">
+      <section className="rounded-3xl bg-white overflow-hidden relative" style={{ boxShadow: '0 4px 20px rgba(0,0,0,0.06), 0 12px 48px rgba(30,58,95,0.08), inset 0 1px 0 rgba(255,255,255,0.9)', border: '1px solid rgba(232,228,222,0.5)' }}>
+        {/* Subtle gradient mesh overlay */}
+        <div className="absolute inset-0 pointer-events-none z-0 opacity-30" style={{ background: 'radial-gradient(ellipse at 80% 20%, rgba(30,58,95,0.06), transparent 50%), radial-gradient(ellipse at 20% 80%, rgba(30,58,95,0.04), transparent 50%)' }} />
         <div className="grid lg:grid-cols-2 gap-0">
 
           {/* LEFT — carousel: aspect-ratio on mobile, stretch to full card height on desktop */}
@@ -282,10 +284,10 @@ export default function Home() {
                 {heroCopy.secondaryCta || "View best sellers"} →
               </Link>
             </div>
-            <div className="mt-10 grid grid-cols-3 gap-3 border-t border-[#E8E4DE] pt-8">
+            <div className="mt-10 grid grid-cols-3 gap-3 pt-8" style={{ borderTop: '1px solid rgba(232,228,222,0.5)' }}>
               {trust.slice(0, 3).map((t) => (
-                <div key={t.label} className="text-center">
-                  <div className="text-xl mb-1">{t.icon}</div>
+                <div key={t.label} className="text-center group">
+                  <div className="text-xl mb-1 group-hover:scale-110 transition-transform duration-300">{t.icon}</div>
                   <div className="text-[11px] font-medium text-stone-500">{t.label}</div>
                 </div>
               ))}
@@ -299,8 +301,10 @@ export default function Home() {
         <section>
           <div className="grid gap-5 sm:grid-cols-2 lg:grid-cols-4">
             {pillars.map((p, i) => (
-              <div key={i} className="group rounded-2xl border border-[#E8E4DE] bg-white p-6 hover:shadow-[0_4px_20px_rgba(0,0,0,0.08)] hover:-translate-y-0.5 transition-all duration-200">
-                <div className="text-[#1e3a5f] text-xl mb-4">{p.icon}</div>
+              <div key={i} className="group rounded-2xl bg-white/80 p-6 transition-all duration-500 hover:-translate-y-1" style={{ border: '1px solid rgba(232,228,222,0.6)', boxShadow: '0 2px 8px rgba(0,0,0,0.03), 0 4px 16px rgba(0,0,0,0.02), inset 0 1px 0 rgba(255,255,255,0.8)', backdropFilter: 'blur(8px)' }}
+                onMouseEnter={(e) => { e.currentTarget.style.boxShadow = '0 8px 24px rgba(0,0,0,0.06), 0 16px 40px rgba(30,58,95,0.06), inset 0 1px 0 rgba(255,255,255,0.9)'; }}
+                onMouseLeave={(e) => { e.currentTarget.style.boxShadow = '0 2px 8px rgba(0,0,0,0.03), 0 4px 16px rgba(0,0,0,0.02), inset 0 1px 0 rgba(255,255,255,0.8)'; }}>
+                <div className="h-10 w-10 rounded-xl bg-gradient-to-br from-[#EFF6FF] to-[#1e3a5f]/10 flex items-center justify-center text-[#1e3a5f] text-xl mb-4 group-hover:scale-110 transition-transform duration-300" style={{ boxShadow: '0 2px 8px rgba(30,58,95,0.1)' }}>{p.icon}</div>
                 <div className="text-sm font-semibold text-stone-900">{p.title}</div>
                 <div className="mt-1.5 text-[13px] text-stone-500 leading-relaxed">{p.desc}</div>
               </div>
@@ -350,8 +354,11 @@ export default function Home() {
           <div className="grid grid-cols-2 gap-4 sm:grid-cols-3 lg:grid-cols-6">
             {categories.map((cat, i) => (
               <Link key={i} to={`/shop?category=${encodeURIComponent(cat.category)}`}
-                className="group flex flex-col items-center gap-3 rounded-2xl border border-[#E8E4DE] bg-white p-5 text-center hover:border-[#1e3a5f]/30 hover:shadow-[0_4px_20px_rgba(0,0,0,0.08)] hover:-translate-y-0.5 transition-all duration-200">
-                <div className="h-12 w-12 rounded-xl bg-[#EFF6FF] flex items-center justify-center text-2xl group-hover:bg-[#1e3a5f]/10 transition-colors">{cat.emoji}</div>
+                className="group flex flex-col items-center gap-3 rounded-2xl bg-white/80 p-5 text-center hover:-translate-y-1 transition-all duration-300"
+                style={{ border: '1px solid rgba(232,228,222,0.5)', boxShadow: '0 2px 8px rgba(0,0,0,0.03), inset 0 1px 0 rgba(255,255,255,0.8)', backdropFilter: 'blur(8px)' }}
+                onMouseEnter={(e) => { e.currentTarget.style.boxShadow = '0 6px 20px rgba(30,58,95,0.08), 0 0 0 1px rgba(30,58,95,0.08)'; e.currentTarget.style.borderColor = 'rgba(30,58,95,0.15)'; }}
+                onMouseLeave={(e) => { e.currentTarget.style.boxShadow = '0 2px 8px rgba(0,0,0,0.03), inset 0 1px 0 rgba(255,255,255,0.8)'; e.currentTarget.style.borderColor = 'rgba(232,228,222,0.5)'; }}>
+                <div className="h-12 w-12 rounded-xl bg-gradient-to-br from-[#EFF6FF] to-[#1e3a5f]/8 flex items-center justify-center text-2xl group-hover:scale-110 group-hover:shadow-[0_4px_12px_rgba(30,58,95,0.12)] transition-all duration-300">{cat.emoji}</div>
                 <span className="text-[12px] font-semibold text-stone-700 group-hover:text-[#1e3a5f] leading-snug transition-colors">{cat.label}</span>
               </Link>
             ))}
@@ -361,7 +368,9 @@ export default function Home() {
 
       {/* ── PHILOSOPHY ────────────────────────────────────────────────────── */}
       <ScrollReveal variant="scale">
-        < section className="rounded-3xl border border-[#E8E4DE] bg-white p-12 lg:p-16 text-center" >
+        < section className="rounded-3xl bg-white p-12 lg:p-16 text-center relative overflow-hidden" style={{ border: '1px solid rgba(232,228,222,0.5)', boxShadow: '0 4px 20px rgba(0,0,0,0.04), 0 12px 48px rgba(30,58,95,0.06), inset 0 1px 0 rgba(255,255,255,0.9)' }}>
+          {/* Mesh background */}
+          <div className="absolute inset-0 pointer-events-none" style={{ background: 'radial-gradient(ellipse at 30% 0%, rgba(30,58,95,0.04), transparent 50%), radial-gradient(ellipse at 70% 100%, rgba(30,58,95,0.03), transparent 50%)' }} />
           <div className="mx-auto max-w-2xl">
             <p className="section-label mb-4">{philosophy.label || "Our Philosophy"}</p>
             <h2 className="text-2xl lg:text-3xl font-semibold tracking-tight text-stone-900 leading-snug whitespace-pre-line">

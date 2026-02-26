@@ -103,7 +103,9 @@ export default function Navbar() {
 
   return (
     <>
-      <header className="sticky top-0 z-50 border-b border-neutral-200 bg-white/90 backdrop-blur shadow-[0_8px_30px_-20px_rgba(0,0,0,0.25)]">
+      <header className="sticky top-0 z-50 bg-white/70 backdrop-blur-xl backdrop-saturate-[180%] shadow-[0_1px_3px_rgba(0,0,0,0.05),0_8px_30px_-12px_rgba(30,58,95,0.15)]" style={{ borderBottom: '1px solid rgba(232,228,222,0.6)' }}>
+        {/* Subtle gradient glow line at bottom */}
+        <div className="absolute bottom-0 left-0 right-0 h-px bg-gradient-to-r from-transparent via-[#1e3a5f]/15 to-transparent" />
         <div className="mx-auto flex max-w-6xl items-center justify-between px-4 py-3">
 
           {/* Logo */}

@@ -144,27 +144,63 @@ export default function MyOrders() {
         </div>
       </ScrollReveal>
 
-      {/* Filters */}
-      <div className="card p-5 mb-6">
-        <div className="flex flex-col gap-4 sm:flex-row sm:items-center">
-          <div className="flex items-center gap-2 overflow-x-auto pb-1 flex-1">
-            {STATUS_OPTIONS.map((s) => (
-              <button key={s} type="button" onClick={() => setStatusFilter(s)}
-                className={`shrink-0 rounded-full px-3.5 py-1.5 text-xs font-semibold border capitalize transition-all ${statusFilter === s ? "bg-[#1e3a5f] border-[#1e3a5f] text-white" : "bg-white border-[#E8E4DE] text-stone-500 hover:border-stone-300"
-                  }`}
-              >
-                {s === "all" ? "All orders" : s}
-              </button>
-            ))}
+      {/* Filters — Premium glass bar */}
+      <div
+        className="mb-6 rounded-2xl p-4 sm:p-5"
+        style={{
+          background: "rgba(255,255,255,0.75)",
+          backdropFilter: "blur(16px) saturate(180%)",
+          WebkitBackdropFilter: "blur(16px) saturate(180%)",
+          border: "1px solid rgba(232,228,222,0.6)",
+          boxShadow: "0 4px 24px rgba(0,0,0,0.04), 0 1px 3px rgba(0,0,0,0.03), inset 0 1px 0 rgba(255,255,255,0.9)",
+        }}
+      >
+        <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
+          {/* Left: Status filters + search */}
+          <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:gap-3 flex-1 min-w-0">
+            {/* Status pills — horizontally scrollable on mobile */}
+            <div className="flex items-center gap-1.5 overflow-x-auto pb-1 sm:pb-0">
+              {STATUS_OPTIONS.map((s) => (
+                <button key={s} type="button" onClick={() => setStatusFilter(s)}
+                  className={`shrink-0 rounded-full px-3.5 py-1.5 text-xs font-semibold border capitalize transition-all duration-200 ${statusFilter === s
+                    ? "bg-[#1e3a5f] border-[#1e3a5f] text-white shadow-[0_2px_8px_rgba(30,58,95,0.25)]"
+                    : "bg-white/90 border-[#E8E4DE]/80 text-stone-500 hover:border-stone-300 hover:text-stone-700"
+                    }`}
+                >
+                  {s === "all" ? "All orders" : s}
+                </button>
+              ))}
+            </div>
+
+            {/* Search with integrated icon */}
+            <div className="relative group shrink-0">
+              <div className="absolute left-3.5 top-1/2 -translate-y-1/2 pointer-events-none">
+                <svg className="h-4 w-4 text-stone-400 group-focus-within:text-[#1e3a5f] transition-colors" viewBox="0 0 20 20" fill="currentColor">
+                  <path fillRule="evenodd" d="M8 4a4 4 0 100 8 4 4 0 000-8zM2 8a6 6 0 1110.89 3.476l4.817 4.817a1 1 0 01-1.414 1.414l-4.816-4.816A6 6 0 012 8z" clipRule="evenodd" />
+                </svg>
+              </div>
+              <input value={search} onChange={(e) => setSearch(e.target.value)} placeholder="Search orders…"
+                className="w-full sm:w-48 rounded-xl border border-[#E8E4DE]/80 bg-white/90 pl-10 pr-4 py-2 text-sm text-stone-900 placeholder:text-stone-400 outline-none transition-all duration-200 focus:border-[#1e3a5f]/40 focus:ring-[3px] focus:ring-[#1e3a5f]/8 focus:bg-white hover:border-stone-300"
+                style={{ boxShadow: "inset 0 1px 2px rgba(0,0,0,0.04)" }}
+              />
+            </div>
           </div>
-          <input value={search} onChange={(e) => setSearch(e.target.value)} placeholder="Search orders…"
-            className="input sm:w-52" />
-        </div>
-        <div className="mt-3 flex items-center justify-between">
-          <p className="text-xs text-stone-400">{filtered.length} order{filtered.length !== 1 ? "s" : ""}</p>
-          {(statusFilter !== "all" || search) && (
-            <button type="button" onClick={() => { setStatusFilter("all"); setSearch(""); }} className="text-xs text-[#1e3a5f] hover:underline">Clear filters</button>
-          )}
+
+          {/* Right: Order count pill + clear filters */}
+          <div className="flex items-center gap-3 self-start sm:self-auto shrink-0">
+            {(statusFilter !== "all" || search) && (
+              <button type="button" onClick={() => { setStatusFilter("all"); setSearch(""); }}
+                className="text-xs font-medium text-[#1e3a5f] hover:underline underline-offset-2 transition-colors">
+                Clear filters
+              </button>
+            )}
+            <div className="inline-flex items-center gap-1.5 rounded-full border border-[#E8E4DE]/60 bg-white/80 px-3 py-1.5">
+              <span className="inline-block h-1.5 w-1.5 rounded-full bg-[#1e3a5f]/50" />
+              <span className="text-xs font-medium text-stone-500">
+                {filtered.length} order{filtered.length !== 1 ? "s" : ""}
+              </span>
+            </div>
+          </div>
         </div>
       </div>
 

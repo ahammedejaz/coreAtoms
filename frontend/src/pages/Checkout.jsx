@@ -294,6 +294,8 @@ export default function Checkout() {
       variant_id: isComposite ? parts[1] : null,
       qty: Number(x.qty || 0),
       unit_price_inr: Number(x.unitPrice ?? x.price ?? 0),
+      product_name: x.name || "Product",
+      image_url: x.image || "",
     };
   });
 

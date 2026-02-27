@@ -19,6 +19,11 @@ export default function AdminSettings() {
     const [codLoading, setCodLoading] = useState(true);
     const [codSaving, setCodSaving] = useState(false);
 
+    // Replacements toggle
+    const [replacementsEnabled, setReplacementsEnabled] = useState(false);
+    const [replacementsLoading, setReplacementsLoading] = useState(true);
+    const [replacementsSaving, setReplacementsSaving] = useState(false);
+
     // Discount codes
     const [discountCodes, setDiscountCodes] = useState([]);
     const [discountLoading, setDiscountLoading] = useState(true);
@@ -55,6 +60,14 @@ export default function AdminSettings() {
             .then(({ data }) => {
                 setCodEnabled(data?.value?.enabled !== false);
                 setCodLoading(false);
+            });
+
+        // Load replacements toggle
+        supabase.from("app_settings").select("value")
+            .eq("key", "replacements_enabled").maybeSingle()
+            .then(({ data }) => {
+                setReplacementsEnabled(data?.value?.enabled === true);
+                setReplacementsLoading(false);
             });
 
         // Load discount codes
@@ -119,6 +132,20 @@ export default function AdminSettings() {
             showToast(newVal ? "Cash on Delivery enabled" : "Cash on Delivery disabled", "success");
         }
         setCodSaving(false);
+    };
+
+    const toggleReplacements = async () => {
+        setReplacementsSaving(true);
+        const newVal = !replacementsEnabled;
+        const { error } = await supabase.from("app_settings")
+            .upsert({ key: "replacements_enabled", value: { enabled: newVal } }, { onConflict: "key" });
+        if (error) {
+            showToast(error.message, "error");
+        } else {
+            setReplacementsEnabled(newVal);
+            showToast(newVal ? "Replacements enabled" : "Replacements disabled", "success");
+        }
+        setReplacementsSaving(false);
     };
 
     // ── Discount code helpers ──
@@ -312,6 +339,51 @@ export default function AdminSettings() {
                         <p className="text-stone-400">Get your API keys from the <a href="https://dashboard.razorpay.com/app/keys" target="_blank" rel="noopener noreferrer" className="underline hover:text-stone-600">Razorpay Dashboard</a>.</p>
                     </div>
                 </details>
+            </div>
+
+            {/* ── Replacements ── */}
+            <div className="rounded-2xl border border-[#E8E4DE] bg-white p-5">
+                <div className="text-base font-semibold text-stone-900 mb-1">Replacements</div>
+                <div className="text-sm text-stone-500 mb-5">Allow customers to request product replacements for damaged shipments.</div>
+
+                <div className="rounded-xl border border-[#E8E4DE] p-4">
+                    <div className="flex items-center justify-between gap-4">
+                        <div>
+                            <div className="text-sm font-semibold text-stone-900 flex items-center gap-2">
+                                Product Replacements
+                                <span className={[
+                                    "inline-flex items-center rounded-full px-2 py-0.5 text-[10px] font-bold uppercase tracking-wide",
+                                    replacementsEnabled
+                                        ? "bg-emerald-50 text-emerald-700"
+                                        : "bg-stone-100 text-stone-400",
+                                ].join(" ")}>
+                                    {replacementsLoading ? "..." : replacementsEnabled ? "Active" : "Inactive"}
+                                </span>
+                            </div>
+                            <div className="mt-0.5 text-xs text-stone-500">
+                                Customers can request replacements for damaged products by uploading photos.
+                            </div>
+                        </div>
+                        <button
+                            type="button"
+                            role="switch"
+                            aria-checked={replacementsEnabled}
+                            disabled={replacementsLoading || replacementsSaving}
+                            onClick={toggleReplacements}
+                            className={[
+                                "relative inline-flex h-7 w-12 shrink-0 cursor-pointer items-center rounded-full transition-colors duration-200 ease-in-out focus:outline-none focus:ring-2 focus:ring-[#1e3a5f]/30 focus:ring-offset-2 disabled:opacity-50 disabled:cursor-not-allowed",
+                                replacementsEnabled ? "bg-emerald-500" : "bg-stone-300",
+                            ].join(" ")}
+                        >
+                            <span
+                                className={[
+                                    "inline-block h-5 w-5 rounded-full bg-white shadow-md transform transition-transform duration-200 ease-in-out",
+                                    replacementsEnabled ? "translate-x-6" : "translate-x-1",
+                                ].join(" ")}
+                            />
+                        </button>
+                    </div>
+                </div>
             </div>
 
             {/* ── Discount Codes ── */}

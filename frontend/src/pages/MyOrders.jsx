@@ -19,7 +19,34 @@ import OrderTimeline from "../components/OrderTimeline";
 import ShipmentTracker from "../components/ShipmentTracker";
 import ScrollReveal from "../components/ScrollReveal";
 
+
 import { money } from "../utils/format";
+
+const REPLACEMENT_REASONS = [
+  "Damaged in transit",
+  "Wrong product received",
+  "Missing items",
+  "Defective product",
+  "Other",
+];
+
+const REPLACEMENT_STATUS_STYLES = {
+  pending: "bg-amber-50 text-amber-700 border border-amber-200",
+  approved: "bg-emerald-50 text-emerald-700 border border-emerald-200",
+  pickup_scheduled: "bg-blue-50 text-blue-700 border border-blue-200",
+  pickup_received: "bg-indigo-50 text-indigo-700 border border-indigo-200",
+  replacement_shipped: "bg-teal-50 text-teal-700 border border-teal-200",
+  rejected: "bg-red-50 text-red-600 border border-red-200",
+};
+
+const REPLACEMENT_STATUS_LABELS = {
+  pending: "Pending Review",
+  approved: "Approved",
+  pickup_scheduled: "Pickup Scheduled",
+  pickup_received: "Pickup Received",
+  replacement_shipped: "Replacement Shipped",
+  rejected: "Rejected",
+};
 
 function InlineReviewForm({ productId, orderId, productName, onDone }) {
   const { user } = useAuth();
@@ -73,6 +100,155 @@ function InlineReviewForm({ productId, orderId, productName, onDone }) {
   );
 }
 
+function InlineReplacementForm({ orderId, userId, onDone }) {
+  const { showToast } = useToast();
+  const [reason, setReason] = useState("");
+  const [description, setDescription] = useState("");
+  const [files, setFiles] = useState([]);
+  const [previews, setPreviews] = useState([]);
+  const [submitting, setSubmitting] = useState(false);
+
+  const handleFiles = (e) => {
+    const selected = Array.from(e.target.files || []);
+    const allowed = selected.slice(0, 3 - files.length);
+    const newFiles = [...files, ...allowed].slice(0, 3);
+    setFiles(newFiles);
+    setPreviews(newFiles.map((f) => URL.createObjectURL(f)));
+  };
+
+  const removeFile = (idx) => {
+    URL.revokeObjectURL(previews[idx]);
+    const nf = files.filter((_, i) => i !== idx);
+    setFiles(nf);
+    setPreviews(nf.map((f) => URL.createObjectURL(f)));
+  };
+
+  const handleSubmit = async () => {
+    if (!reason) { showToast("Please select a reason.", "error"); return; }
+    setSubmitting(true);
+
+    // Upload images
+    const imageUrls = [];
+    for (const file of files) {
+      const ext = file.name.split(".").pop();
+      const path = `${userId}/${crypto.randomUUID()}.${ext}`;
+      const { error: upErr } = await supabase.storage
+        .from("replacement-images")
+        .upload(path, file, { contentType: file.type });
+      if (upErr) {
+        showToast(`Upload failed: ${upErr.message}`, "error");
+        setSubmitting(false);
+        return;
+      }
+      const { data: urlData } = supabase.storage
+        .from("replacement-images")
+        .getPublicUrl(path);
+      imageUrls.push(urlData.publicUrl);
+    }
+
+    // Insert replacement request
+    const { error } = await supabase.from("replacements").insert({
+      order_id: orderId,
+      user_id: userId,
+      reason,
+      description: description.trim() || null,
+      images: imageUrls,
+    });
+
+    if (error) {
+      showToast(
+        error.message?.includes("idx_replacements_order")
+          ? "A replacement request already exists for this order."
+          : error.message,
+        "error"
+      );
+    } else {
+      showToast("Replacement request submitted!", "success");
+      onDone();
+    }
+    setSubmitting(false);
+  };
+
+  return (
+    <div className="mt-4 rounded-xl border border-[#E8E4DE] bg-stone-50 p-4 space-y-3">
+      <p className="text-sm font-semibold text-stone-800">Request Replacement</p>
+
+      {/* Reason */}
+      <div>
+        <label className="text-xs text-stone-500 block mb-1">Reason *</label>
+        <select
+          value={reason}
+          onChange={(e) => setReason(e.target.value)}
+          className="w-full rounded-xl border border-[#E8E4DE] bg-white px-3 py-2.5 text-sm text-stone-900 outline-none focus:ring-2 focus:ring-[#1e3a5f]/20 transition"
+        >
+          <option value="">Select a reason…</option>
+          {REPLACEMENT_REASONS.map((r) => (
+            <option key={r} value={r}>{r}</option>
+          ))}
+        </select>
+      </div>
+
+      {/* Description */}
+      <div>
+        <label className="text-xs text-stone-500 block mb-1">Description (optional)</label>
+        <textarea
+          value={description}
+          onChange={(e) => setDescription(e.target.value)}
+          rows={3}
+          maxLength={1000}
+          placeholder="Describe the issue in detail…"
+          className="w-full rounded-xl border border-[#E8E4DE] bg-white px-3 py-2.5 text-sm text-stone-900 placeholder:text-stone-400 outline-none focus:ring-2 focus:ring-[#1e3a5f]/10 resize-none transition"
+        />
+      </div>
+
+      {/* Image upload */}
+      <div>
+        <label className="text-xs text-stone-500 block mb-1">Damage Photos (up to 3)</label>
+        {previews.length > 0 && (
+          <div className="flex gap-2 mb-2 flex-wrap">
+            {previews.map((src, i) => (
+              <div key={i} className="relative h-20 w-20 rounded-xl border border-[#E8E4DE] overflow-hidden group">
+                <img src={src} alt={`Upload ${i + 1}`} className="h-full w-full object-cover" />
+                <button
+                  type="button"
+                  onClick={() => removeFile(i)}
+                  className="absolute top-0.5 right-0.5 h-5 w-5 rounded-full bg-black/60 text-white text-[10px] font-bold flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity"
+                >
+                  ✕
+                </button>
+              </div>
+            ))}
+          </div>
+        )}
+        {files.length < 3 && (
+          <label className="inline-flex items-center gap-1.5 rounded-xl border border-dashed border-[#E8E4DE] bg-white px-3 py-2 text-xs font-medium text-stone-500 hover:border-stone-400 hover:text-stone-700 cursor-pointer transition-colors">
+            <svg className="h-4 w-4" viewBox="0 0 20 20" fill="currentColor">
+              <path fillRule="evenodd" d="M4 3a2 2 0 00-2 2v10a2 2 0 002 2h12a2 2 0 002-2V5a2 2 0 00-2-2H4zm12 12H4l4-8 3 6 2-4 3 6z" clipRule="evenodd" />
+            </svg>
+            Add photo
+            <input type="file" accept="image/*" onChange={handleFiles} className="hidden" />
+          </label>
+        )}
+      </div>
+
+      {/* Actions */}
+      <div className="flex items-center gap-3 pt-1">
+        <button
+          type="button"
+          onClick={handleSubmit}
+          disabled={submitting || !reason}
+          className="btn-primary py-2 px-5 text-xs disabled:opacity-40"
+        >
+          {submitting ? "Submitting…" : "Submit Request"}
+        </button>
+        <button type="button" onClick={onDone} className="text-xs text-stone-400 hover:text-stone-600 transition-colors">
+          Cancel
+        </button>
+      </div>
+    </div>
+  );
+}
+
 const STATUS_STYLES = {
   placed: "bg-blue-50 text-blue-700 border border-blue-200",
   processing: "bg-amber-50 text-amber-700 border border-amber-200",
@@ -94,6 +270,11 @@ export default function MyOrders() {
   const [openReviews, setOpenReviews] = useState({});
   const [existingReviews, setExistingReviews] = useState(new Set());
 
+  // Replacement state
+  const [replacementsEnabled, setReplacementsEnabled] = useState(false);
+  const [replacementMap, setReplacementMap] = useState({});  // order_id → replacement
+  const [openReplacementForm, setOpenReplacementForm] = useState(null); // order_id or null
+
   const load = async () => {
     if (!userId) return;
     setLoading(true);
@@ -105,6 +286,22 @@ export default function MyOrders() {
     setOrders(data || []);
     const { data: revData } = await supabase.from("product_reviews").select("product_id,order_id").eq("user_id", userId);
     setExistingReviews(new Set((revData || []).map((r) => `${r.product_id}_${r.order_id}`)));
+
+    // Fetch replacements setting
+    const { data: settingData } = await supabase
+      .from("app_settings").select("value")
+      .eq("key", "replacements_enabled").maybeSingle();
+    setReplacementsEnabled(settingData?.value?.enabled === true);
+
+    // Fetch existing replacement requests for this user
+    const { data: repData } = await supabase
+      .from("replacements")
+      .select("id,order_id,status,reason,admin_notes,created_at,replacement_waybill,replacement_tracking_url")
+      .eq("user_id", userId);
+    const map = {};
+    (repData || []).forEach((r) => { map[r.order_id] = r; });
+    setReplacementMap(map);
+
     setLoading(false);
   };
 
@@ -289,6 +486,79 @@ export default function MyOrders() {
                     </a>
                   </div>
                 </div>
+
+                {/* ── Replacement section for delivered orders ── */}
+                {isDelivered && (() => {
+                  const existing = replacementMap[o.id];
+                  if (existing) {
+                    return (
+                      <div className="mt-4 border-t border-[#E8E4DE] pt-4">
+                        <div className="rounded-xl border border-[#E8E4DE] bg-stone-50 p-4">
+                          <div className="flex items-center gap-2 mb-1">
+                            <svg className="h-4 w-4 text-stone-400" viewBox="0 0 20 20" fill="currentColor">
+                              <path fillRule="evenodd" d="M4 2a1 1 0 011 1v2.101a7.002 7.002 0 0111.601 2.566 1 1 0 11-1.885.666A5.002 5.002 0 005.999 7H9a1 1 0 010 2H4a1 1 0 01-1-1V3a1 1 0 011-1zm.008 9.057a1 1 0 011.276.61A5.002 5.002 0 0014.001 13H11a1 1 0 110-2h5a1 1 0 011 1v5a1 1 0 11-2 0v-2.101a7.002 7.002 0 01-11.601-2.566 1 1 0 01.61-1.276z" clipRule="evenodd" />
+                            </svg>
+                            <span className="text-xs font-semibold text-stone-700">Replacement Request</span>
+                            <span className={`px-2 py-0.5 rounded-full text-[10px] font-bold uppercase tracking-wide ${REPLACEMENT_STATUS_STYLES[existing.status] || "bg-stone-100 text-stone-500"}`}>
+                              {REPLACEMENT_STATUS_LABELS[existing.status] || existing.status}
+                            </span>
+                          </div>
+                          <p className="text-xs text-stone-500">Reason: {existing.reason}</p>
+                          {existing.admin_notes && (
+                            <p className="text-xs text-stone-500 mt-1">
+                              <span className="font-medium text-stone-600">Admin notes:</span> {existing.admin_notes}
+                            </p>
+                          )}
+                          {existing.replacement_waybill && (
+                            <div className="mt-2 rounded-lg border border-teal-200 bg-teal-50 px-3 py-2">
+                              <p className="text-xs font-medium text-teal-700">
+                                Replacement shipped — AWB: <span className="font-mono">{existing.replacement_waybill}</span>
+                              </p>
+                              {existing.replacement_tracking_url && (
+                                <a
+                                  href={existing.replacement_tracking_url}
+                                  target="_blank"
+                                  rel="noopener noreferrer"
+                                  className="inline-flex items-center gap-1 mt-1 text-xs font-medium text-teal-700 hover:underline"
+                                >
+                                  Track your replacement ↗
+                                </a>
+                              )}
+                            </div>
+                          )}
+                          <p className="text-[11px] text-stone-400 mt-1">
+                            Submitted {new Date(existing.created_at).toLocaleDateString("en-IN", { day: "numeric", month: "short", year: "numeric" })}
+                          </p>
+                        </div>
+                      </div>
+                    );
+                  }
+                  if (replacementsEnabled) {
+                    return (
+                      <div className="mt-4 border-t border-[#E8E4DE] pt-4">
+                        {openReplacementForm === o.id ? (
+                          <InlineReplacementForm
+                            orderId={o.id}
+                            userId={userId}
+                            onDone={() => { setOpenReplacementForm(null); load(); }}
+                          />
+                        ) : (
+                          <button
+                            type="button"
+                            onClick={() => setOpenReplacementForm(o.id)}
+                            className="inline-flex items-center gap-1.5 rounded-xl border border-[#E8E4DE] bg-white px-3.5 py-2 text-xs font-semibold text-stone-600 hover:border-stone-400 hover:text-stone-800 transition-all"
+                          >
+                            <svg className="h-3.5 w-3.5" viewBox="0 0 20 20" fill="currentColor">
+                              <path fillRule="evenodd" d="M4 2a1 1 0 011 1v2.101a7.002 7.002 0 0111.601 2.566 1 1 0 11-1.885.666A5.002 5.002 0 005.999 7H9a1 1 0 010 2H4a1 1 0 01-1-1V3a1 1 0 011-1zm.008 9.057a1 1 0 011.276.61A5.002 5.002 0 0014.001 13H11a1 1 0 110-2h5a1 1 0 011 1v5a1 1 0 11-2 0v-2.101a7.002 7.002 0 01-11.601-2.566 1 1 0 01.61-1.276z" clipRule="evenodd" />
+                            </svg>
+                            Request Replacement
+                          </button>
+                        )}
+                      </div>
+                    );
+                  }
+                  return null;
+                })()}
 
                 {/* Items */}
                 <div className="mt-4 space-y-3 border-t border-[#E8E4DE] pt-4">

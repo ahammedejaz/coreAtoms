@@ -13,6 +13,7 @@ import AdminOrders from "./admin/AdminOrders.jsx";
 import AdminHomepage from "./admin/AdminHomepage.jsx";
 import AdminReviews from "./admin/AdminReviews.jsx";
 import AdminSettings from "./admin/AdminSettings.jsx";
+import AdminReplacements from "./admin/AdminReplacements.jsx";
 
 const LOW_STOCK_THRESHOLD = 5;
 
@@ -41,6 +42,11 @@ const ICONS = {
     homepage: (
         <svg className="h-4 w-4" viewBox="0 0 20 20" fill="currentColor">
             <path d="M10.707 2.293a1 1 0 00-1.414 0l-7 7a1 1 0 001.414 1.414L4 10.414V17a1 1 0 001 1h2a1 1 0 001-1v-2a1 1 0 011-1h2a1 1 0 011 1v2a1 1 0 001 1h2a1 1 0 001-1v-6.586l.293.293a1 1 0 001.414-1.414l-7-7z" />
+        </svg>
+    ),
+    replacements: (
+        <svg className="h-4 w-4" viewBox="0 0 20 20" fill="currentColor">
+            <path fillRule="evenodd" d="M4 2a1 1 0 011 1v2.101a7.002 7.002 0 0111.601 2.566 1 1 0 11-1.885.666A5.002 5.002 0 005.999 7H9a1 1 0 010 2H4a1 1 0 01-1-1V3a1 1 0 011-1zm.008 9.057a1 1 0 011.276.61A5.002 5.002 0 0014.001 13H11a1 1 0 110-2h5a1 1 0 011 1v5a1 1 0 11-2 0v-2.101a7.002 7.002 0 01-11.601-2.566 1 1 0 01.61-1.276z" clipRule="evenodd" />
         </svg>
     ),
 };
@@ -90,6 +96,7 @@ export default function AdminDashboard() {
     const [products, setProducts] = useState([]);
     const [orders, setOrders] = useState([]);
     const [reviewCount, setReviewCount] = useState(0);
+    const [replacementCount, setReplacementCount] = useState(0);
 
     const stats = useMemo(() => {
         const totalOrders = orders.length;
@@ -235,6 +242,7 @@ export default function AdminDashboard() {
                     {tab("products", "Products", ICONS.products)}
                     {tab("orders", "Orders", ICONS.orders, stats.pendingOrders)}
                     {tab("settings", "Settings", ICONS.settings)}
+                    {tab("replacements", "Replacements", ICONS.replacements, replacementCount)}
                     {tab("reviews", "Reviews", ICONS.reviews, reviewCount, "bg-neutral-200 text-stone-600")}
                     {tab("homepage", "Homepage", ICONS.homepage)}
                     <div className="hidden md:block ml-auto text-xs text-stone-400">
@@ -242,6 +250,7 @@ export default function AdminDashboard() {
                         {activeTab === "orders" && `${orders.length} orders`}
                         {activeTab === "reviews" && `${reviewCount} reviews`}
                         {activeTab === "settings" && "App settings"}
+                        {activeTab === "replacements" && `${replacementCount} pending`}
                         {activeTab === "homepage" && "Homepage editor"}
                     </div>
                 </div>
@@ -258,6 +267,7 @@ export default function AdminDashboard() {
                     */}
                     <div {...panel("reviews")} ><AdminReviews onCountChange={setReviewCount} /></div>
                     <div {...panel("homepage")}><AdminHomepage products={products} /></div>
+                    <div {...panel("replacements")}><AdminReplacements onCountChange={setReplacementCount} /></div>
                 </div>
 
             </div>

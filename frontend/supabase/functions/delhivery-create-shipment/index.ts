@@ -42,6 +42,7 @@ Deno.serve(async (req) => {
             "https://track.delhivery.com"
         ).replace(/\/$/, "");
         const CLIENT_NAME = Deno.env.get("DELHIVERY_CLIENT_NAME");
+        const PICKUP_NAME = Deno.env.get("DELHIVERY_PICKUP_NAME") || CLIENT_NAME;
 
         if (!DELHIVERY_TOKEN || !CLIENT_NAME) {
             return new Response(
@@ -169,7 +170,7 @@ Deno.serve(async (req) => {
                 },
             ],
             pickup_location: {
-                name: CLIENT_NAME,
+                name: PICKUP_NAME,
             },
         };
 

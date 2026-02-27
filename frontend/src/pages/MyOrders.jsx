@@ -16,6 +16,7 @@ import { useToast } from "../context/ToastContext";
 import SEO from "../components/SEO";
 import { SkeletonOrderCard } from "../components/Skeleton";
 import OrderTimeline from "../components/OrderTimeline";
+import ShipmentTracker from "../components/ShipmentTracker";
 import ScrollReveal from "../components/ScrollReveal";
 
 import { money } from "../utils/format";
@@ -98,7 +99,7 @@ export default function MyOrders() {
     setLoading(true);
     const { data } = await supabase
       .from("orders")
-      .select("id,status,created_at,total_amount_inr,total_items,payment_method,razorpay_payment_id,order_items(id,product_id,product_name,qty,unit_price_inr,line_total_inr,image_url)")
+      .select("id,status,created_at,total_amount_inr,total_items,payment_method,razorpay_payment_id,delhivery_waybill,courier_name,tracking_url,shipped_at,delivered_at,order_items(id,product_id,product_name,qty,unit_price_inr,line_total_inr,image_url)")
       .eq("user_id", userId)
       .order("created_at", { ascending: false });
     setOrders(data || []);
@@ -261,6 +262,13 @@ export default function MyOrders() {
                 <div className="mt-4 border-t border-[#E8E4DE] pt-2">
                   <OrderTimeline status={status} />
                 </div>
+
+                {/* Delhivery tracking — shown when waybill exists */}
+                {o.delhivery_waybill && (
+                  <div className="border-t border-[#E8E4DE] pt-3">
+                    <ShipmentTracker waybill={o.delhivery_waybill} trackingUrl={o.tracking_url} />
+                  </div>
+                )}
 
                 {/* Summary row */}
                 <div className="mt-4 flex flex-wrap items-center gap-x-6 gap-y-2 text-sm border-t border-[#E8E4DE] pt-4">

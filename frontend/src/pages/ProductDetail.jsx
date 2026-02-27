@@ -13,6 +13,7 @@ import { Link, useNavigate, useParams } from "react-router-dom";
 import { useCart } from "../context/CartContext";
 import { fetchProductById } from "../services/products";
 import SEO from "../components/SEO";
+import PincodeChecker from "../components/PincodeChecker";
 import { SkeletonProductDetail } from "../components/Skeleton";
 
 import { money } from "../utils/format";
@@ -141,7 +142,7 @@ export default function ProductDetail() {
         <div className="grid gap-8 lg:grid-cols-2 items-start">
 
           {/* ══ LEFT — Image Gallery ══ */}
-          <div className="space-y-3">
+          <div className="space-y-3 lg:sticky lg:top-24 lg:self-start">
             {/* Main image */}
             <div
               className="rounded-2xl border border-[#E8E4DE] bg-white overflow-hidden"
@@ -269,6 +270,9 @@ export default function ProductDetail() {
                 {activeStock > 0 ? "In stock" : "Out of stock"}
               </span>
             </div>
+
+            {/* ── Pincode Delivery Check ── */}
+            <PincodeChecker />
 
             {/* ── Qty stepper + CTA ── */}
             <div className="flex flex-wrap items-center gap-3">

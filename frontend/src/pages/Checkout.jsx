@@ -67,6 +67,7 @@ export default function Checkout() {
   // Shipping amount (from app_settings)
   const [shippingBase, setShippingBase] = useState(0);
   const [freeShippingMin, setFreeShippingMin] = useState(0);
+  const [gstPercent, setGstPercent] = useState(0);
   const [pincodeShipping, setPincodeShipping] = useState(null); // from Delhivery API
   const [shippingLoading, setShippingLoading] = useState(false);
   const [shippingPinLabel, setShippingPinLabel] = useState(""); // pincode the rate was calculated for
@@ -147,6 +148,12 @@ export default function Checkout() {
         const n = Number(data?.value?.amount);
         if (Number.isFinite(n) && n >= 0) setFreeShippingMin(n);
       });
+    supabase.from("app_settings").select("value")
+      .eq("key", "gst_percentage").maybeSingle()
+      .then(({ data }) => {
+        const n = Number(data?.value?.percentage);
+        if (Number.isFinite(n) && n >= 0) setGstPercent(n);
+      });
   }, []);
 
   // ─── Fetch shipping charge from Delhivery when address pincode changes ────
@@ -199,8 +206,9 @@ export default function Checkout() {
   const effectiveBase = pincodeShipping !== null ? pincodeShipping : shippingBase;
   const qualifiesFreeShipping = freeShippingMin > 0 && sub >= freeShippingMin;
   const shipping = qualifiesFreeShipping ? 0 : effectiveBase;
+  const gstAmount = gstPercent > 0 ? Math.round((sub * gstPercent) / 100) : 0;
   const discountAmount = appliedCoupon ? Math.round((sub * appliedCoupon.percentage) / 100) : 0;
-  const total = Math.max(0, sub + shipping - discountAmount);
+  const total = Math.max(0, sub + shipping + gstAmount - discountAmount);
   const amountToFreeShipping = freeShippingMin > 0 && !qualifiesFreeShipping ? freeShippingMin - sub : 0;
 
   // Coupon apply handler — fetches fresh from DB to ensure latest codes
@@ -737,6 +745,12 @@ export default function Checkout() {
               {qualifiesFreeShipping && effectiveBase > 0 && (
                 <div className="rounded-lg bg-emerald-50 border border-emerald-200 px-3 py-2 text-xs text-emerald-700">
                   ✅ You qualify for <span className="font-semibold">free shipping!</span>
+                </div>
+              )}
+              {gstPercent > 0 && (
+                <div className="flex justify-between text-stone-600">
+                  <span>GST ({gstPercent}%)</span>
+                  <span className="font-semibold text-stone-900">{money(gstAmount)}</span>
                 </div>
               )}
               {appliedCoupon && (

@@ -23,6 +23,7 @@ export default function AdminSettings() {
     const [maxItems, setMaxItems] = useState(15);
     const [shippingAmount, setShippingAmount] = useState(0);
     const [freeShippingMin, setFreeShippingMin] = useState(500);
+    const [gstPercent, setGstPercent] = useState(0);
     const [saving, setSaving] = useState(false);
 
     // Razorpay toggle
@@ -75,6 +76,13 @@ export default function AdminSettings() {
             .then(({ data }) => {
                 const n = Number(data?.value?.amount);
                 if (Number.isFinite(n) && n >= 0) setFreeShippingMin(n);
+            });
+
+        supabase.from("app_settings").select("value")
+            .eq("key", "gst_percentage").maybeSingle()
+            .then(({ data }) => {
+                const n = Number(data?.value?.percentage);
+                if (Number.isFinite(n) && n >= 0) setGstPercent(n);
             });
 
         // Load Razorpay toggle
@@ -140,10 +148,17 @@ export default function AdminSettings() {
             setSaving(false);
             return;
         }
+        const gst = Number(gstPercent);
+        if (!Number.isFinite(gst) || gst < 0 || gst > 100) {
+            showToast("GST % must be between 0 and 100", "error");
+            setSaving(false);
+            return;
+        }
         const results = await Promise.all([
             supabase.from("app_settings").upsert({ key: "max_items_per_order", value: { n } }, { onConflict: "key" }),
             supabase.from("app_settings").upsert({ key: "shipping_amount", value: { amount: shipAmt } }, { onConflict: "key" }),
             supabase.from("app_settings").upsert({ key: "free_shipping_min", value: { amount: freeMin } }, { onConflict: "key" }),
+            supabase.from("app_settings").upsert({ key: "gst_percentage", value: { percentage: gst } }, { onConflict: "key" }),
         ]);
         const err = results.find(r => r.error);
         if (err) {
@@ -286,6 +301,12 @@ export default function AdminSettings() {
                         <input type="number" value={freeShippingMin} onChange={(e) => setFreeShippingMin(e.target.value)} min={0}
                             className="mt-1 w-full rounded-xl border border-[#E8E4DE] bg-white px-4 py-3 text-sm text-stone-900 focus:ring-2 focus:ring-[#1e3a5f]/20 outline-none" />
                         <p className="text-[11px] text-stone-400 mt-1">Orders ≥ this amount get free shipping. Set to 0 to always charge shipping.</p>
+                    </div>
+                    <div>
+                        <div className="text-xs text-stone-400">GST %</div>
+                        <input type="number" value={gstPercent} onChange={(e) => setGstPercent(e.target.value)} min={0} max={100} step={0.1}
+                            className="mt-1 w-full rounded-xl border border-[#E8E4DE] bg-white px-4 py-3 text-sm text-stone-900 focus:ring-2 focus:ring-[#1e3a5f]/20 outline-none" />
+                        <p className="text-[11px] text-stone-400 mt-1">Applied on subtotal. Set to 0 to disable GST.</p>
                     </div>
                 </div>
                 <div className="mt-4 flex items-center gap-3">

@@ -22,6 +22,7 @@ export default function Cart() {
   const { items, totalItems, subtotal, updateQty, removeItem, clear } = useCart();
   const [shippingBase, setShippingBase] = useState(0);
   const [freeShippingMin, setFreeShippingMin] = useState(0);
+  const [gstPercent, setGstPercent] = useState(0);
 
   useEffect(() => {
     supabase.from("app_settings").select("value")
@@ -36,6 +37,12 @@ export default function Cart() {
         const n = Number(data?.value?.amount);
         if (Number.isFinite(n) && n >= 0) setFreeShippingMin(n);
       });
+    supabase.from("app_settings").select("value")
+      .eq("key", "gst_percentage").maybeSingle()
+      .then(({ data }) => {
+        const n = Number(data?.value?.percentage);
+        if (Number.isFinite(n) && n >= 0) setGstPercent(n);
+      });
   }, []);
 
   const sub = Number(subtotal || 0);
@@ -43,7 +50,8 @@ export default function Cart() {
   // If admin flat rate = 0, shipping will be calculated by Delhivery at checkout
   const shippingTBD = shippingBase === 0 && !qualifiesFreeShipping;
   const shipping = qualifiesFreeShipping ? 0 : shippingBase;
-  const total = sub + shipping;
+  const gstAmount = gstPercent > 0 ? Math.round((sub * gstPercent) / 100) : 0;
+  const total = sub + shipping + gstAmount;
   const amountToFreeShipping = freeShippingMin > 0 && !qualifiesFreeShipping ? freeShippingMin - sub : 0;
 
   return (
@@ -147,6 +155,12 @@ export default function Cart() {
                   {qualifiesFreeShipping && (
                     <div className="rounded-lg bg-emerald-50 border border-emerald-200 px-3 py-2 text-xs text-emerald-700">
                       ✅ You qualify for <span className="font-semibold">free shipping!</span>
+                    </div>
+                  )}
+                  {gstPercent > 0 && (
+                    <div className="flex justify-between text-stone-600">
+                      <span>GST ({gstPercent}%)</span>
+                      <span className="font-semibold text-stone-900">{money(gstAmount)}</span>
                     </div>
                   )}
                 </div>

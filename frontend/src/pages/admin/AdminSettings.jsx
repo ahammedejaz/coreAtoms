@@ -24,11 +24,19 @@ export default function AdminSettings() {
     const [replacementsLoading, setReplacementsLoading] = useState(true);
     const [replacementsSaving, setReplacementsSaving] = useState(false);
 
+    // Warehouse address
+    const [warehouse, setWarehouse] = useState({ name: "", phone: "", address: "", city: "", state: "", pin: "" });
+    const [warehouseLoading, setWarehouseLoading] = useState(true);
+    const [warehouseSaving, setWarehouseSaving] = useState(false);
+
     // Discount codes
     const [discountCodes, setDiscountCodes] = useState([]);
     const [discountLoading, setDiscountLoading] = useState(true);
     const [newCode, setNewCode] = useState("");
     const [newPercent, setNewPercent] = useState("");
+    const [newStartsAt, setNewStartsAt] = useState("");
+    const [newEndsAt, setNewEndsAt] = useState("");
+    const [newEmails, setNewEmails] = useState("");
     const [addingCode, setAddingCode] = useState(false);
 
     useEffect(() => {
@@ -68,6 +76,16 @@ export default function AdminSettings() {
             .then(({ data }) => {
                 setReplacementsEnabled(data?.value?.enabled === true);
                 setReplacementsLoading(false);
+            });
+
+        // Load warehouse address
+        supabase.from("app_settings").select("value")
+            .eq("key", "warehouse_address").maybeSingle()
+            .then(({ data }) => {
+                if (data?.value && typeof data.value === "object") {
+                    setWarehouse(prev => ({ ...prev, ...data.value }));
+                }
+                setWarehouseLoading(false);
             });
 
         // Load discount codes
@@ -148,6 +166,27 @@ export default function AdminSettings() {
         setReplacementsSaving(false);
     };
 
+    const saveWarehouse = async () => {
+        const w = warehouse;
+        if (!w.name || !w.phone || !w.address || !w.city || !w.state || !w.pin) {
+            showToast("All warehouse fields are required", "error");
+            return;
+        }
+        if (!/^\d{6}$/.test(w.pin)) {
+            showToast("Pincode must be 6 digits", "error");
+            return;
+        }
+        setWarehouseSaving(true);
+        const { error } = await supabase.from("app_settings")
+            .upsert({ key: "warehouse_address", value: w }, { onConflict: "key" });
+        if (error) {
+            showToast(error.message, "error");
+        } else {
+            showToast("Warehouse address saved", "success");
+        }
+        setWarehouseSaving(false);
+    };
+
     // ── Discount code helpers ──
     const saveDiscountCodes = async (codes) => {
         const { error } = await supabase.from("app_settings")
@@ -163,9 +202,15 @@ export default function AdminSettings() {
         if (!code) { showToast("Enter a code", "error"); return; }
         if (!Number.isFinite(pct) || pct <= 0 || pct > 100) { showToast("Percentage must be 1–100", "error"); return; }
         if (discountCodes.some(c => c.code === code)) { showToast("Code already exists", "error"); return; }
+        if (newStartsAt && newEndsAt && newStartsAt >= newEndsAt) { showToast("End date must be after start date", "error"); return; }
         setAddingCode(true);
-        const ok = await saveDiscountCodes([...discountCodes, { code, percentage: pct, active: true }]);
-        if (ok) { setNewCode(""); setNewPercent(""); showToast(`Code "${code}" added`, "success"); }
+        const entry = { code, percentage: pct, active: true };
+        if (newStartsAt) entry.startsAt = newStartsAt;
+        if (newEndsAt) entry.endsAt = newEndsAt;
+        const emailList = newEmails.split(",").map(e => e.trim().toLowerCase()).filter(Boolean);
+        if (emailList.length > 0) entry.emails = emailList;
+        const ok = await saveDiscountCodes([...discountCodes, entry]);
+        if (ok) { setNewCode(""); setNewPercent(""); setNewStartsAt(""); setNewEndsAt(""); setNewEmails(""); showToast(`Code "${code}" added`, "success"); }
         setAddingCode(false);
     };
 
@@ -384,6 +429,92 @@ export default function AdminSettings() {
                         </button>
                     </div>
                 </div>
+
+                {/* Warehouse / Return Address */}
+                {replacementsEnabled && (
+                    <div className="mt-4 rounded-xl border border-[#E8E4DE] p-4">
+                        <div className="text-sm font-semibold text-stone-900 mb-0.5">Warehouse / Return Address</div>
+                        <div className="text-xs text-stone-500 mb-4">
+                            Used for reverse pickups and replacement shipments via Delhivery.
+                        </div>
+
+                        {warehouseLoading ? (
+                            <div className="text-sm text-stone-400 py-2 text-center animate-pulse">Loading…</div>
+                        ) : (
+                            <>
+                                <div className="grid gap-3 sm:grid-cols-2">
+                                    <div>
+                                        <label className="text-xs text-stone-400 block mb-1">Contact Name</label>
+                                        <input
+                                            value={warehouse.name}
+                                            onChange={e => setWarehouse(prev => ({ ...prev, name: e.target.value }))}
+                                            placeholder="Warehouse Manager"
+                                            className="w-full rounded-xl border border-[#E8E4DE] bg-white px-3 py-2.5 text-sm text-stone-900 placeholder:text-stone-400 focus:ring-2 focus:ring-[#1e3a5f]/20 outline-none"
+                                        />
+                                    </div>
+                                    <div>
+                                        <label className="text-xs text-stone-400 block mb-1">Phone</label>
+                                        <input
+                                            value={warehouse.phone}
+                                            onChange={e => setWarehouse(prev => ({ ...prev, phone: e.target.value }))}
+                                            placeholder="9876543210"
+                                            className="w-full rounded-xl border border-[#E8E4DE] bg-white px-3 py-2.5 text-sm text-stone-900 placeholder:text-stone-400 focus:ring-2 focus:ring-[#1e3a5f]/20 outline-none"
+                                        />
+                                    </div>
+                                </div>
+                                <div className="mt-3">
+                                    <label className="text-xs text-stone-400 block mb-1">Street Address</label>
+                                    <input
+                                        value={warehouse.address}
+                                        onChange={e => setWarehouse(prev => ({ ...prev, address: e.target.value }))}
+                                        placeholder="123 Industrial Area, Sector 5"
+                                        className="w-full rounded-xl border border-[#E8E4DE] bg-white px-3 py-2.5 text-sm text-stone-900 placeholder:text-stone-400 focus:ring-2 focus:ring-[#1e3a5f]/20 outline-none"
+                                    />
+                                </div>
+                                <div className="mt-3 grid gap-3 sm:grid-cols-3">
+                                    <div>
+                                        <label className="text-xs text-stone-400 block mb-1">City</label>
+                                        <input
+                                            value={warehouse.city}
+                                            onChange={e => setWarehouse(prev => ({ ...prev, city: e.target.value }))}
+                                            placeholder="Mumbai"
+                                            className="w-full rounded-xl border border-[#E8E4DE] bg-white px-3 py-2.5 text-sm text-stone-900 placeholder:text-stone-400 focus:ring-2 focus:ring-[#1e3a5f]/20 outline-none"
+                                        />
+                                    </div>
+                                    <div>
+                                        <label className="text-xs text-stone-400 block mb-1">State</label>
+                                        <input
+                                            value={warehouse.state}
+                                            onChange={e => setWarehouse(prev => ({ ...prev, state: e.target.value }))}
+                                            placeholder="Maharashtra"
+                                            className="w-full rounded-xl border border-[#E8E4DE] bg-white px-3 py-2.5 text-sm text-stone-900 placeholder:text-stone-400 focus:ring-2 focus:ring-[#1e3a5f]/20 outline-none"
+                                        />
+                                    </div>
+                                    <div>
+                                        <label className="text-xs text-stone-400 block mb-1">Pincode</label>
+                                        <input
+                                            value={warehouse.pin}
+                                            onChange={e => setWarehouse(prev => ({ ...prev, pin: e.target.value.replace(/\D/g, "").slice(0, 6) }))}
+                                            placeholder="400001"
+                                            maxLength={6}
+                                            className="w-full rounded-xl border border-[#E8E4DE] bg-white px-3 py-2.5 text-sm font-mono text-stone-900 placeholder:text-stone-400 focus:ring-2 focus:ring-[#1e3a5f]/20 outline-none"
+                                        />
+                                    </div>
+                                </div>
+                                <div className="mt-4">
+                                    <button
+                                        type="button"
+                                        onClick={saveWarehouse}
+                                        disabled={warehouseSaving}
+                                        className="btn-primary py-2.5 px-5 text-sm disabled:opacity-50"
+                                    >
+                                        {warehouseSaving ? "Saving…" : "Save Warehouse Address"}
+                                    </button>
+                                </div>
+                            </>
+                        )}
+                    </div>
+                )}
             </div>
 
             {/* ── Discount Codes ── */}
@@ -407,6 +538,26 @@ export default function AdminSettings() {
                                 placeholder="e.g. 20" min={1} max={100}
                                 className="w-full rounded-xl border border-[#E8E4DE] bg-white px-3 py-2.5 text-sm text-stone-900 placeholder:text-stone-400 focus:ring-2 focus:ring-[#1e3a5f]/20 outline-none" />
                         </div>
+                    </div>
+                    <div className="mt-3 grid gap-3 sm:grid-cols-2">
+                        <div>
+                            <label className="text-xs text-stone-400 block mb-1">Starts at <span className="text-stone-300">(optional)</span></label>
+                            <input type="datetime-local" value={newStartsAt} onChange={(e) => setNewStartsAt(e.target.value)}
+                                className="w-full rounded-xl border border-[#E8E4DE] bg-white px-3 py-2.5 text-sm text-stone-900 focus:ring-2 focus:ring-[#1e3a5f]/20 outline-none" />
+                        </div>
+                        <div>
+                            <label className="text-xs text-stone-400 block mb-1">Ends at <span className="text-stone-300">(optional)</span></label>
+                            <input type="datetime-local" value={newEndsAt} onChange={(e) => setNewEndsAt(e.target.value)}
+                                className="w-full rounded-xl border border-[#E8E4DE] bg-white px-3 py-2.5 text-sm text-stone-900 focus:ring-2 focus:ring-[#1e3a5f]/20 outline-none" />
+                        </div>
+                    </div>
+                    <div className="mt-3">
+                        <label className="text-xs text-stone-400 block mb-1">Restrict to emails <span className="text-stone-300">(optional, comma-separated)</span></label>
+                        <input value={newEmails} onChange={(e) => setNewEmails(e.target.value)}
+                            placeholder="user1@example.com, user2@example.com"
+                            className="w-full rounded-xl border border-[#E8E4DE] bg-white px-3 py-2.5 text-sm text-stone-900 placeholder:text-stone-400 focus:ring-2 focus:ring-[#1e3a5f]/20 outline-none" />
+                    </div>
+                    <div className="mt-3">
                         <button onClick={addDiscountCode} disabled={addingCode || !newCode.trim() || !newPercent}
                             className="btn-primary py-2.5 px-5 text-sm whitespace-nowrap disabled:opacity-40">
                             {addingCode ? "Adding…" : "Add code"}
@@ -424,22 +575,43 @@ export default function AdminSettings() {
                 ) : (
                     <div className="space-y-2">
                         {discountCodes.map((dc) => (
-                            <div key={dc.code} className="flex items-center justify-between gap-3 rounded-xl border border-[#E8E4DE] px-4 py-3">
-                                <div className="flex items-center gap-3 min-w-0">
-                                    <span className="font-mono text-sm font-semibold text-stone-900">{dc.code}</span>
-                                    <span className="rounded-full bg-[#1e3a5f]/10 px-2 py-0.5 text-[11px] font-bold text-[#1e3a5f]">{dc.percentage}% off</span>
-                                    <span className={`rounded-full px-2 py-0.5 text-[10px] font-bold uppercase tracking-wide ${dc.active ? "bg-emerald-50 text-emerald-700" : "bg-stone-100 text-stone-400"}`}>
-                                        {dc.active ? "Active" : "Inactive"}
-                                    </span>
+                            <div key={dc.code} className="rounded-xl border border-[#E8E4DE] px-4 py-3">
+                                <div className="flex items-center justify-between gap-3">
+                                    <div className="flex items-center gap-3 min-w-0 flex-wrap">
+                                        <span className="font-mono text-sm font-semibold text-stone-900">{dc.code}</span>
+                                        <span className="rounded-full bg-[#1e3a5f]/10 px-2 py-0.5 text-[11px] font-bold text-[#1e3a5f]">{dc.percentage}% off</span>
+                                        <span className={`rounded-full px-2 py-0.5 text-[10px] font-bold uppercase tracking-wide ${dc.active ? "bg-emerald-50 text-emerald-700" : "bg-stone-100 text-stone-400"}`}>
+                                            {dc.active ? "Active" : "Inactive"}
+                                        </span>
+                                    </div>
+                                    <div className="flex items-center gap-2 shrink-0">
+                                        <button type="button" onClick={() => toggleDiscountCode(dc.code)}
+                                            className="text-xs text-stone-400 hover:text-[#1e3a5f] transition-colors">
+                                            {dc.active ? "Deactivate" : "Activate"}
+                                        </button>
+                                        <button type="button" onClick={() => deleteDiscountCode(dc.code)}
+                                            className="text-xs text-stone-300 hover:text-red-500 transition-colors">✕</button>
+                                    </div>
                                 </div>
-                                <div className="flex items-center gap-2 shrink-0">
-                                    <button type="button" onClick={() => toggleDiscountCode(dc.code)}
-                                        className="text-xs text-stone-400 hover:text-[#1e3a5f] transition-colors">
-                                        {dc.active ? "Deactivate" : "Activate"}
-                                    </button>
-                                    <button type="button" onClick={() => deleteDiscountCode(dc.code)}
-                                        className="text-xs text-stone-300 hover:text-red-500 transition-colors">✕</button>
-                                </div>
+                                {(dc.startsAt || dc.endsAt || dc.emails?.length > 0) && (
+                                    <div className="mt-2 flex flex-wrap gap-1.5">
+                                        {dc.startsAt && (
+                                            <span className="inline-flex items-center gap-1 rounded-full bg-blue-50 px-2 py-0.5 text-[10px] font-medium text-blue-700">
+                                                🕐 From {new Date(dc.startsAt).toLocaleString("en-IN", { day: "numeric", month: "short", year: "numeric", hour: "2-digit", minute: "2-digit" })}
+                                            </span>
+                                        )}
+                                        {dc.endsAt && (
+                                            <span className="inline-flex items-center gap-1 rounded-full bg-amber-50 px-2 py-0.5 text-[10px] font-medium text-amber-700">
+                                                ⏳ Until {new Date(dc.endsAt).toLocaleString("en-IN", { day: "numeric", month: "short", year: "numeric", hour: "2-digit", minute: "2-digit" })}
+                                            </span>
+                                        )}
+                                        {dc.emails?.length > 0 && (
+                                            <span className="inline-flex items-center gap-1 rounded-full bg-violet-50 px-2 py-0.5 text-[10px] font-medium text-violet-700">
+                                                ✉ {dc.emails.length === 1 ? dc.emails[0] : `${dc.emails.length} emails`}
+                                            </span>
+                                        )}
+                                    </div>
+                                )}
                             </div>
                         ))}
                     </div>

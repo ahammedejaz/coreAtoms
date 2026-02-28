@@ -99,11 +99,33 @@ export default function Checkout() {
         setCodAvailable(data?.value?.enabled !== false);
       });
 
-    // Load discount codes
+    // Load discount codes + re-validate any session-stored coupon
     supabase.from("app_settings").select("value")
       .eq("key", "discount_codes").maybeSingle()
       .then(({ data }) => {
-        setDiscountCodes(Array.isArray(data?.value) ? data.value : []);
+        const codes = Array.isArray(data?.value) ? data.value : [];
+        setDiscountCodes(codes);
+
+        // Re-validate session-stored coupon against latest DB state
+        try {
+          const stored = sessionStorage.getItem("coreatoms_coupon");
+          if (stored) {
+            const parsed = JSON.parse(stored);
+            const match = codes.find(c => c.code === parsed.code && c.active);
+            let invalid = false;
+            if (!match) {
+              invalid = true;
+            } else {
+              const now = new Date();
+              if (match.startsAt && new Date(match.startsAt) > now) invalid = true;
+              if (match.endsAt && new Date(match.endsAt) < now) invalid = true;
+            }
+            if (invalid) {
+              sessionStorage.removeItem("coreatoms_coupon");
+              setAppliedCoupon(null);
+            }
+          }
+        } catch { /* ignore parse errors */ }
       });
 
     // Load shipping amount
@@ -130,6 +152,30 @@ export default function Checkout() {
       const codes = Array.isArray(data?.value) ? data.value : [];
       const found = codes.find(c => c.code === code && c.active);
       if (!found) { setCouponError("Invalid or expired coupon code"); setValidatingCoupon(false); return; }
+
+      // Check schedule
+      const now = new Date();
+      if (found.startsAt && new Date(found.startsAt) > now) {
+        setCouponError("This coupon is not active yet");
+        setValidatingCoupon(false);
+        return;
+      }
+      if (found.endsAt && new Date(found.endsAt) < now) {
+        setCouponError("This coupon has expired");
+        setValidatingCoupon(false);
+        return;
+      }
+
+      // Check email restriction
+      if (found.emails?.length > 0) {
+        const userEmail = (user?.email || "").toLowerCase();
+        if (!found.emails.map(e => e.toLowerCase()).includes(userEmail)) {
+          setCouponError("This coupon is not available for your account");
+          setValidatingCoupon(false);
+          return;
+        }
+      }
+
       setAppliedCoupon({ code: found.code, percentage: found.percentage });
       sessionStorage.setItem("coreatoms_coupon", JSON.stringify({ code: found.code, percentage: found.percentage }));
       setCouponInput("");

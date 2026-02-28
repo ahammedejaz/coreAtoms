@@ -72,7 +72,7 @@ export default function Login() {
   };
 
   return (
-    <div className="min-h-[70vh] flex items-center justify-center py-12">
+    <div className="min-h-[80vh] flex items-center justify-center py-12">
       <SEO title="Login | Core Atoms" description="Sign in or create an account to manage your orders." />
       <div className="w-full max-w-md">
 

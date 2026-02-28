@@ -39,6 +39,8 @@ export default function AdminReplacements({ onCountChange }) {
     const [adminNotes, setAdminNotes] = useState({});
     const [processing, setProcessing] = useState(null);
     const [lightboxImg, setLightboxImg] = useState(null);
+    const [warehouse, setWarehouse] = useState(null);
+    const [warehouseLoading, setWarehouseLoading] = useState(true);
 
     const load = async () => {
         const { data, error } = await supabase
@@ -79,6 +81,18 @@ export default function AdminReplacements({ onCountChange }) {
 
     useEffect(() => { load(); }, []);
 
+    // Load warehouse address from admin settings
+    useEffect(() => {
+        supabase.from("app_settings").select("value")
+            .eq("key", "warehouse_address").maybeSingle()
+            .then(({ data }) => {
+                if (data?.value && typeof data.value === "object" && data.value.pin) {
+                    setWarehouse(data.value);
+                }
+                setWarehouseLoading(false);
+            });
+    }, []);
+
     const updateStatus = async (id, newStatus) => {
         setProcessing(id);
         const notes = adminNotes[id] || "";
@@ -107,8 +121,9 @@ export default function AdminReplacements({ onCountChange }) {
         setProcessing(null);
     };
 
-    /* ── Ship replacement via Delhivery ── */
+    /* ── Ship replacement (forward Prepaid) via Delhivery ── */
     const shipReplacement = async (replacement) => {
+        if (!window.confirm("Ship replacement via Delhivery? This will create a real shipment and assign a waybill.")) return;
         setProcessing(replacement.id);
         try {
             const order = replacement.orders || {};
@@ -135,8 +150,10 @@ export default function AdminReplacements({ onCountChange }) {
                         },
                         items,
                         total_amount: order.total_amount_inr || 0,
-                        payment_method: "prepaid", // Replacement is always prepaid (no COD)
+                        payment_method: "prepaid",
                         weight: 500,
+                        skip_order_update: true,
+                        warehouse: warehouse || undefined,
                     },
                 }
             );
@@ -156,7 +173,6 @@ export default function AdminReplacements({ onCountChange }) {
                 throw new Error(result?.error || "Shipping failed — no waybill returned");
             }
 
-            // Update replacement with tracking info + new status
             const { error: dbErr } = await supabase
                 .from("replacements")
                 .update({
@@ -179,7 +195,154 @@ export default function AdminReplacements({ onCountChange }) {
         setProcessing(null);
     };
 
-    const markPickupScheduled = (id) => updateStatus(id, "pickup_scheduled");
+    /* ── Create reverse pickup via Delhivery (Pickup mode) ── */
+    const createReversePickup = async (replacement) => {
+        if (!window.confirm("Schedule reverse pickup via Delhivery? The courier will pick up the damaged product from the customer.")) return;
+        setProcessing(replacement.id);
+        try {
+            const order = replacement.orders || {};
+            const ship = order.shipping_address || {};
+            const items = (order.order_items || []).map(it => ({
+                name: it.product_name || "Product",
+                qty: it.qty || 1,
+                price: it.unit_price_inr || 0,
+            }));
+
+            const { data: result, error: fnErr } = await supabase.functions.invoke(
+                "delhivery-create-shipment",
+                {
+                    body: {
+                        order_id: order.id,
+                        shipping_address: {
+                            name: ship.fullName || ship.name || "Customer",
+                            phone: ship.phone || ship.mobile || "",
+                            address: [ship.line1 || ship.address1 || "", ship.line2 || ship.address2 || ""].filter(Boolean).join(", "),
+                            city: ship.city || "",
+                            state: ship.state || "",
+                            pin: ship.pincode || ship.zip || "",
+                            country: ship.country || "India",
+                        },
+                        items,
+                        total_amount: 0,
+                        payment_method: "pickup",
+                        weight: 500,
+                        skip_order_update: true,
+                        warehouse: warehouse || undefined,
+                    },
+                }
+            );
+
+            if (fnErr) {
+                let detail = fnErr.message || "Reverse pickup failed";
+                if (fnErr.context && typeof fnErr.context.json === "function") {
+                    try {
+                        const errBody = await fnErr.context.json();
+                        detail = errBody?.error || errBody?.message || detail;
+                    } catch (_) { }
+                }
+                throw new Error(detail);
+            }
+
+            if (!result?.success && !result?.waybill) {
+                throw new Error(result?.error || "Reverse pickup failed — no waybill returned");
+            }
+
+            const { error: dbErr } = await supabase
+                .from("replacements")
+                .update({
+                    status: "pickup_scheduled",
+                    reverse_waybill: result.waybill,
+                    reverse_tracking_url: result.tracking_url,
+                    updated_at: new Date().toISOString(),
+                })
+                .eq("id", replacement.id);
+
+            if (dbErr) {
+                showToast(dbErr.message, "error");
+            } else {
+                showToast(`Reverse pickup scheduled! AWB: ${result.waybill}`, "success");
+                load();
+            }
+        } catch (err) {
+            showToast(err.message || "Failed to schedule pickup", "error");
+        }
+        setProcessing(null);
+    };
+
+    /* ── Create exchange shipment via Delhivery (REPL mode) ── */
+    const createExchangeShipment = async (replacement) => {
+        if (!window.confirm("Create exchange shipment (REPL)? Delhivery will pick up the damaged product and deliver the replacement in one trip.")) return;
+        setProcessing(replacement.id);
+        try {
+            const order = replacement.orders || {};
+            const ship = order.shipping_address || {};
+            const items = (order.order_items || []).map(it => ({
+                name: it.product_name || "Product",
+                qty: it.qty || 1,
+                price: it.unit_price_inr || 0,
+            }));
+
+            const { data: result, error: fnErr } = await supabase.functions.invoke(
+                "delhivery-create-shipment",
+                {
+                    body: {
+                        order_id: order.id,
+                        shipping_address: {
+                            name: ship.fullName || ship.name || "Customer",
+                            phone: ship.phone || ship.mobile || "",
+                            address: [ship.line1 || ship.address1 || "", ship.line2 || ship.address2 || ""].filter(Boolean).join(", "),
+                            city: ship.city || "",
+                            state: ship.state || "",
+                            pin: ship.pincode || ship.zip || "",
+                            country: ship.country || "India",
+                        },
+                        items,
+                        total_amount: order.total_amount_inr || 0,
+                        payment_method: "repl",
+                        weight: 500,
+                        skip_order_update: true,
+                        warehouse: warehouse || undefined,
+                    },
+                }
+            );
+
+            if (fnErr) {
+                let detail = fnErr.message || "Exchange shipment failed";
+                if (fnErr.context && typeof fnErr.context.json === "function") {
+                    try {
+                        const errBody = await fnErr.context.json();
+                        detail = errBody?.error || errBody?.message || detail;
+                    } catch (_) { }
+                }
+                throw new Error(detail);
+            }
+
+            if (!result?.success && !result?.waybill) {
+                throw new Error(result?.error || "Exchange shipment failed — no waybill returned");
+            }
+
+            const { error: dbErr } = await supabase
+                .from("replacements")
+                .update({
+                    status: "replacement_shipped",
+                    replacement_waybill: result.waybill,
+                    replacement_tracking_url: result.tracking_url,
+                    updated_at: new Date().toISOString(),
+                })
+                .eq("id", replacement.id);
+
+            if (dbErr) {
+                showToast(dbErr.message, "error");
+            } else {
+                showToast(`Exchange shipment created! AWB: ${result.waybill}`, "success");
+                load();
+            }
+        } catch (err) {
+            showToast(err.message || "Failed to create exchange shipment", "error");
+        }
+        setProcessing(null);
+    };
+
     const markPickupReceived = (id) => updateStatus(id, "pickup_received");
 
     const filtered = filter === "all"
@@ -419,11 +582,16 @@ export default function AdminReplacements({ onCountChange }) {
                                         </div>
                                     )}
 
-                                    {/* APPROVED: Two paths */}
+                                    {/* APPROVED: Three paths */}
                                     {r.status === "approved" && (
                                         <div className="space-y-3 pt-2 border-t border-[#E8E4DE]">
+                                            {!warehouseLoading && !warehouse && (
+                                                <div className="rounded-xl bg-amber-50 border border-amber-200 p-3 text-xs text-amber-700">
+                                                    <strong>Warehouse address not configured.</strong> Go to Admin Settings → Replacements to set your warehouse address before using Reverse Pickup or Exchange.
+                                                </div>
+                                            )}
                                             <div className="text-xs font-semibold text-stone-500 uppercase tracking-wide">Next Step</div>
-                                            <div className="grid gap-2 sm:grid-cols-2">
+                                            <div className="grid gap-2 sm:grid-cols-3">
                                                 <button
                                                     type="button"
                                                     onClick={() => shipReplacement(r)}
@@ -431,34 +599,74 @@ export default function AdminReplacements({ onCountChange }) {
                                                     className="rounded-xl bg-gradient-to-r from-teal-600 to-teal-700 px-4 py-3 text-sm font-semibold text-white hover:from-teal-700 hover:to-teal-800 active:scale-95 transition-all disabled:opacity-50 flex items-center justify-center gap-2"
                                                 >
                                                     {processing === r.id ? (
-                                                        <><div className="h-4 w-4 rounded-full border-2 border-white/30 border-t-white animate-spin" /> Shipping…</>
+                                                        <><div className="h-4 w-4 rounded-full border-2 border-white/30 border-t-white animate-spin" /> Processing…</>
                                                     ) : (
                                                         <>
                                                             <svg className="h-4 w-4" viewBox="0 0 20 20" fill="currentColor"><path d="M8 16.5a1.5 1.5 0 11-3 0 1.5 1.5 0 013 0zM15 16.5a1.5 1.5 0 11-3 0 1.5 1.5 0 013 0z" /><path d="M3 4a1 1 0 00-1 1v10a1 1 0 001 1h1.05a2.5 2.5 0 014.9 0H10a1 1 0 001-1V5a1 1 0 00-1-1H3zM14 7a1 1 0 00-1 1v6.05A2.5 2.5 0 0115.95 16H17a1 1 0 001-1v-5a1 1 0 00-.293-.707l-2-2A1 1 0 0015 7h-1z" /></svg>
-                                                            Ship Replacement Directly
+                                                            Ship Directly
                                                         </>
                                                     )}
                                                 </button>
                                                 <button
                                                     type="button"
-                                                    onClick={() => markPickupScheduled(r.id)}
-                                                    disabled={processing === r.id}
+                                                    onClick={() => createExchangeShipment(r)}
+                                                    disabled={processing === r.id || !warehouse}
+                                                    className="rounded-xl bg-gradient-to-r from-violet-600 to-violet-700 px-4 py-3 text-sm font-semibold text-white hover:from-violet-700 hover:to-violet-800 active:scale-95 transition-all disabled:opacity-50 flex items-center justify-center gap-2"
+                                                >
+                                                    {processing === r.id ? (
+                                                        <><div className="h-4 w-4 rounded-full border-2 border-white/30 border-t-white animate-spin" /> Processing…</>
+                                                    ) : (
+                                                        <>
+                                                            <svg className="h-4 w-4" viewBox="0 0 20 20" fill="currentColor"><path fillRule="evenodd" d="M4 2a1 1 0 011 1v2.101a7.002 7.002 0 0111.601 2.566 1 1 0 11-1.885.666A5.002 5.002 0 005.999 7H9a1 1 0 010 2H4a1 1 0 01-1-1V3a1 1 0 011-1zm.008 9.057a1 1 0 011.276.61A5.002 5.002 0 0014.001 13H11a1 1 0 110-2h5a1 1 0 011 1v5a1 1 0 11-2 0v-2.101a7.002 7.002 0 01-11.601-2.566 1 1 0 01.61-1.276z" clipRule="evenodd" /></svg>
+                                                            Exchange (REPL)
+                                                        </>
+                                                    )}
+                                                </button>
+                                                <button
+                                                    type="button"
+                                                    onClick={() => createReversePickup(r)}
+                                                    disabled={processing === r.id || !warehouse}
                                                     className="rounded-xl border border-blue-200 bg-white px-4 py-3 text-sm font-semibold text-blue-700 hover:bg-blue-50 active:scale-95 transition-all disabled:opacity-50 flex items-center justify-center gap-2"
                                                 >
-                                                    <svg className="h-4 w-4" viewBox="0 0 20 20" fill="currentColor"><path fillRule="evenodd" d="M4 2a1 1 0 011 1v2.101a7.002 7.002 0 0111.601 2.566 1 1 0 11-1.885.666A5.002 5.002 0 005.999 7H9a1 1 0 010 2H4a1 1 0 01-1-1V3a1 1 0 011-1zm.008 9.057a1 1 0 011.276.61A5.002 5.002 0 0014.001 13H11a1 1 0 110-2h5a1 1 0 011 1v5a1 1 0 11-2 0v-2.101a7.002 7.002 0 01-11.601-2.566 1 1 0 01.61-1.276z" clipRule="evenodd" /></svg>
-                                                    Schedule Reverse Pickup
+                                                    {processing === r.id ? (
+                                                        <><div className="h-4 w-4 rounded-full border-2 border-blue-300 border-t-blue-700 animate-spin" /> Processing…</>
+                                                    ) : (
+                                                        <>
+                                                            <svg className="h-4 w-4" viewBox="0 0 20 20" fill="currentColor"><path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm.707-10.293a1 1 0 00-1.414-1.414l-3 3a1 1 0 000 1.414l3 3a1 1 0 001.414-1.414L9.414 11H13a1 1 0 100-2H9.414l1.293-1.293z" clipRule="evenodd" /></svg>
+                                                            Reverse Pickup
+                                                        </>
+                                                    )}
                                                 </button>
                                             </div>
                                             <p className="text-[11px] text-stone-400 leading-relaxed">
-                                                <strong>Ship Directly</strong> — Severe damage, no need to pick up the product. Sends a new product immediately.<br />
-                                                <strong>Reverse Pickup</strong> — Minor damage, arrange pickup of the damaged product first via Delhivery dashboard.
+                                                <strong>Ship Directly</strong> — Severe damage. Ship new product immediately (Prepaid forward).<br />
+                                                <strong>Exchange (REPL)</strong> — Pickup damaged + deliver replacement in one trip (single waybill).<br />
+                                                <strong>Reverse Pickup</strong> — Pick up damaged product first, then ship replacement after receiving it.
                                             </p>
                                         </div>
                                     )}
 
-                                    {/* PICKUP_SCHEDULED: Mark received */}
+                                    {/* PICKUP_SCHEDULED: Show reverse AWB + mark received */}
                                     {r.status === "pickup_scheduled" && (
                                         <div className="space-y-3 pt-2 border-t border-[#E8E4DE]">
+                                            {r.reverse_waybill && (
+                                                <div className="rounded-xl border border-blue-200 bg-blue-50 p-3">
+                                                    <div className="text-xs font-semibold text-blue-700 uppercase tracking-wide mb-1">Reverse Pickup Shipment</div>
+                                                    <div className="text-sm text-blue-800">
+                                                        AWB: <span className="font-mono font-medium">{r.reverse_waybill}</span>
+                                                    </div>
+                                                    {r.reverse_tracking_url && (
+                                                        <a
+                                                            href={r.reverse_tracking_url}
+                                                            target="_blank"
+                                                            rel="noopener noreferrer"
+                                                            className="inline-flex items-center gap-1 mt-1 text-xs font-medium text-blue-700 hover:underline"
+                                                        >
+                                                            Track reverse pickup ↗
+                                                        </a>
+                                                    )}
+                                                </div>
+                                            )}
                                             <div className="rounded-xl bg-blue-50 border border-blue-200 p-3 text-xs text-blue-700">
                                                 <strong>Reverse pickup is scheduled.</strong> Once the damaged product is received at your warehouse, mark it as received to proceed.
                                             </div>

@@ -1,13 +1,23 @@
 // supabase/functions/delhivery-create-shipment/index.ts
 //
 // Creates a shipment on Delhivery and assigns a waybill.
-// Called from the Admin Dashboard when admin clicks "Ship Order".
+// Supports all Delhivery payment modes:
+//   - "Prepaid" / "COD"  — Forward shipment (warehouse → customer)
+//   - "Pickup"           — Reverse pickup  (customer → warehouse)
+//   - "REPL"             — Replacement exchange (single waybill, pickup + delivery)
 //
 // Secrets required (set via Supabase Dashboard → Edge Functions → Secrets):
-//   DELHIVERY_API_TOKEN   — Your Delhivery API token (staging or production)
-//   DELHIVERY_BASE_URL    — https://staging-express.delhivery.com (staging)
-//                           https://track.delhivery.com (production)
-//   DELHIVERY_CLIENT_NAME — Your Delhivery client name
+//   DELHIVERY_API_TOKEN       — Your Delhivery API token
+//   DELHIVERY_BASE_URL        — https://staging-express.delhivery.com (staging)
+//                                https://track.delhivery.com (production)
+//   DELHIVERY_CLIENT_NAME     — Your Delhivery client name
+//   DELHIVERY_PICKUP_NAME     — Pickup location name (optional, defaults to client name)
+//   DELHIVERY_WAREHOUSE_NAME  — Warehouse contact name
+//   DELHIVERY_WAREHOUSE_PHONE — Warehouse phone number
+//   DELHIVERY_WAREHOUSE_ADD   — Warehouse street address
+//   DELHIVERY_WAREHOUSE_CITY  — Warehouse city
+//   DELHIVERY_WAREHOUSE_STATE — Warehouse state
+//   DELHIVERY_WAREHOUSE_PIN   — Warehouse pincode
 //
 // Supabase connection (auto-available in edge functions):
 //   SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY
@@ -17,8 +27,9 @@
 //   shipping_address: { name, phone, address, city, state, pin, country },
 //   items: [{ name, qty, price }],
 //   total_amount: number,
-//   payment_method: "cod" | "prepaid",
-//   weight: number (in grams)
+//   payment_method: "cod" | "prepaid" | "pickup" | "repl",
+//   weight: number (in grams),
+//   skip_order_update?: boolean  — if true, skip updating the orders table
 // }
 
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
@@ -44,6 +55,9 @@ Deno.serve(async (req) => {
         const CLIENT_NAME = Deno.env.get("DELHIVERY_CLIENT_NAME");
         const PICKUP_NAME = Deno.env.get("DELHIVERY_PICKUP_NAME") || CLIENT_NAME;
 
+        // Warehouse / return address — will be populated after parsing request body
+        // (request body `warehouse` takes priority over env vars)
+
         if (!DELHIVERY_TOKEN || !CLIENT_NAME) {
             return new Response(
                 JSON.stringify({ error: "Delhivery credentials not configured" }),
@@ -62,6 +76,8 @@ Deno.serve(async (req) => {
             total_amount,
             payment_method,
             weight,
+            skip_order_update,
+            warehouse,
         } = await req.json();
 
         if (!order_id || !shipping_address) {
@@ -69,6 +85,43 @@ Deno.serve(async (req) => {
                 JSON.stringify({ error: "order_id and shipping_address are required" }),
                 {
                     status: 400,
+                    headers: { ...corsHeaders, "Content-Type": "application/json" },
+                }
+            );
+        }
+
+        // ── Build warehouse address (request body takes priority over env vars) ──
+        const WAREHOUSE = {
+            name: warehouse?.name || Deno.env.get("DELHIVERY_WAREHOUSE_NAME") || "",
+            phone: warehouse?.phone || Deno.env.get("DELHIVERY_WAREHOUSE_PHONE") || "",
+            address: warehouse?.address || Deno.env.get("DELHIVERY_WAREHOUSE_ADD") || "",
+            city: warehouse?.city || Deno.env.get("DELHIVERY_WAREHOUSE_CITY") || "",
+            state: warehouse?.state || Deno.env.get("DELHIVERY_WAREHOUSE_STATE") || "",
+            pin: warehouse?.pin || Deno.env.get("DELHIVERY_WAREHOUSE_PIN") || "",
+            country: "India",
+        };
+
+        // ── Determine payment mode ──
+        // Supported: "COD", "Prepaid", "Pickup" (reverse), "REPL" (exchange)
+        const methodUpper = (payment_method || "prepaid").toUpperCase();
+        let paymentMode: string;
+        if (methodUpper === "COD") paymentMode = "COD";
+        else if (methodUpper === "PICKUP") paymentMode = "Pickup";
+        else if (methodUpper === "REPL") paymentMode = "REPL";
+        else paymentMode = "Prepaid";
+
+        const isReverse = paymentMode === "Pickup";
+        const isREPL = paymentMode === "REPL";
+        const isCOD = paymentMode === "COD";
+
+        // For Pickup/REPL, validate warehouse address is configured
+        if ((isReverse || isREPL) && !WAREHOUSE.pin) {
+            return new Response(
+                JSON.stringify({
+                    error: "Warehouse address not configured. Set it in Admin Settings → Replacements, or set DELHIVERY_WAREHOUSE_* secrets.",
+                }),
+                {
+                    status: 500,
                     headers: { ...corsHeaders, "Content-Type": "application/json" },
                 }
             );
@@ -98,10 +151,6 @@ Deno.serve(async (req) => {
         }
 
         const wbData = await wbRes.json();
-        // Delhivery may return:
-        //   - a plain string: "51064810000011"
-        //   - an object: { waybill: "..." }
-        //   - an array: ["..."]
         const waybill =
             typeof wbData === "string"
                 ? wbData
@@ -122,9 +171,38 @@ Deno.serve(async (req) => {
             );
         }
 
-        // ── Step 2: Create shipment with the waybill ──
+        // ── Step 2: Build shipment payload ──
         const addr = shipping_address;
-        const isCOD = (payment_method || "").toLowerCase() === "cod";
+
+        // Return address fields (warehouse):
+        // - Pickup mode: return_add = warehouse (where picked-up product goes)
+        // - REPL mode: return_add = warehouse (final delivery for exchange shipment)
+        // - Forward mode: left empty (Delhivery uses registered return address)
+        const returnAddr = (isReverse || isREPL)
+            ? {
+                return_name: WAREHOUSE.name,
+                return_phone: WAREHOUSE.phone,
+                return_add: WAREHOUSE.address,
+                return_city: WAREHOUSE.city,
+                return_state: WAREHOUSE.state,
+                return_pin: WAREHOUSE.pin,
+                return_country: WAREHOUSE.country,
+            }
+            : {
+                return_name: "",
+                return_phone: "",
+                return_add: "",
+                return_city: "",
+                return_state: "",
+                return_pin: "",
+                return_country: "",
+            };
+
+        // Order ID must be unique per shipment — append suffix for reverse/replacement
+        let shipmentOrderId = order_id;
+        if (isReverse) shipmentOrderId = `${order_id}-RVP`;
+        else if (isREPL) shipmentOrderId = `${order_id}-REPL`;
+        else if (skip_order_update) shipmentOrderId = `${order_id}-REPL-FWD`;
 
         const shipmentPayload = {
             shipments: [
@@ -136,14 +214,9 @@ Deno.serve(async (req) => {
                     state: addr.state || "",
                     country: addr.country || "India",
                     phone: addr.phone || "",
-                    order: order_id,
-                    payment_mode: isCOD ? "COD" : "Prepaid",
-                    return_pin: "",
-                    return_city: "",
-                    return_phone: "",
-                    return_add: "",
-                    return_state: "",
-                    return_country: "",
+                    order: shipmentOrderId,
+                    payment_mode: paymentMode,
+                    ...returnAddr,
                     products_desc: (items || [])
                         .map((i: { name: string }) => i.name)
                         .join(", "),
@@ -163,7 +236,7 @@ Deno.serve(async (req) => {
                     waybill: waybill,
                     shipment_width: "10",
                     shipment_height: "10",
-                    weight: String(weight || 500), // grams
+                    weight: String(weight || 500),
                     seller_gst_tin: "",
                     shipping_mode: "Surface",
                     address_type: "home",
@@ -206,7 +279,6 @@ Deno.serve(async (req) => {
         const pkg = createData?.packages?.[0] || {};
         const success = pkg.status === "Success" || createData.success;
 
-        // If Delhivery rejected the shipment, do NOT update the DB
         if (!success) {
             const remarks = (pkg.remarks || []).join("; ") || "Unknown error";
             console.error("Delhivery shipment rejected:", remarks, createData);
@@ -223,25 +295,29 @@ Deno.serve(async (req) => {
         }
 
         // ── Step 3: Update the order in Supabase ──
-        const supabaseUrl = Deno.env.get("SUPABASE_URL")!;
-        const supabaseKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
-        const supabase = createClient(supabaseUrl, supabaseKey);
-
+        // Skip for replacement/reverse shipments (skip_order_update=true) to
+        // preserve the original order's waybill, tracking URL, and status.
         const trackingUrl = `https://www.delhivery.com/track/package/${waybill}`;
 
-        const { error: dbError } = await supabase
-            .from("orders")
-            .update({
-                delhivery_waybill: waybill,
-                courier_name: "Delhivery",
-                tracking_url: trackingUrl,
-                shipped_at: new Date().toISOString(),
-                status: "shipped",
-            })
-            .eq("id", order_id);
+        if (!skip_order_update) {
+            const supabaseUrl = Deno.env.get("SUPABASE_URL")!;
+            const supabaseKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
+            const supabase = createClient(supabaseUrl, supabaseKey);
 
-        if (dbError) {
-            console.error("DB update error:", dbError);
+            const { error: dbError } = await supabase
+                .from("orders")
+                .update({
+                    delhivery_waybill: waybill,
+                    courier_name: "Delhivery",
+                    tracking_url: trackingUrl,
+                    shipped_at: new Date().toISOString(),
+                    status: "shipped",
+                })
+                .eq("id", order_id);
+
+            if (dbError) {
+                console.error("DB update error:", dbError);
+            }
         }
 
         return new Response(
@@ -249,6 +325,7 @@ Deno.serve(async (req) => {
                 success: true,
                 waybill,
                 tracking_url: trackingUrl,
+                payment_mode: paymentMode,
                 delhivery_response: createData,
             }),
             {

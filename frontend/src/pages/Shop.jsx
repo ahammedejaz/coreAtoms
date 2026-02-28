@@ -323,21 +323,19 @@ export default function Shop() {
         <div className="card p-6 mb-6 text-sm text-red-600">{err}</div>
       )}
 
-      <ScrollReveal delay={100}>
-        {active.length === 0 ? (
-          <div className="card p-12 text-center">
-            <p className="text-base font-semibold text-stone-900">No products found</p>
-            <p className="mt-1 text-sm text-stone-500">Try a different search or category.</p>
-            <button onClick={() => { setCategory("All"); setQuery(""); }} className="btn-ghost mt-5">Reset filters</button>
-          </div>
-        ) : (
-          <div className="grid gap-5 sm:grid-cols-2 lg:grid-cols-3">
-            {active.map((p) => (
-              <ProductCard key={p.id} p={p} onAdd={handleAdd} justAdded={justAddedId === p.id} />
-            ))}
-          </div>
-        )}
-      </ScrollReveal>
+      {active.length === 0 ? (
+        <div className="card p-12 text-center">
+          <p className="text-base font-semibold text-stone-900">No products found</p>
+          <p className="mt-1 text-sm text-stone-500">Try a different search or category.</p>
+          <button onClick={() => { setCategory("All"); setQuery(""); }} className="btn-ghost mt-5">Reset filters</button>
+        </div>
+      ) : (
+        <div className="grid gap-5 sm:grid-cols-2 lg:grid-cols-3">
+          {active.map((p) => (
+            <ProductCard key={p.id} p={p} onAdd={handleAdd} justAdded={justAddedId === p.id} />
+          ))}
+        </div>
+      )}
 
     </div>
   );

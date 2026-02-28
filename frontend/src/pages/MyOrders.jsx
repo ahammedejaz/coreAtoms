@@ -117,7 +117,7 @@ function InlineReplacementForm({ orderId, userId, onDone }) {
   };
 
   const removeFile = (idx) => {
-    URL.revokeObjectURL(previews[idx]);
+    previews.forEach((url) => URL.revokeObjectURL(url));
     const nf = files.filter((_, i) => i !== idx);
     setFiles(nf);
     setPreviews(nf.map((f) => URL.createObjectURL(f)));
@@ -296,7 +296,7 @@ export default function MyOrders() {
     // Fetch existing replacement requests for this user
     const { data: repData } = await supabase
       .from("replacements")
-      .select("id,order_id,status,reason,admin_notes,created_at,replacement_waybill,replacement_tracking_url")
+      .select("id,order_id,status,reason,admin_notes,created_at,replacement_waybill,replacement_tracking_url,reverse_waybill,reverse_tracking_url")
       .eq("user_id", userId);
     const map = {};
     (repData || []).forEach((r) => { map[r.order_id] = r; });
@@ -508,6 +508,23 @@ export default function MyOrders() {
                             <p className="text-xs text-stone-500 mt-1">
                               <span className="font-medium text-stone-600">Admin notes:</span> {existing.admin_notes}
                             </p>
+                          )}
+                          {existing.reverse_waybill && (
+                            <div className="mt-2 rounded-lg border border-blue-200 bg-blue-50 px-3 py-2">
+                              <p className="text-xs font-medium text-blue-700">
+                                Reverse pickup — AWB: <span className="font-mono">{existing.reverse_waybill}</span>
+                              </p>
+                              {existing.reverse_tracking_url && (
+                                <a
+                                  href={existing.reverse_tracking_url}
+                                  target="_blank"
+                                  rel="noopener noreferrer"
+                                  className="inline-flex items-center gap-1 mt-1 text-xs font-medium text-blue-700 hover:underline"
+                                >
+                                  Track reverse pickup ↗
+                                </a>
+                              )}
+                            </div>
                           )}
                           {existing.replacement_waybill && (
                             <div className="mt-2 rounded-lg border border-teal-200 bg-teal-50 px-3 py-2">

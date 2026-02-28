@@ -22,6 +22,7 @@ export default function AdminSettings() {
     const { showToast } = useToast();
     const [maxItems, setMaxItems] = useState(15);
     const [shippingAmount, setShippingAmount] = useState(0);
+    const [freeShippingMin, setFreeShippingMin] = useState(500);
     const [saving, setSaving] = useState(false);
 
     // Razorpay toggle
@@ -67,6 +68,13 @@ export default function AdminSettings() {
             .then(({ data }) => {
                 const n = Number(data?.value?.amount);
                 if (Number.isFinite(n) && n >= 0) setShippingAmount(n);
+            });
+
+        supabase.from("app_settings").select("value")
+            .eq("key", "free_shipping_min").maybeSingle()
+            .then(({ data }) => {
+                const n = Number(data?.value?.amount);
+                if (Number.isFinite(n) && n >= 0) setFreeShippingMin(n);
             });
 
         // Load Razorpay toggle
@@ -126,9 +134,16 @@ export default function AdminSettings() {
             setSaving(false);
             return;
         }
+        const freeMin = Number(freeShippingMin);
+        if (!Number.isFinite(freeMin) || freeMin < 0) {
+            showToast("Free shipping minimum must be 0 or more", "error");
+            setSaving(false);
+            return;
+        }
         const results = await Promise.all([
             supabase.from("app_settings").upsert({ key: "max_items_per_order", value: { n } }, { onConflict: "key" }),
             supabase.from("app_settings").upsert({ key: "shipping_amount", value: { amount: shipAmt } }, { onConflict: "key" }),
+            supabase.from("app_settings").upsert({ key: "free_shipping_min", value: { amount: freeMin } }, { onConflict: "key" }),
         ]);
         const err = results.find(r => r.error);
         if (err) {
@@ -264,7 +279,13 @@ export default function AdminSettings() {
                         <div className="text-xs text-stone-400">Shipping amount (₹)</div>
                         <input type="number" value={shippingAmount} onChange={(e) => setShippingAmount(e.target.value)} min={0}
                             className="mt-1 w-full rounded-xl border border-[#E8E4DE] bg-white px-4 py-3 text-sm text-stone-900 focus:ring-2 focus:ring-[#1e3a5f]/20 outline-none" />
-                        <p className="text-[11px] text-stone-400 mt-1">Set to 0 for free shipping</p>
+                        <p className="text-[11px] text-stone-400 mt-1">Flat shipping fee charged when applicable</p>
+                    </div>
+                    <div>
+                        <div className="text-xs text-stone-400">Free shipping above (₹)</div>
+                        <input type="number" value={freeShippingMin} onChange={(e) => setFreeShippingMin(e.target.value)} min={0}
+                            className="mt-1 w-full rounded-xl border border-[#E8E4DE] bg-white px-4 py-3 text-sm text-stone-900 focus:ring-2 focus:ring-[#1e3a5f]/20 outline-none" />
+                        <p className="text-[11px] text-stone-400 mt-1">Orders ≥ this amount get free shipping. Set to 0 to always charge shipping.</p>
                     </div>
                 </div>
                 <div className="mt-4 flex items-center gap-3">
@@ -444,91 +465,89 @@ export default function AdminSettings() {
                         </button>
                     </div>
                 </div>
+            </div>
 
-                {/* Warehouse / Return Address */}
-                {replacementsEnabled && (
-                    <div className="mt-4 rounded-xl border border-[#E8E4DE] p-4">
-                        <div className="text-sm font-semibold text-stone-900 mb-0.5">Warehouse / Return Address</div>
-                        <div className="text-xs text-stone-500 mb-4">
-                            Used for reverse pickups and replacement shipments via Delhivery.
+            {/* ── Warehouse / Return Address ── */}
+            <div className="rounded-2xl border border-[#E8E4DE] bg-white p-5">
+                <div className="text-base font-semibold text-stone-900 mb-0.5">Warehouse / Return Address</div>
+                <div className="text-xs text-stone-500 mb-4">
+                    Origin address for Delhivery shipments, shipping rate calculations, and return pickups.
+                </div>
+
+                {warehouseLoading ? (
+                    <div className="text-sm text-stone-400 py-2 text-center animate-pulse">Loading…</div>
+                ) : (
+                    <>
+                        <div className="grid gap-3 sm:grid-cols-2">
+                            <div>
+                                <label className="text-xs text-stone-400 block mb-1">Contact Name</label>
+                                <input
+                                    value={warehouse.name}
+                                    onChange={e => setWarehouse(prev => ({ ...prev, name: e.target.value }))}
+                                    placeholder="Warehouse Manager"
+                                    className="w-full rounded-xl border border-[#E8E4DE] bg-white px-3 py-2.5 text-sm text-stone-900 placeholder:text-stone-400 focus:ring-2 focus:ring-[#1e3a5f]/20 outline-none"
+                                />
+                            </div>
+                            <div>
+                                <label className="text-xs text-stone-400 block mb-1">Phone</label>
+                                <input
+                                    value={warehouse.phone}
+                                    onChange={e => setWarehouse(prev => ({ ...prev, phone: e.target.value }))}
+                                    placeholder="9876543210"
+                                    className="w-full rounded-xl border border-[#E8E4DE] bg-white px-3 py-2.5 text-sm text-stone-900 placeholder:text-stone-400 focus:ring-2 focus:ring-[#1e3a5f]/20 outline-none"
+                                />
+                            </div>
                         </div>
-
-                        {warehouseLoading ? (
-                            <div className="text-sm text-stone-400 py-2 text-center animate-pulse">Loading…</div>
-                        ) : (
-                            <>
-                                <div className="grid gap-3 sm:grid-cols-2">
-                                    <div>
-                                        <label className="text-xs text-stone-400 block mb-1">Contact Name</label>
-                                        <input
-                                            value={warehouse.name}
-                                            onChange={e => setWarehouse(prev => ({ ...prev, name: e.target.value }))}
-                                            placeholder="Warehouse Manager"
-                                            className="w-full rounded-xl border border-[#E8E4DE] bg-white px-3 py-2.5 text-sm text-stone-900 placeholder:text-stone-400 focus:ring-2 focus:ring-[#1e3a5f]/20 outline-none"
-                                        />
-                                    </div>
-                                    <div>
-                                        <label className="text-xs text-stone-400 block mb-1">Phone</label>
-                                        <input
-                                            value={warehouse.phone}
-                                            onChange={e => setWarehouse(prev => ({ ...prev, phone: e.target.value }))}
-                                            placeholder="9876543210"
-                                            className="w-full rounded-xl border border-[#E8E4DE] bg-white px-3 py-2.5 text-sm text-stone-900 placeholder:text-stone-400 focus:ring-2 focus:ring-[#1e3a5f]/20 outline-none"
-                                        />
-                                    </div>
-                                </div>
-                                <div className="mt-3">
-                                    <label className="text-xs text-stone-400 block mb-1">Street Address</label>
-                                    <input
-                                        value={warehouse.address}
-                                        onChange={e => setWarehouse(prev => ({ ...prev, address: e.target.value }))}
-                                        placeholder="123 Industrial Area, Sector 5"
-                                        className="w-full rounded-xl border border-[#E8E4DE] bg-white px-3 py-2.5 text-sm text-stone-900 placeholder:text-stone-400 focus:ring-2 focus:ring-[#1e3a5f]/20 outline-none"
-                                    />
-                                </div>
-                                <div className="mt-3 grid gap-3 sm:grid-cols-3">
-                                    <div>
-                                        <label className="text-xs text-stone-400 block mb-1">City</label>
-                                        <input
-                                            value={warehouse.city}
-                                            onChange={e => setWarehouse(prev => ({ ...prev, city: e.target.value }))}
-                                            placeholder="Mumbai"
-                                            className="w-full rounded-xl border border-[#E8E4DE] bg-white px-3 py-2.5 text-sm text-stone-900 placeholder:text-stone-400 focus:ring-2 focus:ring-[#1e3a5f]/20 outline-none"
-                                        />
-                                    </div>
-                                    <div>
-                                        <label className="text-xs text-stone-400 block mb-1">State</label>
-                                        <input
-                                            value={warehouse.state}
-                                            onChange={e => setWarehouse(prev => ({ ...prev, state: e.target.value }))}
-                                            placeholder="Maharashtra"
-                                            className="w-full rounded-xl border border-[#E8E4DE] bg-white px-3 py-2.5 text-sm text-stone-900 placeholder:text-stone-400 focus:ring-2 focus:ring-[#1e3a5f]/20 outline-none"
-                                        />
-                                    </div>
-                                    <div>
-                                        <label className="text-xs text-stone-400 block mb-1">Pincode</label>
-                                        <input
-                                            value={warehouse.pin}
-                                            onChange={e => setWarehouse(prev => ({ ...prev, pin: e.target.value.replace(/\D/g, "").slice(0, 6) }))}
-                                            placeholder="400001"
-                                            maxLength={6}
-                                            className="w-full rounded-xl border border-[#E8E4DE] bg-white px-3 py-2.5 text-sm font-mono text-stone-900 placeholder:text-stone-400 focus:ring-2 focus:ring-[#1e3a5f]/20 outline-none"
-                                        />
-                                    </div>
-                                </div>
-                                <div className="mt-4">
-                                    <button
-                                        type="button"
-                                        onClick={saveWarehouse}
-                                        disabled={warehouseSaving}
-                                        className="btn-primary py-2.5 px-5 text-sm disabled:opacity-50"
-                                    >
-                                        {warehouseSaving ? "Saving…" : "Save Warehouse Address"}
-                                    </button>
-                                </div>
-                            </>
-                        )}
-                    </div>
+                        <div className="mt-3">
+                            <label className="text-xs text-stone-400 block mb-1">Street Address</label>
+                            <input
+                                value={warehouse.address}
+                                onChange={e => setWarehouse(prev => ({ ...prev, address: e.target.value }))}
+                                placeholder="123 Industrial Area, Sector 5"
+                                className="w-full rounded-xl border border-[#E8E4DE] bg-white px-3 py-2.5 text-sm text-stone-900 placeholder:text-stone-400 focus:ring-2 focus:ring-[#1e3a5f]/20 outline-none"
+                            />
+                        </div>
+                        <div className="mt-3 grid gap-3 sm:grid-cols-3">
+                            <div>
+                                <label className="text-xs text-stone-400 block mb-1">City</label>
+                                <input
+                                    value={warehouse.city}
+                                    onChange={e => setWarehouse(prev => ({ ...prev, city: e.target.value }))}
+                                    placeholder="Mumbai"
+                                    className="w-full rounded-xl border border-[#E8E4DE] bg-white px-3 py-2.5 text-sm text-stone-900 placeholder:text-stone-400 focus:ring-2 focus:ring-[#1e3a5f]/20 outline-none"
+                                />
+                            </div>
+                            <div>
+                                <label className="text-xs text-stone-400 block mb-1">State</label>
+                                <input
+                                    value={warehouse.state}
+                                    onChange={e => setWarehouse(prev => ({ ...prev, state: e.target.value }))}
+                                    placeholder="Maharashtra"
+                                    className="w-full rounded-xl border border-[#E8E4DE] bg-white px-3 py-2.5 text-sm text-stone-900 placeholder:text-stone-400 focus:ring-2 focus:ring-[#1e3a5f]/20 outline-none"
+                                />
+                            </div>
+                            <div>
+                                <label className="text-xs text-stone-400 block mb-1">Pincode</label>
+                                <input
+                                    value={warehouse.pin}
+                                    onChange={e => setWarehouse(prev => ({ ...prev, pin: e.target.value.replace(/\D/g, "").slice(0, 6) }))}
+                                    placeholder="400001"
+                                    maxLength={6}
+                                    className="w-full rounded-xl border border-[#E8E4DE] bg-white px-3 py-2.5 text-sm font-mono text-stone-900 placeholder:text-stone-400 focus:ring-2 focus:ring-[#1e3a5f]/20 outline-none"
+                                />
+                            </div>
+                        </div>
+                        <div className="mt-4">
+                            <button
+                                type="button"
+                                onClick={saveWarehouse}
+                                disabled={warehouseSaving}
+                                className="btn-primary py-2.5 px-5 text-sm disabled:opacity-50"
+                            >
+                                {warehouseSaving ? "Saving…" : "Save Warehouse Address"}
+                            </button>
+                        </div>
+                    </>
                 )}
             </div>
 

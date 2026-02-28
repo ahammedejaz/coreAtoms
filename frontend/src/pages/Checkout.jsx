@@ -7,7 +7,7 @@
  *
  * @module pages/Checkout
  */
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect, useCallback, useRef } from "react";
 import { Link, useNavigate } from "react-router-dom";
 import { useAuth } from "../context/AuthContext";
 import { useCart } from "../context/CartContext";
@@ -65,7 +65,12 @@ export default function Checkout() {
   const [payingOnline, setPayingOnline] = useState(false);
 
   // Shipping amount (from app_settings)
-  const [shipping, setShipping] = useState(0);
+  const [shippingBase, setShippingBase] = useState(0);
+  const [freeShippingMin, setFreeShippingMin] = useState(0);
+  const [pincodeShipping, setPincodeShipping] = useState(null); // from Delhivery API
+  const [shippingLoading, setShippingLoading] = useState(false);
+  const [shippingPinLabel, setShippingPinLabel] = useState(""); // pincode the rate was calculated for
+  const shippingAbort = useRef(null);
 
   // Razorpay toggle (read from app_settings)
   const [razorpayAvailable, setRazorpayAvailable] = useState(false);
@@ -133,12 +138,70 @@ export default function Checkout() {
       .eq("key", "shipping_amount").maybeSingle()
       .then(({ data }) => {
         const n = Number(data?.value?.amount);
-        if (Number.isFinite(n) && n >= 0) setShipping(n);
+        if (Number.isFinite(n) && n >= 0) setShippingBase(n);
+      });
+    // Load free-shipping threshold
+    supabase.from("app_settings").select("value")
+      .eq("key", "free_shipping_min").maybeSingle()
+      .then(({ data }) => {
+        const n = Number(data?.value?.amount);
+        if (Number.isFinite(n) && n >= 0) setFreeShippingMin(n);
       });
   }, []);
 
-  const discountAmount = appliedCoupon ? Math.round((Number(subtotal || 0) * appliedCoupon.percentage) / 100) : 0;
-  const total = Math.max(0, Number(subtotal || 0) + shipping - discountAmount);
+  // ─── Fetch shipping charge from Delhivery when address pincode changes ────
+  // Only when admin flat rate is 0 (i.e. pincode-based shipping mode)
+  useEffect(() => {
+    // If admin set a flat rate > 0, use that instead — skip Delhivery
+    if (shippingBase > 0) {
+      setPincodeShipping(null);
+      setShippingPinLabel("");
+      return;
+    }
+
+    const pin = (form.pincode || "").trim();
+    if (!/^\d{6}$/.test(pin)) {
+      setPincodeShipping(null);
+      setShippingPinLabel("");
+      return;
+    }
+    // Abort previous request
+    if (shippingAbort.current) shippingAbort.current.abort();
+    const controller = new AbortController();
+    shippingAbort.current = controller;
+
+    setShippingLoading(true);
+    supabase.functions.invoke("delhivery-pincode-check", { body: { pincode: pin } })
+      .then(({ data, error }) => {
+        if (controller.signal.aborted) return;
+        console.log("[Shipping] Delhivery response for", pin, ":", data, error);
+        const charge = data?.shipping_charge;
+        if (!error && charge !== null && charge !== undefined && Number.isFinite(Number(charge))) {
+          setPincodeShipping(Math.ceil(Number(charge)));
+          setShippingPinLabel(pin);
+        } else {
+          setPincodeShipping(null);
+          setShippingPinLabel("");
+        }
+      })
+      .catch(() => {
+        if (!controller.signal.aborted) {
+          setPincodeShipping(null);
+          setShippingPinLabel("");
+        }
+      })
+      .finally(() => { if (!controller.signal.aborted) setShippingLoading(false); });
+
+    return () => controller.abort();
+  }, [form.pincode, shippingBase]);
+
+  const sub = Number(subtotal || 0);
+  const effectiveBase = pincodeShipping !== null ? pincodeShipping : shippingBase;
+  const qualifiesFreeShipping = freeShippingMin > 0 && sub >= freeShippingMin;
+  const shipping = qualifiesFreeShipping ? 0 : effectiveBase;
+  const discountAmount = appliedCoupon ? Math.round((sub * appliedCoupon.percentage) / 100) : 0;
+  const total = Math.max(0, sub + shipping - discountAmount);
+  const amountToFreeShipping = freeShippingMin > 0 && !qualifiesFreeShipping ? freeShippingMin - sub : 0;
 
   // Coupon apply handler — fetches fresh from DB to ensure latest codes
   const applyCoupon = async () => {
@@ -648,8 +711,34 @@ export default function Checkout() {
             </div>
 
             <div className="space-y-2 text-sm mb-5">
-              <div className="flex justify-between text-stone-600"><span>Subtotal</span><span className="font-semibold text-stone-900">{money(subtotal)}</span></div>
-              <div className="flex justify-between text-stone-600"><span>Shipping</span><span className={`font-semibold ${shipping === 0 ? "text-emerald-600" : "text-stone-900"}`}>{shipping === 0 ? "Free" : money(shipping)}</span></div>
+              <div className="flex justify-between text-stone-600">
+                <span>Subtotal</span>
+                <span className="font-semibold text-stone-900">{money(subtotal)}</span>
+              </div>
+              <div className="flex justify-between text-stone-600">
+                <div>
+                  <span>Shipping</span>
+                  {shippingLoading && (
+                    <span className="ml-1.5 text-[11px] text-stone-400 animate-pulse">Calculating...</span>
+                  )}
+                  {!shippingLoading && shippingPinLabel && (
+                    <span className="ml-1.5 text-[11px] text-stone-400">(to {shippingPinLabel})</span>
+                  )}
+                </div>
+                <span className={`font-semibold ${shipping === 0 ? "text-emerald-600" : "text-stone-900"}`}>
+                  {shippingLoading ? "..." : shipping === 0 ? "Free" : money(shipping)}
+                </span>
+              </div>
+              {amountToFreeShipping > 0 && (
+                <div className="rounded-lg bg-amber-50 border border-amber-200 px-3 py-2 text-xs text-amber-700">
+                  🚚 Add {money(amountToFreeShipping)} more for <span className="font-semibold">free shipping!</span>
+                </div>
+              )}
+              {qualifiesFreeShipping && effectiveBase > 0 && (
+                <div className="rounded-lg bg-emerald-50 border border-emerald-200 px-3 py-2 text-xs text-emerald-700">
+                  ✅ You qualify for <span className="font-semibold">free shipping!</span>
+                </div>
+              )}
               {appliedCoupon && (
                 <div className="flex justify-between text-emerald-600">
                   <span>Discount ({appliedCoupon.percentage}%)</span>

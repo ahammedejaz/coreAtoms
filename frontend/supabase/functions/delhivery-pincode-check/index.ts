@@ -1,14 +1,22 @@
 // supabase/functions/delhivery-pincode-check/index.ts
 //
-// Checks if a pincode is serviceable by Delhivery and returns
-// estimated delivery days based on zone classification.
+// Checks if a pincode is serviceable by Delhivery, returns estimated
+// delivery days, and calculates the shipping charge for that route.
 //
 // Secrets required (set via Supabase Dashboard → Edge Functions → Secrets):
-//   DELHIVERY_API_TOKEN   — Your Delhivery API token
-//   DELHIVERY_BASE_URL    — https://track.delhivery.com (production)
+//   DELHIVERY_API_TOKEN        — Your Delhivery API token
+//   DELHIVERY_BASE_URL         — https://track.delhivery.com (production)
+//   DELHIVERY_WAREHOUSE_PIN    — Origin warehouse pincode (optional —
+//                                  falls back to warehouse_address in app_settings)
 //
-// Request body: { pincode: "560034" }
-// Response: { serviceable, cod, prepaid, city, state, estimated_days, zone }
+// Supabase connection (auto-available in edge functions):
+//   SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY
+//
+// Request body: { pincode: "560034", weight_grams?: 500 }
+// Response:     { serviceable, cod, prepaid, city, state_code,
+//                 estimated_days, is_metro, is_oda, shipping_charge }
+
+import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 
 const corsHeaders = {
     "Access-Control-Allow-Origin": "*",
@@ -39,8 +47,9 @@ Deno.serve(async (req) => {
             );
         }
 
-        // Parse pincode from POST body
-        const { pincode } = await req.json();
+        // Parse request body
+        const { pincode, weight_grams } = await req.json();
+        const weightGrams = Number(weight_grams) || 500; // default 500g
 
         if (!pincode || !/^\d{6}$/.test(String(pincode))) {
             return new Response(
@@ -52,7 +61,7 @@ Deno.serve(async (req) => {
             );
         }
 
-        // Call Delhivery pincode serviceability API
+        // ─── 1. Serviceability check ────────────────────────────────────
         const res = await fetch(
             `${DELHIVERY_BASE}/c/api/pin-codes/json/?filter_codes=${pincode}`,
             {
@@ -95,7 +104,6 @@ Deno.serve(async (req) => {
         const info = codes[0]?.postal_code || {};
 
         // Estimate delivery days based on zone/ODA classification
-        // Metro cities: 3-5 days, Non-metro: 5-7 days, ODA: 7-10 days
         const isODA = info.is_oda === "Y";
         const district = (info.district || "").toLowerCase();
         const metroDistricts = [
@@ -114,6 +122,60 @@ Deno.serve(async (req) => {
             estimatedDays = "5–7";
         }
 
+        // ─── 2. Freight / shipping charge calculation ───────────────────
+        // Get origin pincode: prefer secret, fall back to warehouse_address in DB
+        let originPin = Deno.env.get("DELHIVERY_WAREHOUSE_PIN") || "";
+
+        if (!originPin) {
+            try {
+                const sbUrl = Deno.env.get("SUPABASE_URL")!;
+                const sbKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
+                const sb = createClient(sbUrl, sbKey);
+                const { data: warehouseRow } = await sb
+                    .from("app_settings")
+                    .select("value")
+                    .eq("key", "warehouse_address")
+                    .maybeSingle();
+                originPin = String(warehouseRow?.value?.pin || "").trim();
+            } catch (e) {
+                console.warn("Could not read warehouse_address from DB:", e);
+            }
+        }
+
+        let shippingCharge: number | null = null;
+
+        if (originPin && /^\d{6}$/.test(originPin)) {
+            try {
+                const chargeUrl =
+                    `${DELHIVERY_BASE}/api/kinko/v1/invoice/charges/.json` +
+                    `?md=E&cgm=${weightGrams}&o_pin=${originPin}&d_pin=${pincode}&ss=Delivered`;
+
+                const chargeRes = await fetch(chargeUrl, {
+                    headers: {
+                        Authorization: `Token ${DELHIVERY_TOKEN}`,
+                        Accept: "application/json",
+                    },
+                });
+
+                if (chargeRes.ok) {
+                    const chargeData = await chargeRes.json();
+                    const total = chargeData?.[0]?.total_amount;
+                    if (total !== undefined && total !== null) {
+                        shippingCharge = Math.ceil(Number(total));
+                    }
+                } else {
+                    console.warn(
+                        "Delhivery freight API returned",
+                        chargeRes.status,
+                        await chargeRes.text()
+                    );
+                }
+            } catch (e) {
+                console.warn("Freight charge calculation failed:", e);
+            }
+        }
+
+        // ─── 3. Return combined result ──────────────────────────────────
         const result = {
             serviceable: true,
             pincode: String(pincode),
@@ -124,6 +186,7 @@ Deno.serve(async (req) => {
             estimated_days: estimatedDays,
             is_metro: isMetro,
             is_oda: isODA,
+            shipping_charge: shippingCharge, // null if could not calculate
         };
 
         return new Response(JSON.stringify(result), {

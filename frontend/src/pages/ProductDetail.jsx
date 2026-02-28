@@ -143,15 +143,30 @@ export default function ProductDetail() {
 
           {/* ══ LEFT — Image Gallery ══ */}
           <div className="space-y-3 lg:sticky lg:top-24 lg:self-start">
-            {/* Main image */}
+            {/* Main image with hover zoom */}
             <div
-              className="rounded-2xl border border-[#E8E4DE] bg-white overflow-hidden"
+              className="rounded-2xl border border-[#E8E4DE] bg-white overflow-hidden cursor-zoom-in"
               style={{ height: 440 }}
+              onMouseMove={(e) => {
+                const img = e.currentTarget.querySelector("img");
+                if (!img) return;
+                const rect = e.currentTarget.getBoundingClientRect();
+                const x = ((e.clientX - rect.left) / rect.width) * 100;
+                const y = ((e.clientY - rect.top) / rect.height) * 100;
+                img.style.transformOrigin = `${x}% ${y}%`;
+                img.style.transform = "scale(2)";
+              }}
+              onMouseLeave={(e) => {
+                const img = e.currentTarget.querySelector("img");
+                if (!img) return;
+                img.style.transformOrigin = "center center";
+                img.style.transform = "scale(1)";
+              }}
             >
               <img
                 src={images[activeImg] || product.image}
                 alt={product.name}
-                className="h-full w-full object-cover"
+                className="h-full w-full object-cover transition-transform duration-300 ease-out"
                 loading="lazy"
                 sizes="(max-width: 1024px) 100vw, 50vw"
               />

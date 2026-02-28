@@ -19,6 +19,7 @@
  */
 import React, { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState } from "react";
 import { supabase } from "../services/supabase/client";
+import { useToast } from "./ToastContext";
 
 /** Auto sign-out after 1 hour (3 600 000 ms) of inactivity. */
 const INACTIVITY_TIMEOUT_MS = 60 * 60 * 1000;
@@ -38,9 +39,12 @@ function getCachedProfile() {
 }
 
 export function AuthProvider({ children }) {
+  const { showToast } = useToast();
   const cachedRef = useRef(getCachedProfile());
   const [loading, setLoading] = useState(true);
   const [session, setSession] = useState(null);
+  /** Prevents multiple session-expiry toasts from firing */
+  const expiredToastShown = useRef(false);
   const [profile, setProfile] = useState(cachedRef.current);
 
   const user = session?.user ?? null;
@@ -129,11 +133,15 @@ export function AuthProvider({ children }) {
   const timerRef = useRef(null);
   const throttleRef = useRef(false);
 
-  const handleSignOut = useCallback(async () => {
+  const handleSignOut = useCallback(async ({ expired = false } = {}) => {
+    if (expired && !expiredToastShown.current) {
+      expiredToastShown.current = true;
+      showToast("Your session has expired due to inactivity. Please sign in again.", "warning", 6000);
+    }
     await supabase.auth.signOut();
     updateProfile(null);
     localStorage.removeItem(ACTIVITY_STORAGE_KEY);
-  }, []);
+  }, [showToast, updateProfile]);
 
   useEffect(() => {
     if (!user) {
@@ -145,7 +153,7 @@ export function AuthProvider({ children }) {
     // Check if session already expired from a previous visit
     const lastActivity = Number(localStorage.getItem(ACTIVITY_STORAGE_KEY) || 0);
     if (lastActivity && Date.now() - lastActivity > INACTIVITY_TIMEOUT_MS) {
-      handleSignOut();
+      handleSignOut({ expired: true });
       return;
     }
 
@@ -153,7 +161,7 @@ export function AuthProvider({ children }) {
     const resetTimer = () => {
       localStorage.setItem(ACTIVITY_STORAGE_KEY, Date.now().toString());
       clearTimeout(timerRef.current);
-      timerRef.current = setTimeout(handleSignOut, INACTIVITY_TIMEOUT_MS);
+      timerRef.current = setTimeout(() => handleSignOut({ expired: true }), INACTIVITY_TIMEOUT_MS);
     };
 
     /** Throttled wrapper so we don't reset the timer on every pixel of mouse movement. */

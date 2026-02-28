@@ -1,725 +1,437 @@
-# Core Atoms — Frontend
+# Core Atoms — E-Commerce Platform
 
-E-commerce storefront for **Core Atoms** (premium nutraceuticals).  
-Built with **React 19 + Vite 7 + Tailwind CSS v4 + Supabase**.
+> A full-stack nutraceutical e-commerce platform built with **React + Vite** on the frontend and **Supabase** (PostgreSQL, Auth, Edge Functions, Storage) on the backend. Includes an admin dashboard, Delhivery shipping integration, Razorpay payments, and a product replacement workflow.
 
 ---
 
 ## Table of Contents
 
-1. [Quick Start](#quick-start)
-2. [Environment Variables](#environment-variables)
-3. [Tech Stack](#tech-stack)
-4. [NPM Scripts](#npm-scripts)
-5. [Folder Structure](#folder-structure)
-6. [Architecture & Provider Hierarchy](#architecture--provider-hierarchy)
-7. [Routing & Navigation](#routing--navigation)
-8. [Context Providers (Global State)](#context-providers-global-state)
-9. [Pages — Detailed Breakdown](#pages--detailed-breakdown)
-10. [Components — Detailed Breakdown](#components--detailed-breakdown)
-11. [Custom Hooks](#custom-hooks)
-12. [Services Layer (API / Data Access)](#services-layer-api--data-access)
-13. [Styling & Design System](#styling--design-system)
-14. [SEO](#seo)
-15. [Performance Optimizations](#performance-optimizations)
-16. [Error Handling Strategy](#error-handling-strategy)
-17. [Security Considerations](#security-considerations)
-18. [Supabase — Database Tables & RPC Functions](#supabase--database-tables--rpc-functions)
-19. [Build Output & Code Splitting](#build-output--code-splitting)
-20. [Common Development Tasks](#common-development-tasks)
-21. [Troubleshooting](#troubleshooting)
-22. [Contributing](#contributing)
+- [Architecture Overview](#architecture-overview)
+- [Tech Stack](#tech-stack)
+- [Project Structure](#project-structure)
+- [Getting Started](#getting-started)
+- [Environment Variables](#environment-variables)
+- [Frontend Architecture](#frontend-architecture)
+- [Backend — Supabase](#backend--supabase)
+- [Edge Functions](#edge-functions)
+- [Database Schema](#database-schema)
+- [Admin Dashboard](#admin-dashboard)
+- [Key Workflows](#key-workflows)
+- [Deployment](#deployment)
 
 ---
 
-## Quick Start
+## Architecture Overview
 
-```bash
-# 1 — Clone and navigate to the frontend directory
-cd coreAtoms/frontend
-
-# 2 — Install dependencies
-npm install
-
-# 3 — Create environment file with your Supabase credentials
-cp .env.local.example .env.local
-# Then edit .env.local and fill in your Supabase URL and anon key
-
-# 4 — Start the development server (http://localhost:5173)
-npm run dev
 ```
-
-> **Prerequisite:** Node.js v18+ and npm v9+.
-
----
-
-## Environment Variables
-
-Create a `.env.local` file in the project root with the following:
-
-```env
-VITE_SUPABASE_URL=https://your-project.supabase.co
-VITE_SUPABASE_ANON_KEY=your-anon-key-here
-VITE_RAZORPAY_KEY_ID=rzp_live_xxxxxxxxxxxxxxx   # Optional — enables online payment
+┌─────────────────────────────────────────────────────────────┐
+│                     FRONTEND (Vite + React)                  │
+│  ┌──────────┐ ┌──────────┐ ┌──────────┐ ┌──────────────┐   │
+│  │  Pages   │ │Components│ │ Context  │ │   Services   │   │
+│  │  (10+6)  │ │   (18)   │ │Auth/Cart │ │products,orders│  │
+│  └──────────┘ └──────────┘ │  Toast   │ │razorpay,addr │   │
+│                            └──────────┘ └──────┬───────┘   │
+└─────────────────────────────────────────────────┼───────────┘
+                                                  │
+                                    Supabase JS Client
+                                                  │
+┌─────────────────────────────────────────────────┼───────────┐
+│                  SUPABASE BACKEND                │           │
+│  ┌──────────┐ ┌──────────┐ ┌──────────┐ ┌──────┴─────┐    │
+│  │PostgreSQL│ │   Auth   │ │ Storage  │ │   Edge     │    │
+│  │ 11 tables│ │ Email/OTP│ │ Buckets  │ │ Functions  │    │
+│  │  + RLS   │ │ Profiles │ │ Images   │ │ 5 endpoints│    │
+│  └──────────┘ └──────────┘ └──────────┘ └────────────┘    │
+│                                          ┌────────────┐    │
+│                                          │ Delhivery  │    │
+│                                          │ Razorpay   │    │
+│                                          │   APIs     │    │
+│                                          └────────────┘    │
+└─────────────────────────────────────────────────────────────┘
 ```
-
-| Variable                  | Required | Description                                                  |
-|--------------------------|----------|--------------------------------------------------------------|
-| `VITE_SUPABASE_URL`      | ✅       | Your Supabase project URL (from Project Settings → API)     |
-| `VITE_SUPABASE_ANON_KEY` | ✅       | Supabase publishable anon key (safe for client-side use)    |
-| `VITE_RAZORPAY_KEY_ID`   | Optional | Razorpay Key ID — enables the "Pay Now" button on checkout  |
-
-> The app validates Supabase vars on startup and throws a clear error if either is missing — see `src/services/supabase/client.js`.
->
-> **Razorpay:** The "Pay Now" button only appears when both `VITE_RAZORPAY_KEY_ID` is set AND `razorpay_enabled` is turned on in Admin Settings.
 
 ---
 
 ## Tech Stack
 
-| Layer       | Technology                           | Version | Purpose                          |
-|------------|--------------------------------------|---------|----------------------------------|
-| Framework  | React                                | 19.2    | UI library                       |
-| Routing    | react-router-dom                     | 7.13    | Client-side routing (SPA)        |
-| Build      | Vite                                 | 7.3     | Dev server + production bundler  |
-| Styling    | Tailwind CSS                         | 4.1     | Utility-first CSS (via Vite plugin) |
-| Icons      | lucide-react                         | 0.574   | Consistent icon set              |
-| Backend    | @supabase/supabase-js               | 2.96    | Auth, database, storage, RPC     |
-| SEO        | react-helmet-async                   | 2.0     | Dynamic `<head>` meta tags       |
-| Linting    | ESLint + eslint-plugin-react-hooks   | 9.39    | Code quality                     |
-
-> **Note:** Tailwind v4 uses the `@tailwindcss/vite` plugin directly — there is no `tailwind.config.js` file. All customization is done in `src/index.css` via `@theme` blocks and custom properties.
-
----
-
-## NPM Scripts
-
-| Command            | Description                                |
-|-------------------|--------------------------------------------|
-| `npm run dev`     | Start Vite dev server at `localhost:5173`   |
-| `npm run build`   | Production build → outputs to `dist/`      |
-| `npm run preview` | Serve the production `dist/` locally       |
-| `npm run lint`    | Run ESLint across all source files         |
+| Layer        | Technology                              |
+|--------------|----------------------------------------|
+| **Frontend** | React 18, Vite 7, TailwindCSS 4        |
+| **Routing**  | react-router-dom v7 (data router)       |
+| **State**    | React Context (Auth, Cart, Toast)       |
+| **Backend**  | Supabase (PostgreSQL, Auth, Storage)    |
+| **Edge Fns** | Deno runtime (Supabase Edge Functions)  |
+| **Payments** | Razorpay (COD + online)                |
+| **Shipping** | Delhivery (create, track, pincode)     |
+| **SEO**      | react-helmet-async                     |
+| **Deploy**   | Vercel (frontend), Supabase (backend)  |
 
 ---
 
-## Folder Structure
+## Project Structure
 
 ```
 frontend/
-├── index.html                  # HTML entry point
-├── vite.config.js              # Vite config (React + Tailwind plugins)
-├── package.json                # Dependencies and scripts
-├── .env.local                  # ← YOUR Supabase credentials (git-ignored)
-│
-└── src/
-    ├── main.jsx                # App entry — mounts React with all providers
-    ├── index.css               # Design system: colors, fonts, utilities, animations
-    │
-    ├── context/                # React Context providers (global state)
-    │   ├── AuthContext.jsx     # Authentication + user profiles
-    │   ├── CartContext.jsx     # Shopping cart state + localStorage persistence
-    │   └── ToastContext.jsx    # Global toast notification system
-    │
-    ├── routes/                 # Routing configuration
-    │   ├── AppRoutes.jsx       # All route definitions (createBrowserRouter)
-    │   ├── ProtectedRoute.jsx  # Auth guard → /login with redirect preservation
-    │   └── AdminRoute.jsx      # Admin guard → requires isAdmin role
-    │
-    ├── layouts/                # Page layouts
-    │   └── MainLayout.jsx      # Navbar + <Suspense> + <ErrorBoundary> + <Outlet> + Footer
-    │
-    ├── components/             # Reusable UI components
-    │   ├── Navbar.jsx          # Sticky nav bar, mobile hamburger drawer, cart badge
-    │   ├── Footer.jsx          # Site footer with brand links and social icons
-    │   ├── Button.jsx          # Button variants: primary | outline | ghost
-    │   ├── ProductCard.jsx     # Standalone product card (used in ProductGrid)
-    │   ├── ProductGrid.jsx     # Responsive grid wrapper for ProductCards
-    │   ├── SEO.jsx             # <Helmet> wrapper for title, meta, OG tags
-    │   ├── Skeleton.jsx        # Loading skeleton components (grid, card, order, detail)
-    │   ├── Toast.jsx           # Individual toast notification component
-    │   ├── HeroCarousel.jsx    # Image carousel with dots + swipe
-    │   ├── ErrorBoundary.jsx   # React error boundary with fallback UI
-    │   ├── AdminSettingsCard.jsx # Admin: max items per order setting
-    │   └── ImagePositionAdjuster.jsx # Admin: drag-to-position image focal point
-    │
-    ├── pages/                  # Route-level page components
-    │   ├── Home.jsx            # Landing page (hero carousel, pillars, featured products)
-    │   ├── Shop.jsx            # Product listing with search + category filter
-    │   ├── ProductDetail.jsx   # Single product page (variants, gallery, reviews)
-    │   ├── Cart.jsx            # Cart management + order summary
-    │   ├── Checkout.jsx        # Address form + COD / Razorpay order placement
-    │   ├── Login.jsx           # Email/password + Google OAuth authentication
-    │   ├── MyOrders.jsx        # Order history, cancellation, review submission
-    │   ├── AdminDashboard.jsx  # Admin shell with tab navigation + stats
-    │   ├── ErrorPage.jsx       # Router-level error fallback
-    │   ├── NotFound.jsx        # 404 page
-    │   └── admin/              # Admin sub-pages
-    │       ├── AdminProducts.jsx    # Full CRUD: products, images, variants
-    │       ├── AdminOrders.jsx      # Order list, status updates, CSV export
-    │       ├── AdminHomepage.jsx    # Homepage CMS: hero, pillars, categories
-    │       ├── AdminReviews.jsx     # Review moderation
-    │       └── AdminSettings.jsx    # App-wide settings + Razorpay toggle
-    │
-    ├── services/               # Data access layer (all Supabase calls)
-    │   ├── supabase/
-    │   │   └── client.js       # Supabase client singleton (validates env vars)
-    │   ├── razorpay.js         # Razorpay SDK loader + checkout popup utility
-    │   ├── products.js         # Product queries + DB→frontend data mapping
-    │   ├── addresses.js        # User address CRUD (with RLS guards)
-    │   ├── orders.js           # Order queries, cancellation, review submission
-    │   ├── homepage.js         # Homepage settings fetch
-    │   ├── errorReporter.js    # Environment-aware error reporting utility
-    │   └── api/
-    │       └── settings.js     # Admin settings CRUD (max items per order)
-    │
-    ├── hooks/                  # Custom React hooks
-    │   ├── useDebounce.js      # Debounce any value (used in search)
-    │   ├── useDocumentTitle.js # Set document title (legacy, replaced by SEO)
-    │   └── useFormValidation.js # Form validation with errors + touched state
-    │
-    └── data/                   # Static / seed data
-        ├── products.seed.json       # Sample product data for development
-        └── products.seed_backup.json
+├── src/
+│   ├── main.jsx                    # App entry — provider hierarchy
+│   ├── index.css                   # Global styles + Tailwind
+│   ├── assets/                     # Static assets (logo, etc.)
+│   ├── components/                 # 18 reusable UI components
+│   │   ├── Navbar.jsx              #   Site navigation + auth state
+│   │   ├── Footer.jsx              #   Site footer
+│   │   ├── ProductCard.jsx         #   Product display card
+│   │   ├── ProductGrid.jsx         #   Grid layout for products
+│   │   ├── HeroCarousel.jsx        #   Homepage hero image carousel
+│   │   ├── ShipmentTracker.jsx     #   Delhivery live tracking UI
+│   │   ├── PincodeChecker.jsx      #   Pincode serviceability checker
+│   │   ├── OrderTimeline.jsx       #   Visual order status timeline
+│   │   ├── ImagePositionAdjuster.jsx # Admin image crop/position tool
+│   │   ├── FloatingShapes.jsx      #   Decorative background shapes
+│   │   ├── ScrollReveal.jsx        #   Scroll-triggered animations
+│   │   ├── Skeleton.jsx            #   Loading skeleton components
+│   │   ├── Toast.jsx               #   Toast notification display
+│   │   ├── Button.jsx              #   Reusable button component
+│   │   ├── ConfirmDialog.jsx       #   Confirmation modal dialog
+│   │   ├── ErrorBoundary.jsx       #   React error boundary
+│   │   ├── AdminSettingsCard.jsx   #   Settings card wrapper
+│   │   └── SEO.jsx                 #   SEO meta tag helper
+│   ├── context/                    # React context providers
+│   │   ├── AuthContext.jsx         #   Auth state + profile + inactivity timeout
+│   │   ├── CartContext.jsx         #   Cart CRUD + localStorage persistence
+│   │   └── ToastContext.jsx        #   Toast notification manager
+│   ├── hooks/                      # Custom React hooks
+│   │   ├── useDebounce.js          #   Debounced value hook
+│   │   ├── useDocumentTitle.js     #   Dynamic page title
+│   │   ├── useFormValidation.js    #   Form validation helper
+│   │   └── useKeyboardShortcut.js  #   Keyboard shortcut binding
+│   ├── layouts/
+│   │   └── MainLayout.jsx          #   Navbar + Outlet + Footer shell
+│   ├── pages/                      # Page-level components
+│   │   ├── Home.jsx                #   Landing page (hero, featured, pillars)
+│   │   ├── Shop.jsx                #   Product listing with search/filter
+│   │   ├── ProductDetail.jsx       #   Product page (variants, reviews, pincode)
+│   │   ├── Cart.jsx                #   Shopping cart
+│   │   ├── Checkout.jsx            #   Address + payment (COD/Razorpay/coupons)
+│   │   ├── MyOrders.jsx            #   Order history + tracking + reviews
+│   │   ├── Login.jsx               #   Email OTP authentication
+│   │   ├── ErrorPage.jsx           #   Router error boundary
+│   │   ├── NotFound.jsx            #   404 page
+│   │   ├── AdminDashboard.jsx      #   Admin shell (tabs, stats)
+│   │   └── admin/                  #   Admin sub-pages
+│   │       ├── AdminProducts.jsx   #     CRUD products + variants + images
+│   │       ├── AdminOrders.jsx     #     Order management + Delhivery ship
+│   │       ├── AdminHomepage.jsx   #     Homepage content editor
+│   │       ├── AdminReviews.jsx    #     Review moderation
+│   │       ├── AdminReplacements.jsx #   Replacement request handling
+│   │       └── AdminSettings.jsx   #     Feature toggles + discount codes
+│   ├── routes/                     # Routing configuration
+│   │   ├── AppRoutes.jsx           #   createBrowserRouter definitions
+│   │   ├── ProtectedRoute.jsx      #   Auth guard (logged-in users)
+│   │   └── AdminRoute.jsx          #   Admin guard (role === "admin")
+│   ├── services/                   # Data access / API layer
+│   │   ├── supabase/client.js      #   Supabase client singleton
+│   │   ├── products.js             #   Product CRUD + DB→frontend mapping
+│   │   ├── orders.js               #   Order queries, cancel, reviews
+│   │   ├── addresses.js            #   Address CRUD
+│   │   ├── homepage.js             #   Homepage settings fetch
+│   │   ├── razorpay.js             #   Razorpay SDK loader + checkout
+│   │   ├── errorReporter.js        #   Environment-aware error logging
+│   │   └── api/                    #   Additional API utilities
+│   ├── utils/
+│   │   └── format.js               #   Currency formatting (₹)
+│   └── data/
+│       └── products.seed.json      #   Sample product seed data
+├── supabase/
+│   ├── functions/                  # Edge Functions (Deno runtime)
+│   │   ├── delhivery-create-shipment/  # Create forward/reverse/exchange shipments
+│   │   ├── delhivery-track/            # Track shipment by waybill
+│   │   ├── delhivery-pincode-check/    # Pincode serviceability check
+│   │   ├── create-razorpay-order/      # Create Razorpay payment order
+│   │   └── verify-razorpay-payment/    # Verify signature + create order
+│   └── migrations/                 # SQL migrations
+│       ├── add_delhivery_columns.sql
+│       ├── add_razorpay_columns.sql
+│       ├── add_replacements_table.sql
+│       ├── add_replacement_tracking_columns.sql
+│       └── create_wa_notifications.sql
+├── SQL DB Backup/
+│   └── core_atoms_schema_backup.sql  # Full schema export
+├── package.json
+├── vite.config.js
+├── tailwind.config.js
+├── vercel.json                     # Vercel rewrite rules (SPA)
+├── .env.local                      # Environment variables (not committed)
+└── .env.local.example              # Template for env vars
 ```
 
-```
-supabase/
-├── README.md                         # Database & Edge Functions documentation
-├── functions/
-│   ├── create-razorpay-order/
-│   │   └── index.ts                  # Edge Function: creates Razorpay order
-│   └── verify-razorpay-payment/
-│       └── index.ts                  # Edge Function: verifies payment + creates order
-└── migrations/
-    ├── add_razorpay_columns.sql       # Razorpay schema migration
-    └── create_wa_notifications.sql    # WhatsApp notification tracking
-```
-
 ---
 
-## Architecture & Provider Hierarchy
+## Getting Started
 
-The app is structured as a single-page application with nested React context providers:
+### Prerequisites
 
-```
-<React.StrictMode>
-  <HelmetProvider>              ← SEO: allows <Helmet> in any component
-    <AuthProvider>              ← Session, user profile, isAdmin, signOut
-      <CartProvider>            ← Cart items in localStorage, max order limit
-        <ToastProvider>         ← Global toast notifications
-          <RouterProvider>      ← Client-side routing (react-router v7)
-            <MainLayout>        ← Navbar + Suspense + ErrorBoundary + Outlet + Footer
-              <Page />          ← Matched route component
-            </MainLayout>
-          </RouterProvider>
-        </ToastProvider>
-      </CartProvider>
-    </AuthProvider>
-  </HelmetProvider>
-</React.StrictMode>
+- Node.js ≥ 18
+- A Supabase project (free tier works)
+- Delhivery API credentials (for shipping)
+- Razorpay Key ID + Secret (for online payments)
+
+### Installation
+
+```bash
+git clone <repo-url>
+cd frontend
+npm install
+cp .env.local.example .env.local   # Fill in your Supabase + Razorpay keys
 ```
 
-**Why this order matters:**
-- `AuthProvider` wraps `CartProvider` so the cart can access the user's session
-- `CartProvider` wraps the router so any page can access cart actions
-- `ToastProvider` wraps the router so any page can show toast notifications
-- `HelmetProvider` wraps everything so SEO tags work from any component
+### Run the schema
 
----
+Run the SQL files in your Supabase SQL Editor in this order:
 
-## Routing & Navigation
+1. `SQL DB Backup/core_atoms_schema_backup.sql` — Core tables, RLS, triggers
+2. `supabase/migrations/add_delhivery_columns.sql` — Shipping columns
+3. `supabase/migrations/add_razorpay_columns.sql` — Payment columns + RPC
+4. `supabase/migrations/add_replacements_table.sql` — Replacements table
+5. `supabase/migrations/add_replacement_tracking_columns.sql` — Tracking columns
+6. `supabase/migrations/create_wa_notifications.sql` — WhatsApp tracking
 
-All routes are defined in `src/routes/AppRoutes.jsx` using `createBrowserRouter` (React Router v7).
+### Development
 
-### Public Routes (no login required)
-
-| Path              | Component          | Description                     |
-|-------------------|--------------------|---------------------------------|
-| `/`               | `Home`             | Landing page                    |
-| `/shop`           | `Shop` (lazy)      | Product listing with filters    |
-| `/product/:id`    | `ProductDetail` (lazy) | Single product page         |
-| `/cart`           | `Cart` (lazy)      | Shopping cart                   |
-| `/login`          | `Login`            | Sign in / sign up               |
-
-### Protected Routes (login required)
-
-| Path              | Component          | Guard             | Description           |
-|-------------------|--------------------|--------------------|----------------------|
-| `/checkout`       | `Checkout` (lazy)  | `ProtectedRoute`   | Place an order        |
-| `/orders`         | `MyOrders` (lazy)  | `ProtectedRoute`   | View order history    |
-
-### Admin Routes (admin role required)
-
-| Path              | Component            | Guard         | Description            |
-|-------------------|----------------------|---------------|------------------------|
-| `/admin`          | `AdminDashboard` (lazy) | `AdminRoute` | Admin CMS dashboard   |
-
-### Route Guards
-
-- **`ProtectedRoute`** — Checks `isAuthenticated`. If false, redirects to `/login?redirect=/original-path` so the user returns to their intended page after signing in
-- **`AdminRoute`** — Checks both `isAuthenticated` and `isAdmin`. Non-admins are redirected away
-
-### Lazy Loading
-
-The following pages are lazy-loaded using `React.lazy()` for code splitting:
-- `Shop`, `Cart`, `ProductDetail`, `Checkout`, `MyOrders`, `AdminDashboard`
-
-The following pages are eagerly loaded (critical path):
-- `Home`, `Login`, `NotFound`, `ErrorPage`
-
----
-
-## Context Providers (Global State)
-
-### 1. AuthContext (`src/context/AuthContext.jsx`)
-
-Manages Supabase authentication, user sessions, and profiles.
-
-**What it provides (via `useAuth()`):**
-
-| Property          | Type       | Description                                    |
-|-------------------|------------|------------------------------------------------|
-| `loading`         | `boolean`  | `true` while the auth state is being resolved  |
-| `session`         | `object`   | Raw Supabase session object (or `null`)        |
-| `user`            | `object`   | Supabase user object (or `null`)               |
-| `profile`         | `object`   | Row from `profiles` table (name, role, etc.)   |
-| `isAuthenticated` | `boolean`  | `true` if there's an active session            |
-| `isAdmin`         | `boolean`  | `true` if `profile.role === "admin"`           |
-| `signOut()`       | `function` | Signs out, clears profile + activity timestamp |
-
-**Key behaviors:**
-- Listens to `supabase.auth.onAuthStateChange()` for real-time session changes
-- Fetches the `profiles` row on sign-in with retry logic (waits for Supabase trigger to create the profile)
-- **Inactivity timeout:** Signs the user out after 1 hour of inactivity. Tracks the last activity timestamp in `localStorage` under `last_activity_timestamp`
-
-### 2. CartContext (`src/context/CartContext.jsx`)
-
-Manages the shopping cart with localStorage persistence and order limits.
-
-**What it provides (via `useCart()`):**
-
-| Property          | Type       | Description                                           |
-|-------------------|------------|-------------------------------------------------------|
-| `items`           | `array`    | Cart items `[{ id, name, image, category, unitPrice, qty }]` |
-| `addItem(product, qty)` | `function` | Add product to cart (enforces max items limit)  |
-| `updateQty(id, qty)`    | `function` | Update item quantity (0 removes it)            |
-| `removeItem(id)`        | `function` | Remove item by ID                              |
-| `clear()`               | `function` | Empty the entire cart                          |
-| `totalItems`      | `number`   | Sum of all item quantities                            |
-| `subtotal`        | `number`   | Sum of `unitPrice × qty` for all items                |
-| `maxItems`        | `number`   | Max items per order (from `app_settings` table)       |
-| `lastAction`      | `object`   | Last cart action (for toast feedback: `{ type, name, qty }`) |
-| `refreshMaxItems()` | `function` | Re-fetch max items (called after admin saves settings) |
-
-**Key behaviors:**
-- Cart is stored in `localStorage` under the key `cart_items`
-- Items are normalized on every read to ensure consistent shape
-- Enforces `max_items_per_order` limit — trying to exceed shows a warning toast
-- All functions are wrapped in `useCallback` for stable references
-
-### 3. ToastContext (`src/context/ToastContext.jsx`)
-
-Global toast notification system with variants and auto-dismiss.
-
-**What it provides (via `useToast()`):**
-
-| Method                                      | Description                      |
-|---------------------------------------------|----------------------------------|
-| `showToast(message, variant?, duration?)`   | Show a toast notification        |
-
-**Variants:** `"success"` (green), `"error"` (red), `"info"` (blue), `"warning"` (amber)
-
-**Default duration:** 3000ms. Toasts auto-dismiss and support manual close.
-
----
-
-## Pages — Detailed Breakdown
-
-### Home (`src/pages/Home.jsx`)
-- **Sections:** Hero carousel → Brand pillars → Featured products → Category browser → Philosophy statement
-- **Data source:** All content is CMS-driven from the `app_settings` table. Falls back to hardcoded defaults if admin hasn't configured anything
-- **Error handling:** If product fetch fails, shows an error card with a "Try again" button
-- **Hero carousel:** Auto-advances every 5 seconds. Images are loaded from Supabase storage via admin-managed URLs
-
-### Shop (`src/pages/Shop.jsx`)
-- **Features:** Full product grid with live search (debounced 300ms), category dropdown filter, URL-synced filters (`?q=...&category=...`)
-- **Sub-exports:** This file also exports `ProductCard` (wrapped in `React.memo`) and `Stars` rating display — both used by `Home.jsx`
-- **Add to cart:** Inline feedback: button turns green with "Added to cart ✓" for 1 second, plus a floating toast notification
-- **Variant products:** Shows variant chips on the card and a "Select option →" button that links to the detail page
-
-### ProductDetail (`src/pages/ProductDetail.jsx`)
-- **Features:** Image gallery with thumbnails, variant picker (size/flavor), quantity stepper, stock status, highlight pills, "About" section, customer reviews
-- **Variant handling:** Uses composite cart keys (`productId_variantId`) so different variants are tracked separately in the cart
-- **Limits:** Shows warnings for out-of-stock and max-items-per-order exceeded
-
-### Cart (`src/pages/Cart.jsx`)
-- **Features:** Item list with quantity steppers, line totals, order summary sidebar, "Proceed to checkout" CTA
-- **Auth check:** If user is not logged in, clicking "Proceed to checkout" navigates to `/login` instead of `/checkout`
-- **Currency:** All amounts formatted as `₹X,XXX` (Indian Rupees)
-
-### Checkout (`src/pages/Checkout.jsx`)
-- **Address management:** Loads saved addresses from Supabase, allows selecting or adding a new one. New addresses can be saved for future use
-- **Address deletion:** Inline confirmation UI (no browser `confirm()` dialog). Includes `.eq("user_id")` RLS guard
-- **Validation:** Indian phone (10 digits starting with 6-9) + 6-digit pincode + required fields
-- **Dual payment options:**
-  - **COD (Cash on Delivery):** Calls the `place_order_cod` RPC function directly
-  - **Razorpay (Online):** Creates a Razorpay order → opens payment popup → verifies payment → creates order. Only shown when Razorpay is enabled in admin settings AND `VITE_RAZORPAY_KEY_ID` is configured
-- **Order placement:** On success, shows an animated "Order placed!" screen and redirects to `/orders`
-- **Error handling:** Uses toast notifications for all errors (stock issues, payment failures, validation errors). Surfaces actual error details from Edge Function responses
-
-### Login (`src/pages/Login.jsx`)
-- **Auth methods:** Email/password (sign up and sign in) + Google OAuth
-- **Redirect:** After login, checks for `?redirect=` query param (set by `ProtectedRoute`) and navigates there. Otherwise checks if user is admin → `/admin`, else → `/`
-- **UI feedback:** Shows success/error messages inline below the form
-
-### MyOrders (`src/pages/MyOrders.jsx`)
-- **Features:** Order list with search/filter by status, order item details with images, review submission per product
-- **Cancellation:** Inline "Cancel" button with confirmation step (Confirm cancel / Keep). Cannot cancel after shipment
-- **Reviews:** Star rating (1-5) + optional text. Prevents duplicate reviews using a tracked `reviewedKeys` set
-
-### Admin Pages (`src/pages/admin/`)
-- **AdminProducts.jsx** — Full CRUD for products: name, description, price, stock, category, images (drag to reposition), variants (label, price, stock, SKU), highlights
-- **AdminOrders.jsx** — View all orders, update status (placed → processing → shipped → delivered), CSV export, dedicated Payment column (Prepaid/COD badges), Razorpay payment ID display, WhatsApp notifications
-- **AdminHomepage.jsx** — CMS editor for the homepage: hero images, hero copy text, featured product picker, pillars, categories, philosophy section
-- **AdminReviews.jsx** — Review moderation dashboard
-- **AdminSettings.jsx** — App-wide settings: max items per order, Razorpay payment toggle
-
----
-
-## Components — Detailed Breakdown
-
-| Component                  | File                       | Description |
-|---------------------------|----------------------------|-------------|
-| **Navbar**                | `Navbar.jsx`               | Sticky top nav. Desktop: horizontal links + cart badge. Mobile: hamburger menu with slide-out drawer. Shows inline toast when items are added to cart |
-| **Footer**                | `Footer.jsx`               | Brand info, navigation links, social media icons |
-| **Button**                | `Button.jsx`               | Three variants: `primary` (solid blue), `outline` (bordered), `ghost` (text only). Accepts `onClick`, `disabled`, `type`, `className` overrides |
-| **ProductCard**           | `ProductCard.jsx`          | Standalone card: image, name, price, stock badge, "Add to cart" button. Used by `ProductGrid` |
-| **ProductCard (Shop)**    | `Shop.jsx` (exported)      | Enhanced card with variant chips, rating stars, description truncation. Wrapped in `React.memo`. Used by both `Shop` and `Home` |
-| **ProductGrid**           | `ProductGrid.jsx`          | Simple responsive grid wrapper — renders children in a CSS grid |
-| **SEO**                   | `SEO.jsx`                  | Reusable `<Helmet>` wrapper. Props: `title`, `description`, `ogImage`, `noIndex`. Sets `<title>`, meta description, Open Graph, and Twitter Card tags |
-| **Skeleton**              | `Skeleton.jsx`             | Export multiple skeleton variants: `SkeletonGrid`, `SkeletonProductDetail`, `SkeletonOrderCard`. Used as loading placeholders |
-| **Toast**                 | `Toast.jsx`                | Individual toast notification with enter/exit animations |
-| **HeroCarousel**          | `HeroCarousel.jsx`         | Image carousel with indicator dots and auto-advance |
-| **ErrorBoundary**         | `ErrorBoundary.jsx`        | React class component error boundary. Catches render errors, displays fallback UI with "Try again" button, reports errors via `errorReporter` |
-| **AdminSettingsCard**     | `AdminSettingsCard.jsx`    | Admin-only card for editing the "max items per order" setting |
-| **ImagePositionAdjuster** | `ImagePositionAdjuster.jsx`| Admin-only: drag an image to set the CSS `object-position` focal point |
-
----
-
-## Custom Hooks
-
-### `useDebounce(value, delay = 300)` — `src/hooks/useDebounce.js`
-
-Returns a debounced version of the input value that only updates after `delay`ms of no changes. Used by the Shop search bar to avoid firing a query on every keystroke.
-
-```jsx
-const debouncedQuery = useDebounce(searchText, 300);
-// debouncedQuery only updates 300ms after the user stops typing
+```bash
+npm run dev      # Start Vite dev server (port 5173)
+npm run build    # Production build
+npm run preview  # Preview production build
 ```
 
-### `useDocumentTitle(title)` — `src/hooks/useDocumentTitle.js`
+### Deploy Edge Functions
 
-Sets `document.title` and restores the previous title on unmount. **Legacy** — most pages now use the `<SEO>` component instead for richer meta tags.
-
-### `useFormValidation(values, rules)` — `src/hooks/useFormValidation.js`
-
-Lightweight form validation hook. Tracks touched state and computes errors.
-
-```jsx
-const { errors, touched, validate, touchField, isValid } = useFormValidation(
-  { name, phone },
-  {
-    name: (v) => (!v.trim() ? "Name is required" : ""),
-    phone: (v) => (!/^\d{10}$/.test(v) ? "10-digit phone required" : ""),
-  }
-);
+```bash
+supabase functions deploy delhivery-create-shipment
+supabase functions deploy delhivery-track
+supabase functions deploy delhivery-pincode-check
+supabase functions deploy create-razorpay-order
+supabase functions deploy verify-razorpay-payment
 ```
 
-**Returns:**
-- `errors` — `{ fieldName: "error message" }` for fields with issues
-- `touched` — `{ fieldName: true }` for fields the user has interacted with
-- `validate()` — Touches all fields and returns `true` if form is valid
-- `touchField(name)` — Mark a single field as touched
-- `isValid` — `true` if there are zero errors
-
 ---
 
-## Services Layer (API / Data Access)
+## Environment Variables
 
-All Supabase database calls are centralized in service modules under `src/services/`. This keeps page components thin and makes logic testable.
+Create `.env.local` with:
 
-### `supabase/client.js`
-- Creates the Supabase client singleton
-- Validates `VITE_SUPABASE_URL` and `VITE_SUPABASE_ANON_KEY` on import — throws if missing
-
-### `products.js`
-- `fetchProducts()` — Fetches all active products with variants and reviews, sorted alphabetically
-- `fetchProductById(id)` — Fetches a single product with full details
-- `mapDbProduct(row)` — Maps a Supabase DB row into the frontend product shape (camelCase, computed fields like `avgRating`, `reviewCount`)
-
-### `addresses.js`
-- `fetchUserAddresses(userId)` — Gets all saved addresses for a user
-- `createAddress(userId, address)` — Inserts a new address
-- `deleteAddress(addressId, userId)` — Deletes an address with `user_id` guard
-
-### `orders.js`
-- `fetchUserOrders(userId)` — Gets all orders with their line items
-- `fetchUserReviewKeys(userId)` — Returns a `Set<string>` of `"productId_orderId"` keys for existing reviews
-- `cancelOrder(orderId, userId)` — Cancels via the `cancel_order` RPC
-- `submitReview({ productId, userId, orderId, rating, body })` — Inserts a product review
-
-### `homepage.js`
-- `fetchHomepageSettings()` — Fetches all homepage CMS settings from `app_settings`
-
-### `razorpay.js`
-- `loadRazorpay()` — Dynamically loads the Razorpay `checkout.js` SDK script into the page
-- `getRazorpayKeyId()` — Returns `VITE_RAZORPAY_KEY_ID` from environment variables
-- `openRazorpayCheckout(options)` — Opens the Razorpay payment popup with the given order details, prefill info, and success/dismiss callbacks
-
-### `api/settings.js`
-- `getMaxItemsPerOrder()` — Reads the max items per order from `app_settings`
-- `setMaxItemsPerOrder(value)` — Updates or inserts the max items per order setting
-
-### `errorReporter.js`
-- `reportError(error, context)` — Enhanced `console.error` with context metadata in development. In production, ready to be extended to POST to Sentry, LogRocket, or any external service
-- `reportWarning(message, context)` — Same for non-fatal warnings
-
----
-
-## Styling & Design System
-
-### Design Tokens (defined in `src/index.css`)
-
-The project uses Tailwind CSS v4 with a `@theme` block for custom design tokens:
-
-**Color palette:**
-- Primary: `#1e3a5f` (deep navy blue) — used for buttons, links, selected states
-- Accent hover: `#162d4a` (darker navy) — button hover states
-- Borders: `#E8E4DE` (warm stone) — card borders, dividers
-- Background: `#FAFAF8` (off-white) — page background
-- Text: stone-900 (headings), stone-500 (body), stone-400 (muted)
-
-**Custom CSS classes (defined in `index.css`):**
-- `.card` — Rounded card with border, shadow, and padding
-- `.btn-primary` — Solid navy button with hover effects and subtle transform
-- `.btn-ghost` — Outlined button with hover fill
-- `.section-label` — Uppercase tracking-wide label (styled as "OUR COLLECTION", "REVIEW & CHECKOUT", etc.)
-
-**Animations (defined as `@keyframes` in `index.css`):**
-- `toastIn` — Slide-in for toast notifications
-- `animate-toast-in` — Utility class for toast animation
-- `coreatoms_progress` — Loading bar animation (checkout success screen)
-
-### Responsive Breakpoints
-
-Standard Tailwind breakpoints are used:
-- `sm:` ≥ 640px
-- `lg:` ≥ 1024px
-
-Layout max-width: `max-w-6xl` (72rem / 1152px)
-
----
-
-## SEO
-
-The `<SEO>` component (`src/components/SEO.jsx`) uses `react-helmet-async` to inject dynamic `<head>` tags.
-
-**Usage in any page:**
-```jsx
-<SEO
-  title="Shop | Core Atoms"
-  description="Browse our full range of premium nutraceuticals."
-  ogImage="/path/to/image.jpg"  // Optional
-  noIndex={false}               // Set true for Checkout, admin pages
-/>
+```env
+VITE_SUPABASE_URL=https://<project>.supabase.co
+VITE_SUPABASE_ANON_KEY=<anon-key>
+VITE_RAZORPAY_KEY_ID=<razorpay-key-id>
 ```
 
-**What it sets:**
-- `<title>` — Appends `| Core Atoms` if not already present
-- `<meta name="description">` — Page-specific description
-- `<meta property="og:title/description/image/site_name/type">` — Open Graph (Facebook, LinkedIn)
-- `<meta name="twitter:card/title/description/image">` — Twitter Card
-- `<meta name="robots" content="noindex,nofollow">` — Optional, for private pages
+### Supabase Edge Function Secrets
 
-**Pages with SEO configured:**
-| Page | Title | noIndex |
-|------|-------|---------|
-| Home | Core Atoms \| Premium Nutraceuticals | No |
-| Shop | Shop \| Core Atoms | No |
-| Product Detail | {Product Name} \| Core Atoms | No |
-| Cart | Cart \| Core Atoms | No |
-| Login | Login \| Core Atoms | No |
-| My Orders | My Orders \| Core Atoms | No |
-| Checkout | Checkout \| Core Atoms | Yes |
+Set these via Supabase Dashboard → Edge Functions → Secrets:
+
+| Secret                         | Description                              |
+|--------------------------------|------------------------------------------|
+| `DELHIVERY_API_TOKEN`          | Delhivery API authentication token       |
+| `DELHIVERY_BASE_URL`           | `https://track.delhivery.com` (prod)     |
+| `DELHIVERY_CLIENT_NAME`        | Your Delhivery client/account name       |
+| `DELHIVERY_PICKUP_NAME`        | Pickup location name                     |
+| `RAZORPAY_KEY_ID`              | Razorpay Key ID (backend copy)           |
+| `RAZORPAY_KEY_SECRET`          | Razorpay Key Secret (**never on frontend**) |
+| `SUPABASE_URL`                 | Auto-set by Supabase                     |
+| `SUPABASE_SERVICE_ROLE_KEY`    | Auto-set by Supabase                     |
 
 ---
 
-## Performance Optimizations
+## Frontend Architecture
 
-1. **Route-level code splitting** — 6 pages are lazy-loaded with `React.lazy()`. Each becomes a separate JS chunk in the production build
-2. **`React.memo`** on `ProductCard` (Shop.jsx) — prevents re-renders when sibling cards change (e.g. one card shows "Added to cart")
-3. **`useCallback`** on all CartContext functions — ensures stable function references, reducing unnecessary re-renders
-4. **Image `loading="lazy"`** — All product images, thumbnails, and non-first hero carousel slides use native lazy loading
-5. **Image `sizes` attribute** — Responsive hints so the browser loads appropriately sized images:
-   - Product cards: `(max-width: 640px) 100vw, (max-width: 1024px) 50vw, 33vw`
-   - Hero/detail images: `(max-width: 1024px) 100vw, 50vw`
-6. **Debounced search** — Shop search bar uses `useDebounce(300ms)` to avoid firing on every keystroke
-7. **Global `<Suspense>`** boundary in `MainLayout` with a spinner fallback for lazy routes
+### Provider Hierarchy
+
+```
+StrictMode → HelmetProvider → AuthProvider → CartProvider → ToastProvider → RouterProvider
+```
+
+### Route Map
+
+| Path             | Component        | Guard            | Description                              |
+|------------------|------------------|------------------|------------------------------------------|
+| `/`              | `Home`           | Admin redirect   | Landing page with hero, products, pillars |
+| `/shop`          | `Shop`           | Public           | Product listing with search + filters     |
+| `/product/:id`   | `ProductDetail`  | Public           | Product details, variants, reviews        |
+| `/cart`          | `Cart`           | Public           | Shopping cart                             |
+| `/checkout`      | `Checkout`       | `ProtectedRoute` | Address + payment flow                    |
+| `/orders`        | `MyOrders`       | `ProtectedRoute` | Order history + tracking + reviews        |
+| `/login`         | `Login`          | Public           | Email OTP authentication                  |
+| `/admin`         | `AdminDashboard` | `AdminRoute`     | Admin dashboard (6 tabs)                  |
+| `*`              | `NotFound`       | —                | 404 page                                 |
+
+### Context Providers
+
+| Context        | Purpose                                                    |
+|----------------|------------------------------------------------------------|
+| `AuthContext`  | Supabase auth session, profile fetch with retry, admin role detection, 1-hour inactivity timeout |
+| `CartContext`  | Cart CRUD, localStorage persistence, max-item enforcement from `app_settings` |
+| `ToastContext` | Global toast notifications with auto-dismiss               |
+
+### Service Layer
+
+| Service           | Supabase Tables Used                | Purpose                           |
+|-------------------|-------------------------------------|-----------------------------------|
+| `products.js`     | `products`, `product_images`, `product_variants`, `product_reviews` | Product listing + detail fetch, DB→frontend mapping |
+| `orders.js`       | `orders`, `order_items`, `product_reviews` | Order queries, cancellation (RPC), review submission |
+| `addresses.js`    | `addresses`                         | Saved address CRUD                |
+| `homepage.js`     | `app_settings`                      | Homepage content settings fetch   |
+| `razorpay.js`     | —                                   | Razorpay SDK dynamic loader + checkout popup |
+| `errorReporter.js`| —                                   | Dev/prod error logging            |
 
 ---
 
-## Error Handling Strategy
+## Edge Functions
 
-| Layer              | Mechanism                          | Behavior                           |
-|-------------------|------------------------------------|------------------------------------|
-| **Render errors**  | `<ErrorBoundary>` in `MainLayout` | Catches crashes, shows fallback UI with "Try again" button. Reports via `errorReporter` |
-| **Route errors**   | `errorElement` in router          | Shows `ErrorPage` for routing failures |
-| **API errors**     | Try/catch in service calls        | Shows toast notifications via `useToast()` |
-| **Network errors** | Error state + retry button        | `Home.jsx` shows "Unable to load products" card with retry. `Shop.jsx` shows inline error |
-| **Form validation**| Inline messages                   | `Checkout.jsx` shows per-field validation + amber warning bar |
-| **Production**     | `errorReporter.js`                | Structured logging, ready for Sentry integration |
+All Edge Functions run in the **Deno runtime** on Supabase.
 
-**No `alert()` or `confirm()` is used anywhere.** All user-facing messages use the toast system or inline confirmation patterns.
-
----
-
-## Security Considerations
-
-1. **Row Level Security (RLS):** All Supabase mutations include `.eq("user_id", user.id)` as a defense-in-depth measure. Even if RLS policies are misconfigured on the Supabase side, the client-side queries will only affect the authenticated user's data
-2. **Environment variables:** Supabase credentials are stored in `.env.local` (git-ignored). Only the publishable `anon` key is used client-side — never the `service_role` key
-3. **Razorpay security:** The Razorpay Key Secret is **never exposed on the frontend**. It is stored as a Supabase secret and only accessed by Edge Functions. Payment signatures are verified server-side using HMAC-SHA256 before creating any order
-4. **Session timeout:** Users are automatically signed out after 1 hour of inactivity (tracked via `localStorage`)
-5. **Protected routes:** Server-side RPC functions (`place_order_cod`, `place_order_prepaid`, `cancel_order`) accept `p_user_id` parameters and validate ownership on the database side
+| Function                     | Method | Purpose                                      |
+|------------------------------|--------|----------------------------------------------|
+| `delhivery-create-shipment`  | POST   | Creates forward, reverse pickup, or exchange shipments via Delhivery API. Accepts `warehouse` from request body (admin-configured) with env var fallback. |
+| `delhivery-track`            | POST   | Fetches real-time tracking scans for a waybill number. Normalizes Delhivery response into a clean timeline. |
+| `delhivery-pincode-check`    | POST   | Checks if a 6-digit Indian pincode is serviceable. Returns COD/prepaid availability, estimated delivery days, metro/ODA classification. |
+| `create-razorpay-order`      | POST   | Creates a Razorpay order (amount in paise). Returns `{ id, amount, currency }`. |
+| `verify-razorpay-payment`    | POST   | Verifies Razorpay HMAC-SHA256 signature, then calls `place_order_prepaid` RPC to create the order in the database. Uses service role key. |
 
 ---
 
-## Supabase — Database Tables & RPC Functions
+## Database Schema
 
-The frontend interacts with these Supabase resources. For full schema details, see [`supabase/README.md`](supabase/README.md).
+All tables live in the `public` schema with **Row Level Security (RLS)** enabled. See `supabase/migrations/000_full_schema.sql` for the complete creation script.
 
 ### Tables
 
-| Table              | Used By                      | Operations          |
-|-------------------|------------------------------|-----------------------|
-| `products`         | Shop, Home, ProductDetail   | SELECT (with joins)   |
-| `product_variants` | ProductDetail, Admin        | SELECT, INSERT, UPDATE, DELETE |
-| `product_reviews`  | ProductDetail, MyOrders     | SELECT, INSERT        |
-| `orders`           | MyOrders, Checkout, Admin   | SELECT                |
-| `order_items`      | MyOrders, Admin             | SELECT (via join)     |
-| `addresses`        | Checkout                    | SELECT, INSERT, DELETE |
-| `profiles`         | AuthContext, Login           | SELECT                |
-| `app_settings`     | Home, CartContext, Admin    | SELECT, UPSERT        |
-| `wa_notifications` | AdminOrders                 | SELECT, UPSERT        |
+| Table | Purpose | Key Columns |
+|-------|---------|-------------|
+| `profiles` | User profiles (mirrors `auth.users`) | `id` (FK → auth.users), `full_name`, `role` (customer/admin) |
+| `products` | Product catalog | `name`, `sku`, `category`, `price_inr`, `stock_qty`, `image_url`, `highlights` (jsonb), `about_text`, `best_for` |
+| `product_images` | Gallery images per product | `product_id` (FK), `image_url`, `sort_order` |
+| `product_variants` | Size/pack variants | `product_id` (FK), `label`, `price_inr`, `stock_qty`, `sku` |
+| `product_reviews` | Customer reviews (1–5 stars) | `product_id`, `user_id`, `order_id`, `rating`, `title`, `body` |
+| `orders` | Customer orders | `user_id`, `status`, shipping fields, `payment_method`, `delhivery_waybill`, `razorpay_payment_id` |
+| `order_items` | Line items per order | `order_id`, `product_id`, `variant_id`, `qty`, `unit_price_inr` |
+| `addresses` | Saved delivery addresses | `user_id`, `full_name`, `phone`, `line1/2`, `city`, `state`, `pincode` |
+| `replacements` | Replacement requests | `order_id`, `user_id`, `reason`, `images[]`, `status`, `replacement_waybill`, `reverse_waybill` |
+| `app_settings` | Key-value config store | `key` (PK), `value` (jsonb) — stores homepage content, feature toggles, discount codes, warehouse address |
+| `wa_notifications` | WhatsApp notification log | `order_id`, `status`, `phone`, `sent_at` |
+
+### `app_settings` Keys
+
+| Key                          | Value Type      | Purpose                                |
+|------------------------------|-----------------|----------------------------------------|
+| `homepage_hero_images`       | `jsonb[]`       | Hero carousel images                   |
+| `homepage_hero_copy`         | `jsonb`         | Hero headline, body, CTAs, trust icons |
+| `homepage_featured_products` | `uuid[]`        | Featured product IDs                   |
+| `homepage_pillars`           | `jsonb[]`       | Brand pillar cards                     |
+| `homepage_categories`        | `jsonb[]`       | Category quick-links                   |
+| `homepage_philosophy`        | `jsonb`         | Philosophy section copy                |
+| `site_logo`                  | `string`        | Logo image URL                         |
+| `shipping_amount`            | `jsonb`         | `{ amount: number }`                   |
+| `max_order_items`            | `jsonb`         | `{ max: number }`                      |
+| `razorpay_enabled`           | `jsonb`         | `{ enabled: boolean }`                 |
+| `cod_enabled`                | `jsonb`         | `{ enabled: boolean }`                 |
+| `replacements_enabled`       | `jsonb`         | `{ enabled: boolean }`                 |
+| `discount_codes`             | `jsonb[]`       | Array of `{ code, percentage, active, startsAt?, endsAt?, emails? }` |
+| `warehouse_address`          | `jsonb`         | `{ name, phone, address, city, state, pin }` |
 
 ### RPC Functions
 
-| Function              | Called From          | Purpose                                 |
-|-----------------------|----------------------|------------------------------------------|
-| `place_order_cod`     | Checkout.jsx         | Places a COD order, deducts stock        |
-| `place_order_prepaid` | verify-razorpay-payment (Edge Function) | Places a prepaid order after payment verification |
-| `cancel_order`        | MyOrders.jsx         | Cancels an order, restores stock         |
-
-### Edge Functions
-
-| Function                    | Purpose                                           |
-|----------------------------|---------------------------------------------------|
-| `create-razorpay-order`    | Creates a Razorpay order via their API            |
-| `verify-razorpay-payment`  | Verifies payment signature + calls `place_order_prepaid` |
+| Function               | Purpose                                    |
+|------------------------|--------------------------------------------|
+| `place_order_cod`      | Creates a COD order with stock deduction   |
+| `place_order_prepaid`  | Creates a prepaid order with Razorpay IDs  |
+| `cancel_order`         | Cancels an order and restores stock        |
+| `is_admin()`           | Helper: checks if current user is admin    |
+| `handle_new_user()`    | Trigger: auto-creates profile on signup    |
 
 ### Storage Buckets
 
-| Bucket             | Used For                     |
-|-------------------|------------------------------|
-| Product images     | Product cards, details, admin upload |
-| Logo/branding      | Navbar logo (fetched from `app_settings`) |
+| Bucket              | Public | Purpose                          |
+|---------------------|--------|----------------------------------|
+| `hero-images`       | Yes    | Homepage hero carousel images    |
+| `product-images`    | Yes    | Product gallery images           |
+| `replacement-images`| Yes    | Damage photos for replacements   |
 
 ---
 
-## Build Output & Code Splitting
+## Admin Dashboard
 
-Running `npm run build` produces:
+The admin dashboard (`/admin`) is a single-page shell with persistent tabs. Admin access requires `profiles.role = 'admin'`.
+
+| Tab              | Component               | Features                                           |
+|------------------|-------------------------|----------------------------------------------------|
+| **Products**     | `AdminProducts.jsx`     | Full CRUD, variant management, image gallery, stock editing, image position adjustment |
+| **Orders**       | `AdminOrders.jsx`       | Status pipeline, Delhivery integration, CSV export, WhatsApp notifications, bulk actions |
+| **Homepage**     | `AdminHomepage.jsx`     | Visual editor for hero, pillars, categories, philosophy, featured products |
+| **Reviews**      | `AdminReviews.jsx`      | Review moderation and deletion                     |
+| **Replacements** | `AdminReplacements.jsx` | Approve/reject requests, ship replacements, reverse pickups, exchange workflow |
+| **Settings**     | `AdminSettings.jsx`     | Feature toggles (COD, Razorpay, replacements), shipping amount, max items, discount codes (with scheduling + email restriction), warehouse address |
+
+---
+
+## Key Workflows
+
+### Order Flow
 
 ```
-dist/
-├── index.html
-└── assets/
-    ├── index-*.css          (~65 KB)     ← All styles
-    ├── index-*.js           (~526 KB)    ← Main bundle (React, router, contexts, Home, Shop, Login)
-    ├── Cart-*.js            (~5 KB)      ← Lazy chunk
-    ├── MyOrders-*.js        (~10 KB)     ← Lazy chunk
-    ├── Checkout-*.js        (~11 KB)     ← Lazy chunk
-    ├── ProductDetail-*.js   (~13 KB)     ← Lazy chunk
-    └── AdminDashboard-*.js  (~97 KB)     ← Lazy chunk (admin-only code)
+Customer places order → status: "placed"
+  Admin → "processing" → "shipped" (Delhivery waybill assigned)
+    → "delivered" (confirmed via tracking)
+  OR → "cancelled" (stock restored via RPC)
 ```
 
-> **Note:** `Shop.jsx` is not a separate chunk because `Home.jsx` statically imports `ProductCard` from it. This is intentional — `ProductCard` is needed on the landing page.
+### Payment Flow
+
+```
+COD:      Checkout → place_order_cod RPC → order created
+Razorpay: Checkout → create-razorpay-order Edge Fn → Razorpay popup
+          → verify-razorpay-payment Edge Fn → HMAC verify → place_order_prepaid RPC
+```
+
+### Replacement Flow
+
+```
+Customer submits request (reason + photos) → status: "pending"
+  Admin approves → "approved"
+    → Ship Directly (Prepaid mode) → "replacement_shipped"
+    → Reverse Pickup → "pickup_scheduled" → "pickup_received" → Ship → "replacement_shipped"
+    → Exchange (REPL mode) → "replacement_shipped"
+  Admin rejects → "rejected"
+```
+
+### Discount Codes
+
+```
+Admin creates code → { code, percentage, active, startsAt?, endsAt?, emails? }
+Customer applies at checkout → validates: active + schedule + email restriction
+Session-stored coupon re-validated on every page load
+```
 
 ---
 
-## Common Development Tasks
+## Deployment
 
-### Adding a new page
+### Frontend (Vercel)
 
-1. Create `src/pages/YourPage.jsx`
-2. Add a `<SEO>` component at the top of the JSX return
-3. Add the route in `src/routes/AppRoutes.jsx`:
-   - For lazy loading: `const YourPage = React.lazy(() => import("../pages/YourPage"))`
-   - Add route in the `children` array of `MainLayout`
-4. If the page requires authentication, wrap with `<ProtectedRoute>`
+The `vercel.json` rewrites all routes to `index.html` for SPA routing:
 
-### Adding a new Supabase query
+```json
+{ "rewrites": [{ "source": "/(.*)", "destination": "/index.html" }] }
+```
 
-1. Create or update the relevant service file in `src/services/`
-2. Import `supabase` from `./supabase/client`
-3. Always include `.eq("user_id", userId)` on mutations for RLS safety
-4. Handle errors with try/catch and use `showToast()` for user feedback
+### Backend (Supabase)
 
-### Adding a new component
-
-1. Create `src/components/YourComponent.jsx`
-2. Add a JSDoc header comment explaining the component's purpose
-3. Use the design tokens from `index.css` (colors, borders, shadows)
-4. If the component receives frequent prop changes, consider wrapping with `React.memo`
-
-### Modifying the design system
-
-1. Open `src/index.css`
-2. Custom properties and utility classes are defined at the top
-3. Tailwind v4 theme overrides go inside `@theme { }` blocks
-4. Custom animations use standard `@keyframes` blocks
-
-### Adding Supabase RPC functions
-
-1. Create the function in the Supabase SQL editor
-2. Call it from a service file: `supabase.rpc("function_name", { params })`
-3. Handle the response in the calling component with error toasts
+1. Run all migration SQL files in order
+2. Deploy Edge Functions via `supabase functions deploy <name>`
+3. Set all secrets in Supabase Dashboard → Edge Functions → Secrets
+4. Create storage buckets (hero-images, product-images, replacement-images) with public access
 
 ---
 
-## Troubleshooting
+## License
 
-| Issue                                    | Cause                                   | Solution                                      |
-|-----------------------------------------|-----------------------------------------|-----------------------------------------------|
-| App crashes on start with "Supabase URL missing" | `.env.local` not set up              | Copy `.env.local.example` → `.env.local` and fill in credentials |
-| `npm install` fails with peer dependency conflict | React 19 vs older packages          | Use `npm install --legacy-peer-deps`          |
-| Cart items disappear on login           | `localStorage` key mismatch            | Cart uses `cart_items` key — ensure no conflicting code clears it |
-| Admin pages 404                         | User doesn't have admin role           | Set `role: "admin"` in Supabase `profiles` table |
-| Forms don't submit                      | Validation not passing                 | Check browser console + ensure all required fields follow the Indian phone/pincode format |
-| Images don't load                       | Supabase storage URLs expired/incorrect | Check image URLs in the admin dashboard     |
-| Build warning about large chunks        | Main bundle > 500KB                    | Expected — includes React + router + Tailwind runtime |
-| "Pay Now" button not showing           | Razorpay not configured                | Set `VITE_RAZORPAY_KEY_ID` in `.env.local` + enable in Admin Settings |
-| Edge Function returns 502              | Old Deno imports or missing secrets    | See [`supabase/README.md` troubleshooting](supabase/README.md#troubleshooting) |
-| Payment succeeds but order fails       | DB schema mismatch in `place_order_prepaid` | Ensure the RPC matches actual `orders` table columns |
-
----
-
-## Contributing
-
-1. **Every source file has a JSDoc header** — open any `.jsx` file and read the top comment block for a quick orientation on what it does
-2. **Follow the services pattern** — keep Supabase calls in `src/services/`, not inline in components
-3. **Use `showToast()` for user feedback** — never use `alert()`, `confirm()`, or `prompt()`
-4. **Wrap with `React.memo`** — if a component renders in a list and receives stable props
-5. **Add `<SEO>` to new pages** — every page should have a unique title and description
-6. **Run `npm run build` before pushing** — ensure no build errors are introduced
-7. **Use `--legacy-peer-deps`** if `npm install` fails — required due to React 19 compatibility
+Private repository — all rights reserved.

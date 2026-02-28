@@ -1,3 +1,18 @@
+/**
+ * AdminSettings.jsx — Admin settings and feature toggles.
+ *
+ * Manages application-wide settings stored in the `app_settings` table:
+ *   • Feature toggles — COD, Razorpay, Replacements (enable/disable)
+ *   • Shipping amount — flat shipping fee in INR
+ *   • Max order items — per-cart item limit
+ *   • Discount codes — with optional schedule (startsAt/endsAt) and
+ *     email-restricted coupons
+ *   • Warehouse address — used by Delhivery for pickup/shipment origin
+ *
+ * All settings auto-save on change. Ctrl+S is supported as a save shortcut.
+ *
+ * @module pages/admin/AdminSettings
+ */
 import { useCallback, useEffect, useRef, useState } from "react";
 import { supabase } from "../../services/supabase/client";
 import { useToast } from "../../context/ToastContext";

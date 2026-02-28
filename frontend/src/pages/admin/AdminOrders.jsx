@@ -1,3 +1,17 @@
+/**
+ * AdminOrders.jsx — Admin order management page.
+ *
+ * Displays all orders with search, status filter, date range filters, and
+ * pagination. Supports:
+ *   • Status pipeline (placed → processing → shipped → delivered / cancelled)
+ *   • Delhivery shipping integration (create shipment, assign waybill)
+ *   • CSV export of filtered orders (Ctrl+S shortcut)
+ *   • WhatsApp click-to-chat notifications (tracked in wa_notifications table)
+ *   • Bulk status update for selected orders
+ *   • Expandable order detail cards (customer info, items, shipping, tracking)
+ *
+ * @module pages/admin/AdminOrders
+ */
 import { Fragment, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { supabase } from "../../services/supabase/client";
 import { SkeletonAdminTable } from "../../components/Skeleton";

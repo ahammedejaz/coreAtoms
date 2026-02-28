@@ -1,3 +1,21 @@
+/**
+ * AdminProducts.jsx — Admin product management page.
+ *
+ * Full CRUD for the product catalog with:
+ *   • Product form (name, SKU, category, price, stock, description, image)
+ *   • Rich detail fields (about, best-for, pairs-well-with, recommended stack)
+ *   • Product card highlight tags (configurable per product)
+ *   • Image position adjuster (drag to reposition within card frame)
+ *   • Extra gallery images (product_images table)
+ *   • Product variants (size/pack options with independent price, stock, SKU)
+ *   • Inline stock editing from the product list
+ *   • Low-stock warning badge
+ *   • Real-time sync via Supabase Realtime channel
+ *   • Ctrl+S keyboard shortcut to save product form
+ *   • Search and pagination
+ *
+ * @module pages/admin/AdminProducts
+ */
 import { Fragment, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { supabase } from "../../services/supabase/client";
 import ImagePositionAdjuster from "../../components/ImagePositionAdjuster";

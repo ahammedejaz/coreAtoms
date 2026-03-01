@@ -247,6 +247,16 @@ export default function Checkout() {
         }
       }
 
+      // Check new-users-only restriction
+      if (found.newUsersOnly) {
+        const { count } = await supabase.from("orders").select("id", { count: "exact", head: true }).eq("user_id", user.id);
+        if (count > 0) {
+          setCouponError("This coupon is only for first-time customers");
+          setValidatingCoupon(false);
+          return;
+        }
+      }
+
       setAppliedCoupon({ code: found.code, percentage: found.percentage });
       sessionStorage.setItem("coreatoms_coupon", JSON.stringify({ code: found.code, percentage: found.percentage }));
       setCouponInput("");

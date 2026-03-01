@@ -69,6 +69,7 @@ export default function AdminSettings() {
     const [newStartsAt, setNewStartsAt] = useState("");
     const [newEndsAt, setNewEndsAt] = useState("");
     const [newEmails, setNewEmails] = useState("");
+    const [newUsersOnly, setNewUsersOnly] = useState(false);
     const [addingCode, setAddingCode] = useState(false);
 
     // Promo banner
@@ -288,8 +289,9 @@ export default function AdminSettings() {
         if (newEndsAt) entry.endsAt = newEndsAt;
         const emailList = newEmails.split(",").map(e => e.trim().toLowerCase()).filter(Boolean);
         if (emailList.length > 0) entry.emails = emailList;
+        if (newUsersOnly) entry.newUsersOnly = true;
         const ok = await saveDiscountCodes([...discountCodes, entry]);
-        if (ok) { setNewCode(""); setNewPercent(""); setNewStartsAt(""); setNewEndsAt(""); setNewEmails(""); showToast(`Code "${code}" added`, "success"); }
+        if (ok) { setNewCode(""); setNewPercent(""); setNewStartsAt(""); setNewEndsAt(""); setNewEmails(""); setNewUsersOnly(false); showToast(`Code "${code}" added`, "success"); }
         setAddingCode(false);
     };
 
@@ -664,6 +666,13 @@ export default function AdminSettings() {
                                 <input value={newEmails} onChange={(e) => setNewEmails(e.target.value)} placeholder="user1@example.com, user2@example.com"
                                     className="w-full rounded-xl border border-[#E8E4DE] bg-white px-3 py-2.5 text-sm text-stone-900 placeholder:text-stone-400 focus:ring-2 focus:ring-[#1e3a5f]/20 outline-none" />
                             </div>
+                            <div className="mt-3 flex items-center gap-4">
+                                <label className="flex items-center gap-2 cursor-pointer select-none">
+                                    <input type="checkbox" checked={newUsersOnly} onChange={(e) => setNewUsersOnly(e.target.checked)}
+                                        className="rounded border-stone-300 text-emerald-600 focus:ring-emerald-500/30 h-4 w-4" />
+                                    <span className="text-xs text-stone-600">New users only</span>
+                                </label>
+                            </div>
                             <button type="button" onClick={addDiscountCode} disabled={addingCode} className="mt-3 btn-primary py-2 px-5 text-sm disabled:opacity-50">
                                 {addingCode ? "Adding…" : "Add Code"}
                             </button>
@@ -683,6 +692,7 @@ export default function AdminSettings() {
                                                     onClick={(e) => { navigator.clipboard.writeText(dc.code); const btn = e.currentTarget; btn.textContent = "✓"; setTimeout(() => { btn.textContent = "📋"; }, 1200); }}
                                                     className="text-stone-400 hover:text-stone-700 text-sm transition-colors">📋</button>
                                                 <span className="text-xs text-emerald-600 font-semibold">{dc.percentage}% off</span>
+                                                {dc.newUsersOnly && <span className="inline-flex items-center rounded-full bg-indigo-50 border border-indigo-200 px-2 py-0.5 text-[10px] font-semibold text-indigo-600">🆕 New users</span>}
                                             </div>
                                             {(dc.startsAt || dc.endsAt || dc.emails?.length > 0) && (
                                                 <div className="mt-1 flex flex-wrap gap-1.5">

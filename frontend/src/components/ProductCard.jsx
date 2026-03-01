@@ -59,7 +59,10 @@ export default function ProductCard({ product, onAddToCart }) {
                 {product.category || "General"}
               </p>
             </div>
-            <div className="text-sm font-semibold text-neutral-900">₹{product.price}</div>
+            <div className="text-right">
+              <div className="text-sm font-semibold text-neutral-900">₹{product.price}</div>
+              <p className="text-[10px] text-neutral-400 leading-tight">Excl. GST & Shipping</p>
+            </div>
           </div>
 
           <p className="text-sm text-neutral-600 line-clamp-2">

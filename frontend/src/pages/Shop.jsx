@@ -107,6 +107,7 @@ export const ProductCard = React.memo(function ProductCard({ p, onAdd, justAdded
               <span className="text-lg font-semibold text-stone-900">
                 {p.variants && p.variants.length > 0 ? "From " : ""}{money(p.price)}
               </span>
+              <span className="text-[10px] text-stone-400 block mt-0.5">Excl. GST & Shipping</span>
             </div>
             <Link to={`/product/${p.id}`} className="text-[12px] font-semibold text-[#1e3a5f] hover:underline underline-offset-2">
               Details →

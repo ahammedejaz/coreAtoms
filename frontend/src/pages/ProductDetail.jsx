@@ -275,7 +275,7 @@ export default function ProductDetail() {
                 <div className="text-3xl font-semibold tracking-tight text-stone-900">
                   {money(activePrice)}
                 </div>
-                <p className="text-xs text-stone-400 mt-1">Cash on Delivery · India only</p>
+                <p className="text-xs text-stone-400 mt-1">Excl. GST & Shipping</p>
               </div>
               <span className={`inline-flex items-center gap-1.5 text-xs font-semibold px-3 py-1.5 rounded-full ${activeStock > 0
                 ? "bg-emerald-50 border border-emerald-200 text-emerald-700"

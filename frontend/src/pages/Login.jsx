@@ -8,7 +8,7 @@
  * @module pages/Login
  */
 import { useEffect, useState } from "react";
-import { useNavigate, useSearchParams } from "react-router-dom";
+import { Link, useNavigate, useSearchParams } from "react-router-dom";
 import { supabase } from "../services/supabase/client";
 import { useAuth } from "../context/AuthContext";
 import SEO from "../components/SEO";
@@ -120,6 +120,11 @@ export default function Login() {
             <div>
               <label className="block text-xs font-semibold text-stone-600 mb-1.5">Password</label>
               <input type="password" value={password} onChange={(e) => setPassword(e.target.value)} required placeholder="••••••••" className="input" />
+              {!isSignup && (
+                <div className="mt-1.5 text-right">
+                  <Link to="/forgot-password" className="text-xs text-[#1e3a5f] hover:underline font-medium">Forgot password?</Link>
+                </div>
+              )}
             </div>
 
             {message.text && (

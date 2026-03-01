@@ -17,6 +17,7 @@ import SEO from "../components/SEO";
 import { SkeletonGrid } from "../components/Skeleton";
 import { useToast } from "../context/ToastContext";
 import ScrollReveal from "../components/ScrollReveal";
+import PromoBanner from "../components/PromoBanner";
 
 // ── Defaults (shown if admin hasn't saved yet) ────────────────────────────────
 const DEFAULT_HERO_IMAGES = [
@@ -193,6 +194,9 @@ export default function Home() {
         title="Core Atoms | Premium Nutraceuticals"
         description="Modern nutraceuticals designed for real routines. Clean formulas, structured stacks, COD available across India."
       />
+
+      {/* ── PROMO BANNER (admin-controlled) ─────────────────────────────── */}
+      <PromoBanner />
 
       {/* ── HERO ──────────────────────────────────────────────────────────── */}
       <section className="rounded-3xl bg-white overflow-hidden relative" style={{ boxShadow: '0 4px 20px rgba(0,0,0,0.06), 0 12px 48px rgba(30,58,95,0.08), inset 0 1px 0 rgba(255,255,255,0.9)', border: '1px solid rgba(232,228,222,0.5)' }}>

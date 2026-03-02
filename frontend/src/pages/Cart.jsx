@@ -9,6 +9,7 @@
 import { Link, useNavigate } from "react-router-dom";
 import { useCart } from "../context/CartContext";
 import { useAuth } from "../context/AuthContext";
+import { useToast } from "../context/ToastContext";
 import { supabase } from "../services/supabase/client";
 import SEO from "../components/SEO";
 import ScrollReveal from "../components/ScrollReveal";
@@ -19,6 +20,7 @@ import { money } from "../utils/format";
 export default function Cart() {
   const navigate = useNavigate();
   const { isAuthenticated } = useAuth();
+  const { showToast } = useToast();
   const { items, totalItems, subtotal, updateQty, removeItem, clear } = useCart();
   const [shippingBase, setShippingBase] = useState(0);
   const [freeShippingMin, setFreeShippingMin] = useState(0);
@@ -163,6 +165,9 @@ export default function Cart() {
                       <span className="font-semibold text-stone-900">{money(gstAmount)}</span>
                     </div>
                   )}
+                  <div className="rounded-lg bg-blue-50 border border-blue-100 px-3 py-2 text-xs text-blue-700">
+                    🎟️ Coupon codes &amp; loyalty discounts are applied at checkout.
+                  </div>
                 </div>
 
                 <div className="my-5 h-px bg-[#E8E4DE]" />
@@ -177,7 +182,14 @@ export default function Cart() {
 
                 <button
                   type="button"
-                  onClick={() => { if (!isAuthenticated) navigate("/login"); else navigate("/checkout"); }}
+                  onClick={() => {
+                    if (!isAuthenticated) {
+                      showToast("Please sign in to checkout", "info");
+                      navigate("/login", { state: { from: "/checkout" } });
+                    } else {
+                      navigate("/checkout");
+                    }
+                  }}
                   className="btn-primary w-full py-3 text-[14px]"
                 >
                   Proceed to checkout

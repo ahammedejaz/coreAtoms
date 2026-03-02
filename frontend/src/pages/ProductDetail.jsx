@@ -1,9 +1,14 @@
 /**
  * ProductDetail.jsx — Single-product page with variant selection.
  *
- * Fetches one product by URL param `:id`, shows image gallery with
- * thumbnails, variant picker, quantity stepper, stock/order-limit
- * warnings, highlight pills, about section, and customer reviews.
+ * Fetches one product by URL param `:id` and `gst_percentage` from
+ * `app_settings` in parallel. Shows image gallery with thumbnails,
+ * variant picker, quantity stepper, stock/order-limit warnings,
+ * highlight pills, about section, and customer reviews.
+ *
+ * The price label reads "Excl. GST & Shipping" when GST > 0,
+ * or "Excl. Shipping" when GST is disabled.
+ *
  * Uses composite cart keys (`productId_variantId`) for variant items.
  *
  * @module pages/ProductDetail
@@ -12,6 +17,7 @@ import { useEffect, useMemo, useState } from "react";
 import { Link, useNavigate, useParams } from "react-router-dom";
 import { useCart } from "../context/CartContext";
 import { fetchProductById } from "../services/products";
+import { supabase } from "../services/supabase/client";
 import SEO from "../components/SEO";
 import PincodeChecker from "../components/PincodeChecker";
 import { SkeletonProductDetail } from "../components/Skeleton";
@@ -32,6 +38,7 @@ export default function ProductDetail() {
   const [err, setErr] = useState("");
   const [selectedVariant, setSelectedVariant] = useState(null);
   const [activeImg, setActiveImg] = useState(0);
+  const [gstPercent, setGstPercent] = useState(0);
 
   useEffect(() => {
     let alive = true;
@@ -39,10 +46,14 @@ export default function ProductDetail() {
       try {
         setLoading(true);
         setErr("");
-        const p = await fetchProductById(id);
+        const [p, gstRes] = await Promise.all([
+          fetchProductById(id),
+          supabase.from("app_settings").select("value").eq("key", "gst_percentage").maybeSingle(),
+        ]);
         if (alive) {
           setProduct(p);
           setActiveImg(0);
+          setGstPercent(Number(gstRes?.data?.value?.percentage ?? 0));
           if (p?.variants?.length > 0) {
             const firstAvail = p.variants.find((v) => v.stockQty > 0) || p.variants[0];
             setSelectedVariant(firstAvail);
@@ -275,7 +286,9 @@ export default function ProductDetail() {
                 <div className="text-3xl font-semibold tracking-tight text-stone-900">
                   {money(activePrice)}
                 </div>
-                <p className="text-xs text-stone-400 mt-1">Excl. GST & Shipping</p>
+                <p className="text-xs text-stone-400 mt-1">
+                  {Number(gstPercent) > 0 ? "Excl. GST & Shipping" : "Excl. Shipping"}
+                </p>
               </div>
               <span className={`inline-flex items-center gap-1.5 text-xs font-semibold px-3 py-1.5 rounded-full ${activeStock > 0
                 ? "bg-emerald-50 border border-emerald-200 text-emerald-700"

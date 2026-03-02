@@ -1,14 +1,20 @@
 /**
- * AdminOrders.jsx — Admin order management page.
+ * AdminOrders.jsx — Admin order management panel.
  *
- * Displays all orders with search, status filter, date range filters, and
- * pagination. Supports:
- *   • Status pipeline (placed → processing → shipped → delivered / cancelled)
- *   • Delhivery shipping integration (create shipment, assign waybill)
- *   • CSV export of filtered orders (Ctrl+S shortcut)
- *   • WhatsApp click-to-chat notifications (tracked in wa_notifications table)
- *   • Bulk status update for selected orders
- *   • Expandable order detail cards (customer info, items, shipping, tracking)
+ * Fetches all orders with full detail (order_items, shipping_amount, gst_amount,
+ * coins_used, Delhivery waybill, payment info) and renders a searchable,
+ * filterable, paginated table with expandable detail cards.
+ *
+ * Features:
+ *  - Status pipeline: placed → processing → shipped → delivered / cancelled
+ *  - Payment Breakdown card: items subtotal, shipping, GST, CoreCoins discount, total
+ *    (reads stored shipping_amount / gst_amount; falls back to derivation for old orders)
+ *  - Delhivery shipping: create shipment → assign waybill + tracking URL on order
+ *  - Live Delhivery tracking (ShipmentTracker component inside detail card)
+ *  - CSV export of currently-filtered orders (keyboard shortcut: Ctrl+S)
+ *  - Bulk status update for selected orders
+ *  - WhatsApp click-to-chat notifications logged to wa_notifications table
+ *  - Handles 'payment_failed' status orders (visible, non-actionable)
  *
  * @module pages/admin/AdminOrders
  */
@@ -153,9 +159,11 @@ export default function AdminOrders({ onOrdersChange }) {
             variant: "info",
             onConfirm: async () => {
                 setConfirmDlg(null);
+                const updatePayload = { status: newStatus };
+                if (newStatus === "delivered") updatePayload.delivered_at = new Date().toISOString();
                 const { error } = await supabase
                     .from("orders")
-                    .update({ status: newStatus })
+                    .update(updatePayload)
                     .eq("id", orderId);
                 if (error) { showToast(error.message, "error"); return; }
                 showToast(`Order status → ${STATUS_LABELS[newStatus]}`, "success");
@@ -234,6 +242,11 @@ export default function AdminOrders({ onOrdersChange }) {
           tracking_url,
           shipped_at,
           delivered_at,
+          coins_used,
+          shipping_amount,
+          gst_amount,
+          discount_amount,
+          coupon_code,
           profiles (
             id,
             email,
@@ -1092,13 +1105,95 @@ export default function AdminOrders({ onOrdersChange }) {
                                                                         </div>
                                                                     </div>
 
-                                                                    {/* Payment info */}
+                                                                    {/* Payment Breakdown */}
                                                                     <div className="rounded-xl border border-[#E8E4DE] bg-white p-4">
-                                                                        <div className="text-xs font-semibold text-stone-400">Payment</div>
-                                                                        <div className="mt-2 text-xs text-stone-600">
-                                                                            <div>Method: <span className="font-semibold text-stone-900">{o.payment_method === 'prepaid' ? 'Online (Razorpay)' : 'Cash on Delivery'}</span></div>
+                                                                        <div className="text-xs font-semibold text-stone-400 mb-3">Payment Breakdown</div>
+                                                                        <div className="space-y-2">
+                                                                            {/* Method */}
+                                                                            <div className="flex items-center justify-between">
+                                                                                <span className="text-xs text-stone-500">Method</span>
+                                                                                <span className={`inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-[10px] font-bold uppercase tracking-wide ${o.payment_method === 'prepaid'
+                                                                                    ? 'bg-emerald-50 text-emerald-700 border border-emerald-200'
+                                                                                    : 'bg-amber-50 text-amber-700 border border-amber-200'
+                                                                                    }`}>
+                                                                                    {o.payment_method === 'prepaid' ? '💳 Online (Razorpay)' : '💵 Cash on Delivery'}
+                                                                                </span>
+                                                                            </div>
+
+                                                                            {/* Items subtotal */}
+                                                                            {(() => {
+                                                                                const itemsTotal = (o.order_items_detailed || []).reduce((s, it) => s + (it.line_total_num || 0), 0);
+                                                                                const finalTotal = Number(o.computed_total_inr || 0);
+                                                                                const coinsUsed = Number(o.coins_used || 0);
+                                                                                const coinsDiscountInr = coinsUsed;
+                                                                                // Use stored columns if available, otherwise derive
+                                                                                const shippingAmt = Number(o.shipping_amount ?? 0);
+                                                                                const gstAmt = Number(o.gst_amount ?? 0);
+                                                                                const hasStoredBreakdown = shippingAmt > 0 || gstAmt > 0;
+                                                                                const derivedShippingAndGst = !hasStoredBreakdown && itemsTotal > 0
+                                                                                    ? Math.max(0, finalTotal + coinsDiscountInr - itemsTotal)
+                                                                                    : null;
+                                                                                return (
+                                                                                    <>
+                                                                                        <div className="border-t border-dashed border-[#E8E4DE] my-1" />
+                                                                                        {itemsTotal > 0 && (
+                                                                                            <div className="flex justify-between text-xs">
+                                                                                                <span className="text-stone-500">Items subtotal</span>
+                                                                                                <span className="font-medium text-stone-800">₹{itemsTotal.toLocaleString('en-IN')}</span>
+                                                                                            </div>
+                                                                                        )}
+                                                                                        {hasStoredBreakdown ? (
+                                                                                            <>
+                                                                                                {shippingAmt > 0 && (
+                                                                                                    <div className="flex justify-between text-xs">
+                                                                                                        <span className="text-stone-500">Shipping</span>
+                                                                                                        <span className="font-medium text-stone-800">₹{shippingAmt.toLocaleString('en-IN')}</span>
+                                                                                                    </div>
+                                                                                                )}
+                                                                                                {gstAmt > 0 && (
+                                                                                                    <div className="flex justify-between text-xs">
+                                                                                                        <span className="text-stone-500">GST</span>
+                                                                                                        <span className="font-medium text-stone-800">₹{gstAmt.toLocaleString('en-IN')}</span>
+                                                                                                    </div>
+                                                                                                )}
+                                                                                            </>
+                                                                                        ) : derivedShippingAndGst !== null && derivedShippingAndGst > 0 ? (
+                                                                                            <div className="flex justify-between text-xs">
+                                                                                                <span className="text-stone-500">Shipping + GST</span>
+                                                                                                <span className="font-medium text-stone-800">₹{derivedShippingAndGst.toLocaleString('en-IN')}</span>
+                                                                                            </div>
+                                                                                        ) : null}
+                                                                                        {coinsUsed > 0 && (
+                                                                                            <div className="flex justify-between text-xs">
+                                                                                                <span className="text-amber-600 flex items-center gap-1">
+                                                                                                    <svg className="h-3 w-3" viewBox="0 0 20 20" fill="currentColor"><path d="M10 2a8 8 0 100 16A8 8 0 0010 2z" /></svg>
+                                                                                                    CoreCoins used ({coinsUsed} coins)
+                                                                                                </span>
+                                                                                                <span className="font-medium text-amber-700">−₹{coinsDiscountInr.toLocaleString('en-IN')}</span>
+                                                                                            </div>
+                                                                                        )}
+                                                                                        {Number(o.discount_amount ?? 0) > 0 && (
+                                                                                            <div className="flex justify-between text-xs">
+                                                                                                <span className="text-emerald-600">
+                                                                                                    🎉 Discount{o.coupon_code ? <> (<span className="font-mono font-bold">{o.coupon_code}</span>)</> : ""}
+                                                                                                </span>
+                                                                                                <span className="font-medium text-emerald-700">−₹{Number(o.discount_amount).toLocaleString('en-IN')}</span>
+                                                                                            </div>
+                                                                                        )}
+                                                                                        <div className="border-t border-[#E8E4DE] mt-1 pt-1.5 flex justify-between text-sm">
+                                                                                            <span className="font-semibold text-stone-700">Total Paid</span>
+                                                                                            <span className="font-bold text-stone-900">₹{finalTotal.toLocaleString('en-IN')}</span>
+                                                                                        </div>
+                                                                                    </>
+                                                                                );
+                                                                            })()}
+
+                                                                            {/* Razorpay ID */}
                                                                             {o.razorpay_payment_id && (
-                                                                                <div className="mt-1">Payment ID: <span className="font-mono text-[11px] text-stone-500">{o.razorpay_payment_id}</span></div>
+                                                                                <div className="pt-1">
+                                                                                    <span className="text-[10px] text-stone-400">Razorpay ID: </span>
+                                                                                    <span className="font-mono text-[10px] text-stone-500 break-all">{o.razorpay_payment_id}</span>
+                                                                                </div>
                                                                             )}
                                                                         </div>
                                                                     </div>

@@ -1,15 +1,30 @@
 /**
- * AdminSettings.jsx — Admin settings and feature toggles.
+ * AdminSettings.jsx — Admin settings panel with accordion sections.
  *
- * Manages application-wide settings stored in the `app_settings` table:
- *   • Feature toggles — COD, Razorpay, Replacements (enable/disable)
- *   • Shipping amount — flat shipping fee in INR
- *   • Max order items — per-cart item limit
- *   • Discount codes — with optional schedule (startsAt/endsAt) and
- *     email-restricted coupons
- *   • Warehouse address — used by Delhivery for pickup/shipment origin
+ * All settings are persisted to the `app_settings` Supabase table.
+ * The UI is organised as collapsible accordion sections:
  *
- * All settings auto-save on change. Ctrl+S is supported as a save shortcut.
+ *  │ Shipping & Tax
+ *  ├─ Flat shipping rate (INR). 0 = use Delhivery per-pincode rate.
+ *  ├─ Free shipping threshold (INR). 0 = disabled.
+ *  └─ GST percentage. 0 = GST disabled (hides 'Excl. GST' labels on product cards).
+ *
+ *  │ Payments
+ *  ├─ Razorpay toggle (shows/hides online payment option at checkout)
+ *  └─ COD toggle (shows/hides cash-on-delivery option at checkout)
+ *
+ *  │ Discount Codes
+ *  └─ Add/remove coupon codes: percentage, date range, active flag
+ *
+ *  │ CoreCoins
+ *  └─ Enable loyalty programme + configure earn_rate, earn_per_rupees,
+ *       coin_value_inr, min_redeem
+ *
+ *  │ Replacements
+ *  └─ Enable replacement system + configure replacement window in days
+ *
+ *  │ Promo Banner
+ *  └─ Floating announcement bar: text, link, colours
  *
  * @module pages/admin/AdminSettings
  */
@@ -55,6 +70,8 @@ export default function AdminSettings() {
     const [replacementsEnabled, setReplacementsEnabled] = useState(false);
     const [replacementsLoading, setReplacementsLoading] = useState(true);
     const [replacementsSaving, setReplacementsSaving] = useState(false);
+    const [replacementWindowDays, setReplacementWindowDays] = useState(1);
+    const [replacementWindowMinutes, setReplacementWindowMinutes] = useState(0);
 
     // Warehouse address
     const [warehouse, setWarehouse] = useState({ name: "", phone: "", address: "", city: "", state: "", pin: "" });
@@ -71,6 +88,17 @@ export default function AdminSettings() {
     const [newEmails, setNewEmails] = useState("");
     const [newUsersOnly, setNewUsersOnly] = useState(false);
     const [addingCode, setAddingCode] = useState(false);
+
+    // CoreCoins loyalty program
+    const [corecoinsEnabled, setCorecoinsEnabled] = useState(false);
+    const [corecoinsLoading, setCorecoinsLoading] = useState(true);
+    const [corecoinsSaving, setCorecoinsSaving] = useState(false);
+    const [corecoinsConfig, setCorecoinsConfig] = useState({
+        earn_rate: 1,         // coins earned per threshold
+        earn_per_rupees: 100, // threshold in ₹
+        min_redeem: 100,      // minimum coins to redeem
+        coin_value_inr: 1,    // value of 1 coin in ₹
+    });
 
     // Promo banner
     const [bannerEnabled, setBannerEnabled] = useState(false);
@@ -130,6 +158,8 @@ export default function AdminSettings() {
             .eq("key", "replacements_enabled").maybeSingle()
             .then(({ data }) => {
                 setReplacementsEnabled(data?.value?.enabled === true);
+                if (data?.value?.window_days) setReplacementWindowDays(data.value.window_days);
+                if (data?.value?.window_minutes) setReplacementWindowMinutes(data.value.window_minutes);
                 setReplacementsLoading(false);
             });
 
@@ -149,6 +179,21 @@ export default function AdminSettings() {
             .then(({ data }) => {
                 setDiscountCodes(Array.isArray(data?.value) ? data.value : []);
                 setDiscountLoading(false);
+            });
+
+        // Load CoreCoins
+        supabase.from("app_settings").select("value")
+            .eq("key", "corecoins_enabled").maybeSingle()
+            .then(({ data }) => {
+                setCorecoinsEnabled(data?.value?.enabled === true);
+            });
+        supabase.from("app_settings").select("value")
+            .eq("key", "corecoins_config").maybeSingle()
+            .then(({ data }) => {
+                if (data?.value && typeof data.value === "object") {
+                    setCorecoinsConfig(prev => ({ ...prev, ...data.value }));
+                }
+                setCorecoinsLoading(false);
             });
 
         // Load promo banner
@@ -205,8 +250,12 @@ export default function AdminSettings() {
     };
 
     const toggleRazorpay = async () => {
-        setRazorpaySaving(true);
         const newVal = !razorpayEnabled;
+        if (!newVal && !codEnabled) {
+            showToast("Cannot disable Razorpay — COD is also disabled. Enable at least one payment method.", "error");
+            return;
+        }
+        setRazorpaySaving(true);
         const { error } = await supabase.from("app_settings")
             .upsert({ key: "razorpay_enabled", value: { enabled: newVal } }, { onConflict: "key" });
         if (error) {
@@ -219,8 +268,12 @@ export default function AdminSettings() {
     };
 
     const toggleCod = async () => {
-        setCodSaving(true);
         const newVal = !codEnabled;
+        if (!newVal && !razorpayEnabled) {
+            showToast("Cannot disable COD — Razorpay is also disabled. Enable at least one payment method.", "error");
+            return;
+        }
+        setCodSaving(true);
         const { error } = await supabase.from("app_settings")
             .upsert({ key: "cod_enabled", value: { enabled: newVal } }, { onConflict: "key" });
         if (error) {
@@ -236,7 +289,7 @@ export default function AdminSettings() {
         setReplacementsSaving(true);
         const newVal = !replacementsEnabled;
         const { error } = await supabase.from("app_settings")
-            .upsert({ key: "replacements_enabled", value: { enabled: newVal } }, { onConflict: "key" });
+            .upsert({ key: "replacements_enabled", value: { enabled: newVal, window_days: Number(replacementWindowDays) || 1, window_minutes: Number(replacementWindowMinutes) || 0 } }, { onConflict: "key" });
         if (error) {
             showToast(error.message, "error");
         } else {
@@ -244,6 +297,50 @@ export default function AdminSettings() {
             showToast(newVal ? "Replacements enabled" : "Replacements disabled", "success");
         }
         setReplacementsSaving(false);
+    };
+
+    const saveReplacementWindowDays = async () => {
+        setReplacementsSaving(true);
+        const { error } = await supabase.from("app_settings")
+            .upsert({ key: "replacements_enabled", value: { enabled: replacementsEnabled, window_days: Number(replacementWindowDays) || 1, window_minutes: Number(replacementWindowMinutes) || 0 } }, { onConflict: "key" });
+        if (error) showToast(error.message, "error");
+        else showToast("Replacement window saved", "success");
+        setReplacementsSaving(false);
+    };
+
+    // ── CoreCoins helpers ──
+    const toggleCorecoins = async () => {
+        setCorecoinsSaving(true);
+        const newVal = !corecoinsEnabled;
+        const { error } = await supabase.from("app_settings")
+            .upsert({ key: "corecoins_enabled", value: { enabled: newVal } }, { onConflict: "key" });
+        if (error) {
+            showToast(error.message, "error");
+        } else {
+            setCorecoinsEnabled(newVal);
+            showToast(newVal ? "CoreCoins program enabled" : "CoreCoins program disabled", "success");
+        }
+        setCorecoinsSaving(false);
+    };
+
+    const saveCorecoinsConfig = async () => {
+        const c = corecoinsConfig;
+        const earnRate = Number(c.earn_rate);
+        const earnPer = Number(c.earn_per_rupees);
+        const minRedeem = Number(c.min_redeem);
+        const coinVal = Number(c.coin_value_inr);
+        if (!Number.isFinite(earnRate) || earnRate <= 0) { showToast("Earn rate must be > 0", "error"); return; }
+        if (!Number.isFinite(earnPer) || earnPer <= 0) { showToast("Earn per ₹ must be > 0", "error"); return; }
+        if (!Number.isFinite(minRedeem) || minRedeem <= 0) { showToast("Min redeem must be > 0", "error"); return; }
+        if (!Number.isFinite(coinVal) || coinVal <= 0) { showToast("Coin value must be > 0", "error"); return; }
+        setCorecoinsSaving(true);
+        const { error } = await supabase.from("app_settings").upsert(
+            { key: "corecoins_config", value: { earn_rate: earnRate, earn_per_rupees: earnPer, min_redeem: minRedeem, coin_value_inr: coinVal } },
+            { onConflict: "key" }
+        );
+        if (error) showToast(error.message, "error");
+        else showToast("CoreCoins settings saved", "success");
+        setCorecoinsSaving(false);
     };
 
     const saveWarehouse = async () => {
@@ -338,6 +435,13 @@ export default function AdminSettings() {
 
         // Upload image if new file selected
         if (bannerFile) {
+            // Delete old banner from storage before uploading new one
+            if (bannerImageUrl) {
+                try {
+                    const oldPath = bannerImageUrl.split("/hero-images/")[1];
+                    if (oldPath) await supabase.storage.from("hero-images").remove([oldPath]);
+                } catch { /* ignore delete errors — proceed with upload */ }
+            }
             const ext = bannerFile.name.split(".").pop();
             const path = `promo-banner/banner-${Date.now()}.${ext}`;
             const { error: upErr } = await supabase.storage.from("hero-images").upload(path, bannerFile, { cacheControl: "3600", upsert: true });
@@ -549,7 +653,7 @@ export default function AdminSettings() {
                     <Chevron section="replacements" />
                 </button>
                 {openSections.has("replacements") && (
-                    <div className="px-5 pb-5 border-t border-[#E8E4DE] pt-4">
+                    <div className="px-5 pb-5 border-t border-[#E8E4DE] pt-4 space-y-4">
                         <div className="flex items-center justify-between gap-4">
                             <span className="text-sm font-medium text-stone-700">Enable replacements</span>
                             <button type="button" role="switch" aria-checked={replacementsEnabled} disabled={replacementsLoading || replacementsSaving} onClick={toggleReplacements}
@@ -559,6 +663,124 @@ export default function AdminSettings() {
                                     replacementsEnabled ? "translate-x-6" : "translate-x-1"].join(" ")} />
                             </button>
                         </div>
+                        {/* Replacement window duration */}
+                        <div className="flex items-end gap-3">
+                            <div className="flex-1">
+                                <label className="block text-xs text-stone-400 mb-1">Replacement window (days)</label>
+                                <input
+                                    type="number" min={0} max={30}
+                                    value={replacementWindowDays}
+                                    onChange={(e) => setReplacementWindowDays(e.target.value)}
+                                    className="w-full rounded-lg border border-stone-200 bg-stone-50 px-3 py-2 text-sm text-stone-800 focus:outline-none focus:ring-2 focus:ring-amber-400"
+                                />
+                                <p className="text-[11px] text-stone-400 mt-1">Customers can request a replacement within this many days of delivery. CoreCoins are credited after this window closes.</p>
+                            </div>
+                            <button
+                                type="button"
+                                onClick={saveReplacementWindowDays}
+                                disabled={replacementsSaving}
+                                className="px-4 py-2 rounded-lg bg-stone-900 text-white text-sm font-medium hover:bg-stone-700 disabled:opacity-50 transition-colors"
+                            >
+                                Save
+                            </button>
+                        </div>
+                        {/* Replacement window in minutes (overrides days when > 0) */}
+                        <div className="flex items-end gap-3">
+                            <div className="flex-1">
+                                <label className="block text-xs text-stone-400 mb-1">Replacement window (minutes)</label>
+                                <input
+                                    type="number" min={0} max={1440}
+                                    value={replacementWindowMinutes}
+                                    onChange={(e) => setReplacementWindowMinutes(e.target.value)}
+                                    className="w-full rounded-lg border border-stone-200 bg-stone-50 px-3 py-2 text-sm text-stone-800 focus:outline-none focus:ring-2 focus:ring-amber-400"
+                                />
+                                <p className="text-[11px] text-stone-400 mt-1">When set to a value greater than 0, minutes are used instead of days. Set to 0 to use the days value above.</p>
+                            </div>
+                            <button
+                                type="button"
+                                onClick={saveReplacementWindowDays}
+                                disabled={replacementsSaving}
+                                className="px-4 py-2 rounded-lg bg-stone-900 text-white text-sm font-medium hover:bg-stone-700 disabled:opacity-50 transition-colors"
+                            >
+                                Save
+                            </button>
+                        </div>
+                    </div>
+                )}
+            </div>
+
+            {/* ── CoreCoins Loyalty Program ── */}
+            <div className="rounded-2xl border border-[#E8E4DE] bg-white">
+                <button type="button" onClick={() => toggleSection("corecoins")} className="w-full flex items-center justify-between p-5 text-left">
+                    <div>
+                        <div className="flex items-center gap-2">
+                            <div className="text-base font-semibold text-stone-900">CoreCoins Loyalty Program</div>
+                            <span className={["text-[11px] font-semibold px-2 py-0.5 rounded-full border",
+                                corecoinsEnabled ? "bg-emerald-50 border-emerald-200 text-emerald-700" : "bg-stone-100 border-stone-200 text-stone-400"].join(" ")}>
+                                {corecoinsLoading ? "..." : corecoinsEnabled ? "Active" : "Inactive"}
+                            </span>
+                        </div>
+                        <div className="mt-0.5 text-xs text-stone-500">Reward customers with coins on purchases. Redeemable for discounts at checkout.</div>
+                    </div>
+                    <Chevron section="corecoins" />
+                </button>
+                {openSections.has("corecoins") && (
+                    <div className="px-5 pb-5 border-t border-[#E8E4DE] pt-4 space-y-5">
+                        {/* Toggle */}
+                        <div className="flex items-center justify-between gap-4">
+                            <span className="text-sm font-medium text-stone-700">Enable CoreCoins</span>
+                            <button type="button" role="switch" aria-checked={corecoinsEnabled} disabled={corecoinsLoading || corecoinsSaving} onClick={toggleCorecoins}
+                                className={["relative inline-flex h-7 w-12 shrink-0 cursor-pointer items-center rounded-full transition-colors duration-200 focus:outline-none disabled:opacity-50 disabled:cursor-not-allowed",
+                                    corecoinsEnabled ? "bg-emerald-500" : "bg-stone-300"].join(" ")}>
+                                <span className={["inline-block h-5 w-5 rounded-full bg-white shadow-md transform transition-transform duration-200",
+                                    corecoinsEnabled ? "translate-x-6" : "translate-x-1"].join(" ")} />
+                            </button>
+                        </div>
+
+                        {/* Config fields */}
+                        <div className="grid gap-4 sm:grid-cols-2">
+                            <div>
+                                <div className="text-xs text-stone-400">Coins earned per purchase</div>
+                                <input type="number" value={corecoinsConfig.earn_rate}
+                                    onChange={(e) => setCorecoinsConfig(p => ({ ...p, earn_rate: e.target.value }))} min={1}
+                                    className="mt-1 w-full rounded-xl border border-[#E8E4DE] bg-white px-4 py-3 text-sm text-stone-900 focus:ring-2 focus:ring-[#1e3a5f]/20 outline-none" />
+                                <p className="text-[11px] text-stone-400 mt-1">Number of coins earned per threshold amount</p>
+                            </div>
+                            <div>
+                                <div className="text-xs text-stone-400">Per ₹ spent</div>
+                                <input type="number" value={corecoinsConfig.earn_per_rupees}
+                                    onChange={(e) => setCorecoinsConfig(p => ({ ...p, earn_per_rupees: e.target.value }))} min={1}
+                                    className="mt-1 w-full rounded-xl border border-[#E8E4DE] bg-white px-4 py-3 text-sm text-stone-900 focus:ring-2 focus:ring-[#1e3a5f]/20 outline-none" />
+                                <p className="text-[11px] text-stone-400 mt-1">e.g. 1 coin per ₹100 spent</p>
+                            </div>
+                            <div>
+                                <div className="text-xs text-stone-400">Minimum coins to redeem</div>
+                                <input type="number" value={corecoinsConfig.min_redeem}
+                                    onChange={(e) => setCorecoinsConfig(p => ({ ...p, min_redeem: e.target.value }))} min={1}
+                                    className="mt-1 w-full rounded-xl border border-[#E8E4DE] bg-white px-4 py-3 text-sm text-stone-900 focus:ring-2 focus:ring-[#1e3a5f]/20 outline-none" />
+                                <p className="text-[11px] text-stone-400 mt-1">Customer must have at least this many coins to use them</p>
+                            </div>
+                            <div>
+                                <div className="text-xs text-stone-400">Value per coin (₹)</div>
+                                <input type="number" value={corecoinsConfig.coin_value_inr}
+                                    onChange={(e) => setCorecoinsConfig(p => ({ ...p, coin_value_inr: e.target.value }))} min={0.1} step={0.1}
+                                    className="mt-1 w-full rounded-xl border border-[#E8E4DE] bg-white px-4 py-3 text-sm text-stone-900 focus:ring-2 focus:ring-[#1e3a5f]/20 outline-none" />
+                                <p className="text-[11px] text-stone-400 mt-1">How much ₹ each coin is worth when redeemed</p>
+                            </div>
+                        </div>
+
+                        {/* Info card */}
+                        <div className="rounded-xl bg-stone-50 border border-[#E8E4DE] px-4 py-3 text-xs text-stone-500 space-y-1">
+                            <p className="font-semibold text-stone-600">How it works</p>
+                            <p>• Coins are credited after delivery{replacementsEnabled ? " and the replacement window closes (1 day)" : ""}.</p>
+                            <p>• With current settings: customer earns <strong className="text-stone-900">{corecoinsConfig.earn_rate} coin{Number(corecoinsConfig.earn_rate) !== 1 ? "s" : ""}</strong> for every <strong className="text-stone-900">₹{corecoinsConfig.earn_per_rupees}</strong> spent.</p>
+                            <p>• Minimum <strong className="text-stone-900">{corecoinsConfig.min_redeem} coins</strong> required to redeem. Each coin = <strong className="text-stone-900">₹{corecoinsConfig.coin_value_inr}</strong>.</p>
+                        </div>
+
+                        <button type="button" onClick={saveCorecoinsConfig} disabled={corecoinsSaving}
+                            className="btn-primary py-2.5 px-5 text-sm disabled:opacity-50">
+                            {corecoinsSaving ? "Saving…" : "Save CoreCoins Settings"}
+                        </button>
                     </div>
                 )}
             </div>

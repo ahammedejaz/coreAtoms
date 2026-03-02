@@ -90,7 +90,6 @@ export default function AdminProducts({ onProductsChange }) {
     const initialVariants = useRef([]);
 
     // NOTE: Ensure this bucket exists in Supabase Storage
-    const PRODUCT_BUCKET = "product-images";
 
     const loadProducts = async () => {
         setLoadingProducts(true);
@@ -132,18 +131,21 @@ export default function AdminProducts({ onProductsChange }) {
     useEffect(() => {
         loadProducts();
 
+        let debounceTimer = null;
         const channel = supabase
             .channel("products-realtime")
             .on(
                 "postgres_changes",
                 { event: "*", schema: "public", table: "products" },
                 () => {
-                    loadProducts();
+                    clearTimeout(debounceTimer);
+                    debounceTimer = setTimeout(() => loadProducts(), 500);
                 }
             )
             .subscribe();
 
         return () => {
+            clearTimeout(debounceTimer);
             supabase.removeChannel(channel);
         };
         // eslint-disable-next-line react-hooks/exhaustive-deps

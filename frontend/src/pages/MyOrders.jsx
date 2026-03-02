@@ -1,10 +1,19 @@
 /**
  * MyOrders.jsx — Order history page for authenticated users.
  *
- * Fetches the user's orders (with items) from Supabase, supports status
- * filtering, search, order cancellation (placed/processing only), and
- * inline product reviews for delivered orders. Reviews are submitted to
- * the `product_reviews` table with duplicate protection.
+ * Fetches orders (with order_items, shipping_amount, gst_amount, coins_used)
+ * from Supabase ordered newest-first. Features:
+ *
+ *  - Itemised bill breakdown per order (items → shipping → GST → CoreCoins → total)
+ *  - Order status timeline (placed → processing → shipped → delivered)
+ *  - Live Delhivery tracking via ShipmentTracker component
+ *  - Order cancellation (placed / processing only)
+ *  - Inline product review form for delivered orders
+ *  - Replacement request form with image upload (delivered orders, within window)
+ *  - 'Payment Failed' banner with retry + support CTA for failed Razorpay orders
+ *  - CoreCoins: pending-coin processing via `process_pending_corecoins` RPC
+ *
+ * STATUS values: placed | processing | shipped | delivered | cancelled | payment_failed
  *
  * @module pages/MyOrders
  */
@@ -49,7 +58,7 @@ const REPLACEMENT_STATUS_LABELS = {
 };
 
 function InlineReviewForm({ productId, orderId, productName, onDone }) {
-  const { user } = useAuth();
+  const { user, profile } = useAuth();
   const [rating, setRating] = useState(0);
   const [hovered, setHovered] = useState(0);
   const [body, setBody] = useState("");
@@ -62,6 +71,7 @@ function InlineReviewForm({ productId, orderId, productName, onDone }) {
     setError("");
     const { error: err } = await supabase.from("product_reviews").insert({
       product_id: productId, user_id: user.id, order_id: orderId,
+      reviewer_name: profile?.full_name || user.email?.split("@")[0] || "Customer",
       rating, title: null, body: body.trim() || null,
     });
     setSubmitting(false);
@@ -255,6 +265,16 @@ const STATUS_STYLES = {
   shipped: "bg-violet-50 text-violet-700 border border-violet-200",
   delivered: "bg-emerald-50 text-emerald-700 border border-emerald-200",
   cancelled: "bg-red-50 text-red-600 border border-red-200",
+  payment_failed: "bg-red-100 text-red-700 border border-red-300",
+};
+
+const STATUS_LABELS = {
+  placed: "Placed",
+  processing: "Processing",
+  shipped: "Shipped",
+  delivered: "Delivered",
+  cancelled: "Cancelled",
+  payment_failed: "Payment Failed",
 };
 
 export default function MyOrders() {
@@ -272,15 +292,23 @@ export default function MyOrders() {
 
   // Replacement state
   const [replacementsEnabled, setReplacementsEnabled] = useState(false);
+  const [replacementWindowDays, setReplacementWindowDays] = useState(1);
+  const [replacementWindowMinutes, setReplacementWindowMinutes] = useState(0);
   const [replacementMap, setReplacementMap] = useState({});  // order_id → replacement
   const [openReplacementForm, setOpenReplacementForm] = useState(null); // order_id or null
+
+  // CoreCoins state
+  const [corecoinsEnabled, setCorecoinsEnabled] = useState(false);
+  const [coinBalance, setCoinBalance] = useState(0);
+  const [corecoinsConfig, setCorecoinsConfig] = useState({ earn_rate: 1, earn_per_rupees: 100, coin_value_inr: 1 });
+
 
   const load = async () => {
     if (!userId) return;
     setLoading(true);
     const { data } = await supabase
       .from("orders")
-      .select("id,status,created_at,total_amount_inr,total_items,payment_method,razorpay_payment_id,delhivery_waybill,courier_name,tracking_url,shipped_at,delivered_at,order_items(id,product_id,product_name,qty,unit_price_inr,line_total_inr,image_url)")
+      .select("id,status,created_at,total_amount_inr,total_items,payment_method,razorpay_payment_id,delhivery_waybill,courier_name,tracking_url,shipped_at,delivered_at,coins_credited,coins_used,coins_credit_after,shipping_amount,gst_amount,discount_amount,coupon_code,order_items(id,product_id,product_name,qty,unit_price_inr,line_total_inr,image_url)")
       .eq("user_id", userId)
       .order("created_at", { ascending: false });
     setOrders(data || []);
@@ -292,6 +320,8 @@ export default function MyOrders() {
       .from("app_settings").select("value")
       .eq("key", "replacements_enabled").maybeSingle();
     setReplacementsEnabled(settingData?.value?.enabled === true);
+    if (settingData?.value?.window_days) setReplacementWindowDays(settingData.value.window_days);
+    if (settingData?.value?.window_minutes != null) setReplacementWindowMinutes(Number(settingData.value.window_minutes) || 0);
 
     // Fetch existing replacement requests for this user
     const { data: repData } = await supabase
@@ -302,8 +332,38 @@ export default function MyOrders() {
     (repData || []).forEach((r) => { map[r.order_id] = r; });
     setReplacementMap(map);
 
+    // Fetch CoreCoins balance
+    const { data: ccSetting } = await supabase
+      .from("app_settings").select("value")
+      .eq("key", "corecoins_enabled").maybeSingle();
+    const ccEnabled = ccSetting?.value?.enabled === true;
+    setCorecoinsEnabled(ccEnabled);
+    if (ccEnabled) {
+      const { data: walletData } = await supabase
+        .from("corecoins_wallet").select("balance")
+        .eq("user_id", userId).maybeSingle();
+      setCoinBalance(Number(walletData?.balance || 0));
+
+      // Load coins config for pending coins preview
+      const { data: ccConfig } = await supabase
+        .from("app_settings").select("value")
+        .eq("key", "corecoins_config").maybeSingle();
+      if (ccConfig?.value) setCorecoinsConfig(ccConfig.value);
+
+      // Credit any pending CoreCoins whose replacement window has now closed
+      const { data: creditResult, error: creditError } = await supabase.rpc("process_pending_corecoins", { p_user_id: userId });
+      if (creditError) console.error("process_pending_corecoins error:", creditError);
+      else console.log("process_pending_corecoins result:", creditResult, "orders processed");
+      // Re-fetch balance in case coins were just credited
+      const { data: freshWallet } = await supabase
+        .from("corecoins_wallet").select("balance")
+        .eq("user_id", userId).maybeSingle();
+      setCoinBalance(Number(freshWallet?.balance || 0));
+    }
+
     setLoading(false);
   };
+
 
   useEffect(() => { load(); }, [userId]);
 
@@ -341,6 +401,30 @@ export default function MyOrders() {
           <p className="mt-1 text-sm text-stone-500">Track and manage all your orders.</p>
         </div>
       </ScrollReveal>
+
+      {/* CoreCoins balance card */}
+      {corecoinsEnabled && (
+        <ScrollReveal>
+          <div className="mb-6 rounded-2xl border border-amber-200 bg-gradient-to-r from-amber-50 to-orange-50 px-5 py-4"
+            style={{ boxShadow: "0 2px 12px rgba(217, 119, 6, 0.08)" }}>
+            <div className="flex items-center gap-3">
+              <div className="h-10 w-10 rounded-xl bg-gradient-to-br from-amber-400 to-orange-500 flex items-center justify-center shadow-md">
+                <span className="text-lg">🪙</span>
+              </div>
+              <div>
+                <p className="text-xs font-semibold text-amber-700 uppercase tracking-wide">Your CoreCoins</p>
+                <p className="text-xl font-bold text-stone-900">
+                  {coinBalance} <span className="text-sm font-medium text-stone-500">coin{coinBalance !== 1 ? "s" : ""}</span>
+                </p>
+              </div>
+              <div className="ml-auto text-right">
+                <p className="text-[11px] text-amber-600">Earn coins on every purchase.</p>
+                <p className="text-[11px] text-amber-600">Redeem at checkout for discounts!</p>
+              </div>
+            </div>
+          </div>
+        </ScrollReveal>
+      )}
 
       {/* Filters — Premium glass bar */}
       <div
@@ -446,8 +530,10 @@ export default function MyOrders() {
                     <p className="text-xs text-stone-400 mt-1">{o.created_at ? new Date(o.created_at).toLocaleDateString("en-IN", { day: "numeric", month: "short", year: "numeric" }) : ""}</p>
                   </div>
                   <div className="flex items-center gap-2 flex-wrap justify-end">
-                    <span className={`px-3 py-1 rounded-full text-[11px] font-semibold capitalize ${statusCls}`}>{o.status}</span>
-                    {isPrepaid && (
+                    <span className={`px-3 py-1 rounded-full text-[11px] font-semibold capitalize ${statusCls}`}>
+                      {STATUS_LABELS[status] || o.status}
+                    </span>
+                    {isPrepaid && status !== "payment_failed" && (
                       <span className="px-2.5 py-1 rounded-full text-[10px] font-bold uppercase tracking-wide bg-emerald-50 text-emerald-700 border border-emerald-200">
                         ✓ Paid
                       </span>
@@ -455,10 +541,27 @@ export default function MyOrders() {
                   </div>
                 </div>
 
-                {/* Order tracking timeline */}
-                <div className="mt-4 border-t border-[#E8E4DE] pt-2">
-                  <OrderTimeline status={status} />
-                </div>
+                {/* Payment failed alert */}
+                {status === "payment_failed" && (
+                  <div className="mt-4 rounded-xl border border-red-200 bg-red-50 px-4 py-3 flex items-start gap-3">
+                    <span className="text-red-500 text-lg leading-none mt-0.5">⚠</span>
+                    <div className="flex-1">
+                      <p className="text-sm font-semibold text-red-700">Payment could not be processed</p>
+                      <p className="text-xs text-red-500 mt-0.5">Your payment was not captured. No amount has been deducted. Please try placing your order again.</p>
+                      <div className="mt-2 flex gap-2">
+                        <a href="/checkout" className="inline-flex items-center gap-1 rounded-lg border border-red-300 bg-white px-3 py-1.5 text-xs font-semibold text-red-700 hover:bg-red-50 transition">Try again →</a>
+                        <a href={waUrl} target="_blank" rel="noopener noreferrer" className="inline-flex items-center gap-1 rounded-lg border border-stone-200 bg-white px-3 py-1.5 text-xs font-semibold text-stone-600 hover:bg-stone-50 transition">Contact support</a>
+                      </div>
+                    </div>
+                  </div>
+                )}
+
+                {/* Order tracking timeline — hide for failed orders */}
+                {status !== "payment_failed" && (
+                  <div className="mt-4 border-t border-[#E8E4DE] pt-2">
+                    <OrderTimeline status={status} />
+                  </div>
+                )}
 
                 {/* Delhivery tracking — shown when waybill exists */}
                 {o.delhivery_waybill && (
@@ -467,24 +570,115 @@ export default function MyOrders() {
                   </div>
                 )}
 
-                {/* Summary row */}
-                <div className="mt-4 flex flex-wrap items-center gap-x-6 gap-y-2 text-sm border-t border-[#E8E4DE] pt-4">
-                  <div><span className="text-stone-400 text-xs block">Total</span><span className="font-semibold text-stone-900">{money(totalAmount)}</span></div>
-                  <div><span className="text-stone-400 text-xs block">Items</span><span className="font-semibold text-stone-900">{totalCount}</span></div>
-                  <div><span className="text-stone-400 text-xs block">Payment</span><span className="font-semibold text-stone-900">{isPrepaid ? "Prepaid" : "COD"}</span></div>
-                  {isPrepaid && txnId && (
-                    <div><span className="text-stone-400 text-xs block">Transaction ID</span><span className="font-mono text-xs font-semibold text-stone-700">{txnId}</span></div>
-                  )}
-                  <div className="ml-auto">
-                    <a href={waUrl} target="_blank" rel="noopener noreferrer"
-                      className="inline-flex items-center gap-1.5 rounded-full bg-green-50 border border-green-200 px-3 py-1.5 text-[11px] font-semibold text-green-700 hover:bg-green-100 transition-colors">
-                      <svg className="h-3.5 w-3.5" viewBox="0 0 24 24" fill="currentColor">
-                        <path d="M17.472 14.382c-.297-.149-1.758-.867-2.03-.967-.273-.099-.471-.148-.67.15-.197.297-.767.966-.94 1.164-.173.199-.347.223-.644.075-.297-.15-1.255-.463-2.39-1.475-.883-.788-1.48-1.761-1.653-2.059-.173-.297-.018-.458.13-.606.134-.133.298-.347.446-.52.149-.174.198-.298.298-.497.099-.198.05-.371-.025-.52-.075-.149-.669-1.612-.916-2.207-.242-.579-.487-.5-.669-.51-.173-.008-.371-.01-.57-.01-.198 0-.52.074-.792.372-.272.297-1.04 1.016-1.04 2.479 0 1.462 1.065 2.875 1.213 3.074.149.198 2.096 3.2 5.077 4.487.709.306 1.262.489 1.694.625.712.227 1.36.195 1.871.118.571-.085 1.758-.719 2.006-1.413.248-.694.248-1.289.173-1.413-.074-.124-.272-.198-.57-.347z" />
-                        <path d="M12 0C5.373 0 0 5.373 0 12c0 2.127.555 4.125 1.527 5.86L.05 23.706a.5.5 0 00.607.607l5.845-1.477A11.94 11.94 0 0012 24c6.627 0 12-5.373 12-12S18.627 0 12 0zm0 22a9.94 9.94 0 01-5.38-1.574l-.386-.232-3.466.877.893-3.467-.24-.394A9.94 9.94 0 012 12C2 6.486 6.486 2 12 2s10 4.486 10 10-4.486 10-10 10z" />
-                      </svg>
-                      Support
-                    </a>
+                {/* Bill breakdown */}
+                <div className="mt-4 border-t border-[#E8E4DE] pt-4 space-y-3">
+
+                  {/* Items list */}
+                  <div className="space-y-1.5">
+                    {items.map((it, idx) => (
+                      <div key={idx} className="flex justify-between text-sm">
+                        <span className="text-stone-600 truncate max-w-[55%]">
+                          {it.product_name || "Product"} <span className="text-stone-400">×{it.qty}</span>
+                        </span>
+                        <span className="font-medium text-stone-800 ml-2">{money(Number(it.line_total_inr || it.unit_price_inr * it.qty || 0))}</span>
+                      </div>
+                    ))}
                   </div>
+
+                  {/* Charges breakdown */}
+                  <div className="border-t border-dashed border-[#E8E4DE] pt-2 space-y-1.5">
+                    <div className="flex justify-between text-xs">
+                      <span className="text-stone-400">Items subtotal</span>
+                      <span className="text-stone-600">{money(items.reduce((s, it) => s + Number(it.line_total_inr || 0), 0))}</span>
+                    </div>
+                    {(() => {
+                      const shippingAmt = Number(o.shipping_amount ?? 0);
+                      const gstAmt = Number(o.gst_amount ?? 0);
+                      const itemsSubtotal = items.reduce((s, it) => s + Number(it.line_total_inr || 0), 0);
+                      const coinsUsedN = Number(o.coins_used || 0);
+                      // derive shipping+gst for old orders where column is 0
+                      const hasStored = shippingAmt > 0 || gstAmt > 0;
+                      const derivedExtra = !hasStored && itemsSubtotal > 0 && totalAmount > 0
+                        ? Math.max(0, totalAmount + coinsUsedN - itemsSubtotal)
+                        : null;
+                      return (
+                        <>
+                          {hasStored ? (
+                            <>
+                              {shippingAmt > 0 ? (
+                                <div className="flex justify-between text-xs">
+                                  <span className="text-stone-400">Shipping</span>
+                                  <span className="text-stone-600">{money(shippingAmt)}</span>
+                                </div>
+                              ) : (
+                                <div className="flex justify-between text-xs">
+                                  <span className="text-stone-400">Shipping</span>
+                                  <span className="text-emerald-600 font-medium">Free</span>
+                                </div>
+                              )}
+                              {gstAmt > 0 && (
+                                <div className="flex justify-between text-xs">
+                                  <span className="text-stone-400">GST</span>
+                                  <span className="text-stone-600">{money(gstAmt)}</span>
+                                </div>
+                              )}
+                            </>
+                          ) : derivedExtra !== null && derivedExtra > 0 ? (
+                            <div className="flex justify-between text-xs">
+                              <span className="text-stone-400">Shipping + GST</span>
+                              <span className="text-stone-600">{money(derivedExtra)}</span>
+                            </div>
+                          ) : null}
+                          {coinsUsedN > 0 && (
+                            <div className="flex justify-between text-xs">
+                              <span className="text-amber-600 flex items-center gap-1">
+                                <svg className="h-3 w-3" viewBox="0 0 20 20" fill="currentColor"><path d="M10 2a8 8 0 100 16A8 8 0 0010 2z" /></svg>
+                                CoreCoins ({coinsUsedN})
+                              </span>
+                              <span className="text-amber-700">−{money(coinsUsedN)}</span>
+                            </div>
+                          )}
+                          {Number(o.discount_amount ?? 0) > 0 && (
+                            <div className="flex justify-between text-xs">
+                              <span className="text-emerald-600">
+                                🎉 Discount{o.coupon_code ? <> (<span className="font-mono font-bold">{o.coupon_code}</span>)</> : ""}
+                              </span>
+                              <span className="text-emerald-700 font-medium">−{money(Number(o.discount_amount))}</span>
+                            </div>
+                          )}
+                        </>
+                      );
+                    })()}
+                  </div>
+
+                  {/* Total + meta row */}
+                  <div className="border-t border-[#E8E4DE] pt-2 flex flex-wrap items-center gap-x-4 gap-y-1 justify-between">
+                    <div className="flex items-baseline gap-2">
+                      <span className="text-xs text-stone-400">Total paid</span>
+                      <span className="text-base font-bold text-stone-900">{money(totalAmount)}</span>
+                    </div>
+                    <div className="flex items-center gap-3">
+                      <span className={`px-2.5 py-1 rounded-full text-[10px] font-bold uppercase tracking-wide ${isPrepaid ? 'bg-emerald-50 text-emerald-700 border border-emerald-200' : 'bg-amber-50 text-amber-700 border border-amber-200'
+                        }`}>
+                        {isPrepaid ? '💳 Online' : '💵 COD'}
+                      </span>
+                      <a href={waUrl} target="_blank" rel="noopener noreferrer"
+                        className="inline-flex items-center gap-1.5 rounded-full bg-green-50 border border-green-200 px-3 py-1.5 text-[11px] font-semibold text-green-700 hover:bg-green-100 transition-colors">
+                        <svg className="h-3.5 w-3.5" viewBox="0 0 24 24" fill="currentColor">
+                          <path d="M17.472 14.382c-.297-.149-1.758-.867-2.03-.967-.273-.099-.471-.148-.67.15-.197.297-.767.966-.94 1.164-.173.199-.347.223-.644.075-.297-.15-1.255-.463-2.39-1.475-.883-.788-1.48-1.761-1.653-2.059-.173-.297-.018-.458.13-.606.134-.133.298-.347.446-.52.149-.174.198-.298.298-.497.099-.198.05-.371-.025-.52-.075-.149-.669-1.612-.916-2.207-.242-.579-.487-.5-.669-.51-.173-.008-.371-.01-.57-.01-.198 0-.52.074-.792.372-.272.297-1.04 1.016-1.04 2.479 0 1.462 1.065 2.875 1.213 3.074.149.198 2.096 3.2 5.077 4.487.709.306 1.262.489 1.694.625.712.227 1.36.195 1.871.118.571-.085 1.758-.719 2.006-1.413.248-.694.248-1.289.173-1.413-.074-.124-.272-.198-.57-.347z" />
+                          <path d="M12 0C5.373 0 0 5.373 0 12c0 2.127.555 4.125 1.527 5.86L.05 23.706a.5.5 0 00.607.607l5.845-1.477A11.94 11.94 0 0012 24c6.627 0 12-5.373 12-12S18.627 0 12 0zm0 22a9.94 9.94 0 01-5.38-1.574l-.386-.232-3.466.877.893-3.467-.24-.394A9.94 9.94 0 012 12C2 6.486 6.486 2 12 2s10 4.486 10 10-4.486 10-10 10z" />
+                        </svg>
+                        Support
+                      </a>
+                    </div>
+                  </div>
+
+                  {/* Razorpay ID */}
+                  {isPrepaid && txnId && (
+                    <p className="text-[10px] text-stone-400">
+                      Payment ID: <span className="font-mono text-stone-500">{txnId}</span>
+                    </p>
+                  )}
                 </div>
 
                 {/* ── Replacement section for delivered orders ── */}
@@ -551,25 +745,83 @@ export default function MyOrders() {
                     );
                   }
                   if (replacementsEnabled) {
+                    const deliveredAt = o.delivered_at ? new Date(o.delivered_at) : null;
+                    // Use the actual DB-computed timestamp (respects window_minutes)
+                    // Falls back to client-side calculation if coins_credit_after isn't set
+                    const windowCloses = o.coins_credit_after
+                      ? new Date(o.coins_credit_after)
+                      : deliveredAt
+                        ? new Date(deliveredAt.getTime() + (
+                          replacementWindowMinutes > 0
+                            ? replacementWindowMinutes * 60 * 1000
+                            : replacementWindowDays * 24 * 60 * 60 * 1000
+                        ))
+                        : null;
+                    const windowOpen = windowCloses ? new Date() < windowCloses : true;
+
+                    // Format countdown
+                    const getCountdown = () => {
+                      if (!windowCloses) return null;
+                      const diff = windowCloses - new Date();
+                      if (diff <= 0) return null;
+                      const d = Math.floor(diff / (1000 * 60 * 60 * 24));
+                      const h = Math.floor((diff % (1000 * 60 * 60 * 24)) / (1000 * 60 * 60));
+                      const m = Math.floor((diff % (1000 * 60 * 60)) / (1000 * 60));
+                      if (d > 0) return `${d}d ${h}h left`;
+                      if (h > 0) return `${h}h ${m}m left`;
+                      return `${m}m left`;
+                    };
+                    const countdown = getCountdown();
+
                     return (
                       <div className="mt-4 border-t border-[#E8E4DE] pt-4">
-                        {openReplacementForm === o.id ? (
-                          <InlineReplacementForm
-                            orderId={o.id}
-                            userId={userId}
-                            onDone={() => { setOpenReplacementForm(null); load(); }}
-                          />
+                        {windowOpen ? (
+                          openReplacementForm === o.id ? (
+                            <InlineReplacementForm
+                              orderId={o.id}
+                              userId={userId}
+                              onDone={() => { setOpenReplacementForm(null); load(); }}
+                            />
+                          ) : (
+                            <div className="flex flex-col gap-1.5">
+                              <button
+                                type="button"
+                                onClick={() => setOpenReplacementForm(o.id)}
+                                className="inline-flex items-center gap-1.5 rounded-xl border border-[#E8E4DE] bg-white px-3.5 py-2 text-xs font-semibold text-stone-600 hover:border-stone-400 hover:text-stone-800 transition-all w-fit"
+                              >
+                                <svg className="h-3.5 w-3.5" viewBox="0 0 20 20" fill="currentColor">
+                                  <path fillRule="evenodd" d="M4 2a1 1 0 011 1v2.101a7.002 7.002 0 0111.601 2.566 1 1 0 11-1.885.666A5.002 5.002 0 005.999 7H9a1 1 0 010 2H4a1 1 0 01-1-1V3a1 1 0 011-1zm.008 9.057a1 1 0 011.276.61A5.002 5.002 0 0014.001 13H11a1 1 0 110-2h5a1 1 0 011 1v5a1 1 0 11-2 0v-2.101a7.002 7.002 0 01-11.601-2.566 1 1 0 01.61-1.276z" clipRule="evenodd" />
+                                </svg>
+                                Request Replacement
+                              </button>
+                              {countdown && (
+                                <span className="inline-flex items-center gap-1 text-[11px] font-medium text-amber-600">
+                                  <svg className="h-3 w-3" viewBox="0 0 20 20" fill="currentColor">
+                                    <path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm1-12a1 1 0 10-2 0v4a1 1 0 00.293.707l2.828 2.829a1 1 0 101.415-1.415L11 9.586V6z" clipRule="evenodd" />
+                                  </svg>
+                                  Replacement window closes in {countdown}
+                                </span>
+                              )}
+                              {/* Pending coins preview */}
+                              {corecoinsEnabled && !o.coins_credited && (() => {
+                                const netPaid = (o.total_amount_inr || 0) - ((o.coins_used || 0) * (corecoinsConfig.coin_value_inr || 1));
+                                const pending = Math.floor(netPaid * (corecoinsConfig.earn_rate || 1) / (corecoinsConfig.earn_per_rupees || 100));
+                                if (pending <= 0) return null;
+                                return (
+                                  <span className="inline-flex items-center gap-1 text-[11px] text-stone-500">
+                                    <svg className="h-3 w-3 text-amber-400" viewBox="0 0 20 20" fill="currentColor">
+                                      <path d="M10 2a8 8 0 100 16A8 8 0 0010 2zm0 14a6 6 0 110-12 6 6 0 010 12zm.75-8.25a.75.75 0 00-1.5 0v3.5l2.25 1.5a.75.75 0 00.75-1.3L10.75 10V7.75z" />
+                                    </svg>
+                                    <span><strong>{pending} CoreCoins</strong> will be added once the replacement window closes</span>
+                                  </span>
+                                );
+                              })()}
+                            </div>
+                          )
                         ) : (
-                          <button
-                            type="button"
-                            onClick={() => setOpenReplacementForm(o.id)}
-                            className="inline-flex items-center gap-1.5 rounded-xl border border-[#E8E4DE] bg-white px-3.5 py-2 text-xs font-semibold text-stone-600 hover:border-stone-400 hover:text-stone-800 transition-all"
-                          >
-                            <svg className="h-3.5 w-3.5" viewBox="0 0 20 20" fill="currentColor">
-                              <path fillRule="evenodd" d="M4 2a1 1 0 011 1v2.101a7.002 7.002 0 0111.601 2.566 1 1 0 11-1.885.666A5.002 5.002 0 005.999 7H9a1 1 0 010 2H4a1 1 0 01-1-1V3a1 1 0 011-1zm.008 9.057a1 1 0 011.276.61A5.002 5.002 0 0014.001 13H11a1 1 0 110-2h5a1 1 0 011 1v5a1 1 0 11-2 0v-2.101a7.002 7.002 0 01-11.601-2.566 1 1 0 01.61-1.276z" clipRule="evenodd" />
-                            </svg>
-                            Request Replacement
-                          </button>
+                          <p className="text-[11px] text-stone-400">
+                            Replacement window has closed for this order.
+                          </p>
                         )}
                       </div>
                     );

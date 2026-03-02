@@ -53,11 +53,15 @@ export function AuthProvider({ children }) {
 
   const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
-  // Update profile + persist to cache
+  // Update profile + persist to cache (role is intentionally excluded from cache)
   const updateProfile = useCallback((data) => {
     setProfile(data);
     if (data) {
-      try { localStorage.setItem(PROFILE_CACHE_KEY, JSON.stringify(data)); } catch { }
+      try {
+        // Never cache the role — always read it from the live DB to prevent stale admin access
+        const { role: _omit, ...safeData } = data;
+        localStorage.setItem(PROFILE_CACHE_KEY, JSON.stringify(safeData));
+      } catch { }
     } else {
       localStorage.removeItem(PROFILE_CACHE_KEY);
     }

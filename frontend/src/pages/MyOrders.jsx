@@ -353,7 +353,7 @@ export default function MyOrders() {
       // Credit any pending CoreCoins whose replacement window has now closed
       const { data: creditResult, error: creditError } = await supabase.rpc("process_pending_corecoins", { p_user_id: userId });
       if (creditError) console.error("process_pending_corecoins error:", creditError);
-      else console.log("process_pending_corecoins result:", creditResult, "orders processed");
+      // coins credited silently — no debug logging in production
       // Re-fetch balance in case coins were just credited
       const { data: freshWallet } = await supabase
         .from("corecoins_wallet").select("balance")

@@ -33,20 +33,44 @@
 // }
 
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
-
-const corsHeaders = {
-    "Access-Control-Allow-Origin": "*",
-    "Access-Control-Allow-Headers":
-        "authorization, x-client-info, apikey, content-type",
-    "Access-Control-Allow-Methods": "POST, OPTIONS",
-};
+import { getCorsHeaders, handleCorsPreflightRequest } from "../_shared/cors.ts";
 
 Deno.serve(async (req) => {
     if (req.method === "OPTIONS") {
-        return new Response("ok", { headers: corsHeaders });
+        return handleCorsPreflightRequest(req);
     }
+    const corsHeaders = getCorsHeaders(req);
 
     try {
+        // ── Admin auth check ──
+        const SUPABASE_URL = Deno.env.get("SUPABASE_URL");
+        const SUPABASE_SERVICE_ROLE_KEY = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY");
+        const authHeader = req.headers.get("authorization") || "";
+        const token = authHeader.replace(/^Bearer\s+/i, "");
+        if (!token || !SUPABASE_URL || !SUPABASE_SERVICE_ROLE_KEY) {
+            return new Response(JSON.stringify({ error: "Unauthorized" }), {
+                status: 401,
+                headers: { ...corsHeaders, "Content-Type": "application/json" },
+            });
+        }
+        // Verify caller is an admin
+        const adminClient = createClient(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY);
+        const { data: { user }, error: authErr } = await adminClient.auth.getUser(token);
+        if (authErr || !user) {
+            return new Response(JSON.stringify({ error: "Invalid or expired token" }), {
+                status: 401,
+                headers: { ...corsHeaders, "Content-Type": "application/json" },
+            });
+        }
+        const { data: profile } = await adminClient
+            .from("profiles").select("role").eq("id", user.id).maybeSingle();
+        if (profile?.role !== "admin") {
+            return new Response(JSON.stringify({ error: "Admin access required" }), {
+                status: 403,
+                headers: { ...corsHeaders, "Content-Type": "application/json" },
+            });
+        }
+
         const DELHIVERY_TOKEN = Deno.env.get("DELHIVERY_API_TOKEN");
         const DELHIVERY_BASE = (
             Deno.env.get("DELHIVERY_BASE_URL") ||

@@ -11,17 +11,13 @@
 // Query params: ?waybill=<WAYBILL_NUMBER>
 // Response: { tracking data from Delhivery }
 
-const corsHeaders = {
-    "Access-Control-Allow-Origin": "*",
-    "Access-Control-Allow-Headers":
-        "authorization, x-client-info, apikey, content-type",
-    "Access-Control-Allow-Methods": "GET, POST, OPTIONS",
-};
+import { getCorsHeaders, handleCorsPreflightRequest } from "../_shared/cors.ts";
 
 Deno.serve(async (req) => {
     if (req.method === "OPTIONS") {
-        return new Response("ok", { headers: corsHeaders });
+        return handleCorsPreflightRequest(req);
     }
+    const corsHeaders = getCorsHeaders(req);
 
     try {
         const DELHIVERY_TOKEN = Deno.env.get("DELHIVERY_API_TOKEN");

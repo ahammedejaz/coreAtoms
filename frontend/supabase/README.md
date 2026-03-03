@@ -223,39 +223,41 @@ Tracks WhatsApp notification sends to customers (used by admin).
 
 ## RPC Functions
 
-### `place_order_cod(p_user_id, p_address, p_items)`
+> **Security:** All order RPCs enforce `auth.uid()` checks and validate coupon codes server-side.
+
+### `place_order_cod(p_user_id, p_address, p_items, p_coins_used, p_shipping, p_gst, p_discount, p_coupon_code)`
 
 Places a **Cash on Delivery** order.
 
-| Parameter    | Type   | Description                                        |
-|-------------|--------|----------------------------------------------------|
-| `p_user_id` | `UUID` | Authenticated user's ID                            |
-| `p_address` | `JSONB`| Shipping address object                            |
-| `p_items`   | `JSONB`| Array of `{ product_id, variant_id, qty, unit_price_inr }` |
+| Parameter       | Type      | Description                                        |
+|----------------|---------- |----------------------------------------------------|
+| `p_user_id`    | `UUID`    | Must match `auth.uid()` — enforced                 |
+| `p_address`    | `JSONB`   | Shipping address object                            |
+| `p_items`      | `JSONB`   | Array of `{ product_id, variant_id, qty }`         |
+| `p_coins_used` | `INT`     | CoreCoins to deduct (default 0)                    |
+| `p_shipping`   | `NUMERIC` | Pincode-based rate (used when flat rate = 0)       |
+| `p_gst`        | `NUMERIC` | IGNORED — recalculated server-side                 |
+| `p_discount`   | `NUMERIC` | IGNORED — recalculated from coupon server-side     |
+| `p_coupon_code`| `TEXT`    | Coupon code — validated server-side via `app_settings` |
 
 **What it does:**
-1. Validates items array is non-empty
-2. Creates an `orders` row with `status = 'placed'`, `payment_method = 'cod'`
-3. For each item: checks stock → deducts stock → inserts `order_items` row
-4. Updates order `total_inr` and `total_items`
-5. Returns the new `order_id` (UUID)
+1. **Auth guard:** Rejects if `p_user_id ≠ auth.uid()`
+2. Loads GST%, shipping, free-shipping config from `app_settings`
+3. Deducts CoreCoins from wallet (if used)
+4. **Server-side coupon validation:** Looks up `p_coupon_code` in `discount_codes`, validates active + schedule
+5. For each item: checks stock → deducts stock → inserts `order_items` (prices from DB)
+6. Calculates shipping, GST, coupon discount, coin discount server-side
+7. Returns the new `order_id` (UUID)
 
 ---
 
-### `place_order_prepaid(p_user_id, p_address, p_items, p_payment_method, p_razorpay_payment_id, p_razorpay_order_id)`
+### `place_order_prepaid(p_user_id, p_address, p_items, p_payment_method, p_razorpay_payment_id, p_razorpay_order_id, p_coins_used, p_shipping, p_gst, p_discount, p_coupon_code)`
 
 Places a **Razorpay prepaid** order. Called by the `verify-razorpay-payment` Edge Function after successful payment verification.
 
-| Parameter                | Type   | Description                              |
-|-------------------------|--------|------------------------------------------|
-| `p_user_id`             | `UUID` | Authenticated user's ID                  |
-| `p_address`             | `JSONB`| Shipping address object                  |
-| `p_items`               | `JSONB`| Array of items (same shape as COD)       |
-| `p_payment_method`      | `TEXT` | `'prepaid'`                              |
-| `p_razorpay_payment_id` | `TEXT` | Razorpay payment ID (e.g., `pay_xxx`)    |
-| `p_razorpay_order_id`   | `TEXT` | Razorpay order ID (e.g., `order_xxx`)    |
+**Auth guard:** Allows service-role bypass (`auth.uid()` is NULL for service-role calls). Regular users are still checked.
 
-**What it does:** Same as `place_order_cod` but additionally stores payment details.
+**What it does:** Same as `place_order_cod` but additionally stores Razorpay payment IDs.
 
 ---
 
@@ -273,6 +275,14 @@ Cancels an order and restores product stock.
 ## Edge Functions
 
 Located in `supabase/functions/`. Deployed to Supabase Edge (Deno runtime).
+
+> **CORS:** All Edge Functions use a shared `_shared/cors.ts` utility that restricts `Access-Control-Allow-Origin` to allowed domains: `coreatoms.in`, `www.coreatoms.in`, `core-atoms.vercel.app`, `*.vercel.app` (previews), and `localhost`. Update `_shared/cors.ts` if domains change.
+
+### `_shared/cors.ts`
+
+Shared CORS utility imported by all Edge Functions. Exports:
+- `getCorsHeaders(req)` — returns CORS headers with validated origin
+- `handleCorsPreflightRequest(req)` — returns 200 OK with CORS headers
 
 ### `create-razorpay-order`
 
@@ -315,6 +325,12 @@ Located in `supabase/functions/`. Deployed to Supabase Edge (Deno runtime).
 4. Returns `{ success: true, order: <order_id> }`
 
 **Secrets used:** `RAZORPAY_KEY_SECRET`, `SUPABASE_URL`, `SUPABASE_SERVICE_ROLE_KEY`
+
+### `delhivery-create-shipment`
+
+**Path:** `supabase/functions/delhivery-create-shipment/index.ts`  
+**Purpose:** Creates a Delhivery shipping waybill for an order.  
+**Auth:** Requires admin role — verifies JWT and checks `profiles.role = 'admin'`. Returns 403 for non-admins.
 
 ---
 
@@ -400,9 +416,9 @@ All tables have RLS enabled. Key policies:
 | `order_items`    | Users see items for their own orders                |
 | `addresses`      | Users CRUD only their own addresses                 |
 | `product_reviews`| Public read; users can insert for their own orders  |
-| `app_settings`   | Public read; admin-only write                       |
+| `app_settings`   | **Granular read:** sensitive keys (`discount_codes`, `warehouse_address`) require authentication; all other keys are publicly readable. Admin-only write. |
 
-> **Note:** RPC functions (`place_order_cod`, `place_order_prepaid`, `cancel_order`) are defined as `SECURITY DEFINER`, meaning they execute with the function owner's privileges (bypassing RLS). This allows them to deduct stock across all products while still accepting `p_user_id` for ownership tracking.
+> **Note:** RPC functions (`place_order_cod`, `place_order_prepaid`, `cancel_order`) are defined as `SECURITY DEFINER`, meaning they execute with the function owner's privileges (bypassing RLS). This allows them to deduct stock across all products. However, they still enforce `auth.uid()` checks internally to prevent impersonation.
 
 ---
 
@@ -454,17 +470,21 @@ Creates the `wa_notifications` table for tracking WhatsApp notification sends.
 
 ### Edge Functions
 
-Deploy using the Supabase CLI:
+Deploy using the Supabase CLI (project is linked — no `--project-ref` needed):
 
 ```bash
-# Deploy create-razorpay-order
-supabase functions deploy create-razorpay-order --no-verify-jwt --project-ref <project-ref>
+# Deploy all Edge Functions at once
+supabase functions deploy --no-verify-jwt
 
-# Deploy verify-razorpay-payment
-supabase functions deploy verify-razorpay-payment --no-verify-jwt --project-ref <project-ref>
+# Deploy a single function
+supabase functions deploy create-razorpay-order --no-verify-jwt
+supabase functions deploy verify-razorpay-payment --no-verify-jwt
+supabase functions deploy delhivery-create-shipment --no-verify-jwt
+supabase functions deploy delhivery-pincode-check --no-verify-jwt
+supabase functions deploy delhivery-track --no-verify-jwt
 ```
 
-> **`--no-verify-jwt`** is required because the Supabase gateway JWT verification may not support all key formats. The Edge Functions handle authentication internally.
+> **`--no-verify-jwt`** is required because the Supabase gateway JWT verification may not support all key formats. Edge Functions handle authentication internally (e.g., `delhivery-create-shipment` verifies admin role).
 
 ### Setting Secrets
 

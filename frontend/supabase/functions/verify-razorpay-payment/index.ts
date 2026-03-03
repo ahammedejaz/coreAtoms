@@ -31,17 +31,13 @@
  * if this function returns an error, to ensure the failed attempt is recorded.
  */
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
-
-const corsHeaders = {
-    "Access-Control-Allow-Origin": "*",
-    "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type",
-    "Access-Control-Allow-Methods": "POST, OPTIONS",
-};
+import { getCorsHeaders, handleCorsPreflightRequest } from "../_shared/cors.ts";
 
 Deno.serve(async (req) => {
     if (req.method === "OPTIONS") {
-        return new Response("ok", { headers: corsHeaders });
+        return handleCorsPreflightRequest(req);
     }
+    const corsHeaders = getCorsHeaders(req);
 
     try {
         const RAZORPAY_KEY_SECRET = Deno.env.get("RAZORPAY_KEY_SECRET");

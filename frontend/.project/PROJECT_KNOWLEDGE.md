@@ -36,6 +36,8 @@ frontend/
 │   └── index.css           # Global Tailwind + custom CSS
 ├── supabase/
 │   ├── functions/          # Supabase Edge Functions (Deno)
+│   │   ├── _shared/            # Shared utilities (CORS, etc.)
+│   │   │   └── cors.ts         # Origin-validated CORS headers
 │   │   ├── create-razorpay-order/
 │   │   ├── verify-razorpay-payment/
 │   │   ├── delhivery-pincode-check/
@@ -135,13 +137,18 @@ delhivery_waybill   TEXT
 
 Call these with `supabase.rpc('function_name', { ...args })`.
 
+> **Security:** All order RPCs enforce `auth.uid()` checks — users cannot place orders for other users. `place_order_prepaid` allows service-role bypass (for Edge Function calls).
+
 ### `place_order_cod(p_user_id, p_address, p_items, p_coins_used, p_shipping, p_gst, p_discount, p_coupon_code)`
+- **Auth guard:** `p_user_id` must match `auth.uid()`
 - Atomically deducts CoreCoins, checks/deducts stock, creates order + items
-- Stores `discount_amount` and `coupon_code` in the orders row
+- **Server-side coupon validation:** `p_discount` is IGNORED — coupon is looked up from `discount_codes` in `app_settings` by `p_coupon_code`, validated for active status and schedule (startsAt/endsAt), and discount % applied to subtotal
 - Calculates `total_amount_inr = subtotal + shipping + gst - coin_discount - coupon_discount`
 - Returns: `order_id UUID`
 
 ### `place_order_prepaid(p_user_id, p_address, p_items, p_payment_method, p_razorpay_payment_id, p_razorpay_order_id, p_coins_used, p_shipping, p_gst, p_discount, p_coupon_code)`
+- **Auth guard:** `p_user_id` must match `auth.uid()` (bypassed for service-role calls where `auth.uid()` is NULL)
+- Same server-side coupon validation as `place_order_cod`
 - Same as above but includes Razorpay payment IDs
 - Called by the `verify-razorpay-payment` Edge Function (not directly from client)
 
@@ -150,6 +157,7 @@ Call these with `supabase.rpc('function_name', { ...args })`.
 - Called client-side when Razorpay payment is authorised but verification fails
 
 ### `process_pending_corecoins(p_user_id)` → returns `INTEGER`
+- **Auth guard:** `p_user_id` must match `auth.uid()`
 - Credits any overdue loyalty coins for the given user
 - Returns the number of orders processed
 - Called by `MyOrders.jsx` on load — replaces the need for pg_cron
@@ -166,6 +174,14 @@ Call these with `supabase.rpc('function_name', { ...args })`.
 ## 6. Edge Functions (Supabase / Deno)
 
 All functions live in `supabase/functions/`. They use the service role key and are NOT exposed to the client directly.
+
+> **Security:** All Edge Functions use a shared CORS utility (`_shared/cors.ts`) that restricts origins to `coreatoms.in`, `www.coreatoms.in`, `core-atoms.vercel.app`, `*.vercel.app` (previews), and `localhost`.
+
+### `_shared/cors.ts`
+- Shared CORS utility imported by all Edge Functions
+- `getCorsHeaders(req)` — returns validated CORS headers based on request origin
+- `handleCorsPreflightRequest(req)` — returns preflight response
+- Replaces the old `Access-Control-Allow-Origin: *` wildcard
 
 ### `create-razorpay-order`
 - Called by `Checkout.jsx` before opening the Razorpay modal
@@ -187,6 +203,7 @@ All functions live in `supabase/functions/`. They use the service role key and a
 - Used in `Checkout.jsx` when admin flat rate = 0
 
 ### `delhivery-create-shipment`
+- **Admin auth required:** Verifies JWT and checks `profiles.role = 'admin'` before proceeding
 - Called from `AdminOrders.jsx` when admin ships an order
 - Creates a Delhivery waybill and updates the `orders` row with waybill + tracking URL
 
@@ -251,7 +268,8 @@ Pricing computed client-side:
   total       = sub + shipping + gstAmount - coinDiscount
 
   ── COD path ──
-  supabase.rpc('place_order_cod', {..., p_shipping, p_gst})
+  supabase.rpc('place_order_cod', {..., p_shipping, p_gst, p_coupon_code})
+  → RPC validates auth.uid(), validates coupon server-side, ignores p_discount
   → success: show receipt screen → 5s → redirect to /orders
 
   ── Prepaid path ──
@@ -259,9 +277,12 @@ Pricing computed client-side:
   2. Open Razorpay modal
   3. onSuccess → supabase.functions.invoke('verify-razorpay-payment', {..., shipping, gst})
      → Edge Function: verify HMAC signature → call place_order_prepaid RPC
+     → RPC validates auth (service-role bypass), validates coupon server-side
   4. success: show receipt screen → 5s → redirect to /orders
   5. If verification fails: call log_failed_order RPC (creates 'payment_failed' order)
 ```
+
+> **Note:** Coupon discounts are never trusted from the client. Both RPCs look up `p_coupon_code` in `app_settings.discount_codes`, validate active status and schedule, and compute the discount percentage server-side.
 
 ---
 
@@ -419,3 +440,8 @@ This is fetched in `Shop.jsx` (alongside products), `Home.jsx` (alongside hero s
 8. **The `master_schema.sql` in `supabase/migrations/` is the only SQL file that matters.** All other migration files are superseded by it and kept for historical reference only.
 9. **Razorpay uses the `.env.local` key for UI rendering and the Edge Function secret for server-side verification.** Both are needed.
 10. **All monetary values are stored in INR as `numeric(10,2)`.** The frontend `money()` utility formats them with `₹` prefix using `en-IN` locale.
+11. **Coupon discounts are validated server-side.** The `p_discount` parameter in order RPCs is IGNORED — the RPC looks up the coupon code in `app_settings.discount_codes` and computes the discount itself.
+12. **CORS is restricted.** Edge Functions only accept requests from `coreatoms.in`, `www.coreatoms.in`, `core-atoms.vercel.app`, Vercel previews, and localhost. Update `_shared/cors.ts` if domains change.
+13. **`app_settings` has granular RLS.** Sensitive keys (`discount_codes`, `warehouse_address`) require authentication to read. All other keys are publicly readable.
+14. **`delhivery-create-shipment` requires admin auth.** The Edge Function verifies the caller's JWT and checks `profiles.role = 'admin'` before creating shipments.
+15. **`fetchProductById` reads `reviewer_name` from `product_reviews` directly** — it does NOT query the `profiles` table. This prevents cross-user data leakage.

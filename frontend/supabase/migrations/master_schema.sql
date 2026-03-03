@@ -15,7 +15,7 @@
 -- ║                                                                          ║
 -- ║  How to run: Supabase Dashboard → SQL Editor → paste & run              ║
 -- ║                                                                          ║
--- ║  Last updated: 2026-03-02                                                ║
+-- ║  Last updated: 2026-03-04                                                ║
 -- ╚══════════════════════════════════════════════════════════════════════════╝
 
 
@@ -94,6 +94,19 @@ CREATE TRIGGER on_auth_user_created
 
 
 -- ══════════════════════════════════════════════════════════════════════════
+--  1b. admin_users
+--     Legacy admin role table. May be used by older parts of the codebase.
+--     The canonical admin check is `profiles.role = 'admin'` via is_admin().
+-- ══════════════════════════════════════════════════════════════════════════
+CREATE TABLE IF NOT EXISTS public.admin_users (
+    user_id     uuid PRIMARY KEY REFERENCES auth.users(id) ON DELETE CASCADE,
+    created_at  timestamptz DEFAULT now()
+);
+
+ALTER TABLE public.admin_users ENABLE ROW LEVEL SECURITY;
+
+
+-- ══════════════════════════════════════════════════════════════════════════
 --  2. products
 --     Main product catalog. Each product can have multiple images, variants,
 --     and reviews. The frontend reads is_active to filter visible products.
@@ -169,7 +182,8 @@ CREATE TABLE IF NOT EXISTS public.product_variants (
     sku         text,
     sort_order  integer NOT NULL DEFAULT 0,
     is_active   boolean NOT NULL DEFAULT true,
-    created_at  timestamptz NOT NULL DEFAULT now()
+    created_at  timestamptz NOT NULL DEFAULT now(),
+    updated_at  timestamptz NOT NULL DEFAULT now()
 );
 
 ALTER TABLE public.product_variants ENABLE ROW LEVEL SECURITY;
@@ -207,7 +221,7 @@ CREATE INDEX IF NOT EXISTS idx_reviews_user     ON public.product_reviews (user_
 
 
 -- ══════════════════════════════════════════════════════════════════════════
---  6. user_addresses
+--  6a. user_addresses
 --     Saved delivery addresses per customer. A customer can save multiple
 --     addresses and select one at checkout.
 -- ══════════════════════════════════════════════════════════════════════════
@@ -239,6 +253,31 @@ CREATE TRIGGER trg_user_addresses_updated_at
 
 
 -- ══════════════════════════════════════════════════════════════════════════
+--  6b. addresses
+--     Alternate addresses table used by early order system.
+--     Has phone validation constraint and is_default flag.
+-- ══════════════════════════════════════════════════════════════════════════
+CREATE TABLE IF NOT EXISTS public.addresses (
+    id          uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+    user_id     uuid NOT NULL REFERENCES auth.users(id) ON DELETE CASCADE,
+    full_name   text NOT NULL,
+    phone       text NOT NULL
+                CHECK (phone IS NULL OR phone ~ '^(\+91|0)?[6-9][0-9]{9}$'),
+    line1       text NOT NULL,
+    line2       text,
+    city        text NOT NULL,
+    state       text NOT NULL,
+    pincode     text,
+    is_default  boolean NOT NULL DEFAULT false,
+    created_at  timestamptz NOT NULL DEFAULT now()
+);
+
+ALTER TABLE public.addresses ENABLE ROW LEVEL SECURITY;
+CREATE POLICY "Users can manage own addresses (addr)" ON public.addresses FOR ALL USING (auth.uid() = user_id);
+CREATE POLICY "Admins can view all addresses (addr)"  ON public.addresses FOR SELECT USING (public.is_admin());
+
+
+-- ══════════════════════════════════════════════════════════════════════════
 --  7. orders
 --     One row per order. Contains full shipping address as JSONB (snapshot
 --     at order time), payment method, breakdown amounts, CoreCoins usage,
@@ -264,27 +303,32 @@ CREATE TRIGGER trg_user_addresses_updated_at
 CREATE TABLE IF NOT EXISTS public.orders (
     id                    uuid PRIMARY KEY DEFAULT uuid_generate_v4(),
     user_id               uuid NOT NULL REFERENCES auth.users(id) ON DELETE CASCADE,
+    address_id            uuid REFERENCES public.addresses(id),  -- legacy FK to addresses table
     status                text NOT NULL DEFAULT 'placed'
                           CHECK (status IN ('placed','processing','shipped','delivered','cancelled','payment_failed')),
-    shipping_address      jsonb,
-    payment_method        text NOT NULL DEFAULT 'cod',      -- 'cod' | 'prepaid'
+    shipping_address      jsonb,                                 -- JSONB snapshot (used by checkout)
+    payment_method        text NOT NULL DEFAULT 'cod',           -- 'cod' | 'prepaid'
     razorpay_payment_id   text,
     razorpay_order_id     text,
-    total_amount_inr      numeric(10,2) NOT NULL DEFAULT 0,
-    subtotal              numeric(10,2) NOT NULL DEFAULT 0, -- items only
-    shipping              numeric(10,2) NOT NULL DEFAULT 0, -- legacy column
-    shipping_amount       numeric(10,2) NOT NULL DEFAULT 0, -- actual shipping charged
-    gst_amount            numeric(10,2) NOT NULL DEFAULT 0, -- actual GST charged
+    total_inr             integer NOT NULL DEFAULT 0,            -- legacy integer total
+    total_amount          numeric NOT NULL DEFAULT 0,            -- numeric total (legacy)
+    total_amount_inr      integer DEFAULT 0,                     -- final amount (items+ship+gst-coins-coupon)
+    subtotal              numeric NOT NULL DEFAULT 0,            -- items only
+    shipping              numeric NOT NULL DEFAULT 0,            -- legacy column
+    shipping_amount       numeric NOT NULL DEFAULT 0,            -- actual shipping charged
+    gst_amount            numeric NOT NULL DEFAULT 0,            -- actual GST charged
     total_items           integer NOT NULL DEFAULT 0,
+    notes                 text,                                  -- optional order notes
     coins_used            integer NOT NULL DEFAULT 0,
     coins_credited        boolean NOT NULL DEFAULT false,
-    coins_credit_after    timestamptz,             -- credit coins after replacement window
+    coins_credited_amount integer NOT NULL DEFAULT 0,            -- actual coins credited
+    coins_credit_after    timestamptz,                           -- credit after replacement window
     delhivery_waybill     text,
     courier_name          text DEFAULT 'Delhivery',
     tracking_url          text,
     shipped_at            timestamptz,
     delivered_at          timestamptz,
-    discount_amount       numeric(10,2) NOT NULL DEFAULT 0,
+    discount_amount       numeric NOT NULL DEFAULT 0,
     coupon_code           text,
     created_at            timestamptz NOT NULL DEFAULT now(),
     updated_at            timestamptz NOT NULL DEFAULT now()
@@ -320,10 +364,12 @@ CREATE TABLE IF NOT EXISTS public.order_items (
     order_id        uuid NOT NULL REFERENCES public.orders(id) ON DELETE CASCADE,
     product_id      uuid REFERENCES public.products(id) ON DELETE SET NULL,
     variant_id      uuid REFERENCES public.product_variants(id) ON DELETE SET NULL,
-    product_name    text,
-    qty             integer NOT NULL DEFAULT 1,
-    unit_price_inr  numeric(10,2) NOT NULL DEFAULT 0,
-    line_total_inr  numeric(10,2) NOT NULL DEFAULT 0,
+    product_name    text NOT NULL,
+    variant_label   text,                     -- snapshot of variant label at order time
+    qty             integer NOT NULL DEFAULT 1 CHECK (qty > 0),
+    unit_price_inr  integer NOT NULL DEFAULT 0,
+    line_total_inr  integer NOT NULL DEFAULT 0,
+    unit_price      numeric NOT NULL DEFAULT 0,  -- numeric price (legacy)
     image_url       text,
     created_at      timestamptz NOT NULL DEFAULT now()
 );
@@ -366,7 +412,12 @@ CREATE TABLE IF NOT EXISTS public.app_settings (
 );
 
 ALTER TABLE public.app_settings ENABLE ROW LEVEL SECURITY;
-CREATE POLICY "Anyone can read app_settings" ON public.app_settings FOR SELECT USING (true);
+-- Granular read policy: sensitive keys require authentication, everything else is public
+CREATE POLICY "Public can read non-sensitive app_settings" ON public.app_settings
+    FOR SELECT USING (
+        key NOT IN ('discount_codes', 'warehouse_address')
+        OR auth.uid() IS NOT NULL
+    );
 CREATE POLICY "Only admins can write app_settings" ON public.app_settings FOR ALL USING (public.is_admin());
 
 -- Seed default settings (do nothing on conflict — preserves existing admin config)
@@ -436,13 +487,14 @@ CREATE TABLE IF NOT EXISTS public.replacements (
     images                    text[] DEFAULT '{}',
     status                    text NOT NULL DEFAULT 'pending'
                               CHECK (status IN ('pending','approved','pickup_scheduled','pickup_received','replacement_shipped','rejected')),
-    admin_notes               text,
+    admin_notes               text CHECK (admin_notes IS NULL OR char_length(admin_notes) <= 2000),
     replacement_waybill       text,
     replacement_tracking_url  text,
     reverse_waybill           text,
     reverse_tracking_url      text,
     created_at                timestamptz DEFAULT now(),
-    updated_at                timestamptz DEFAULT now()
+    updated_at                timestamptz DEFAULT now(),
+    CONSTRAINT replacements_user_id_profiles_fkey FOREIGN KEY (user_id) REFERENCES public.profiles(id)
 );
 
 -- One active (non-rejected) replacement per order
@@ -487,7 +539,7 @@ CREATE OR REPLACE FUNCTION public.place_order_cod(
     p_coins_used  INT     DEFAULT 0,
     p_shipping    NUMERIC DEFAULT 0,  -- used only when flat rate = 0 (pincode mode)
     p_gst         NUMERIC DEFAULT 0, -- IGNORED — GST is recalculated server-side
-    p_discount    NUMERIC DEFAULT 0, -- coupon discount amount (client-calculated)
+    p_discount    NUMERIC DEFAULT 0, -- IGNORED — discount is recalculated server-side from coupon
     p_coupon_code TEXT    DEFAULT NULL
 ) RETURNS UUID
 LANGUAGE plpgsql SECURITY DEFINER
@@ -511,8 +563,16 @@ DECLARE
     v_gst_pct        NUMERIC := 0;
     v_gst_amount     NUMERIC := 0;
     v_shipping_final NUMERIC := 0;
+    -- Server-side coupon validation
+    v_discount_codes JSONB;
+    v_coupon         JSONB;
+    v_coupon_pct     NUMERIC := 0;
+    v_discount       NUMERIC := 0;
 BEGIN
-    -- ── 0. Input sanity guards ────────────────────────────────────────────
+    -- ── 0. Auth + input sanity guards ─────────────────────────────────────
+    IF p_user_id <> auth.uid() THEN
+        RAISE EXCEPTION 'Unauthorized: cannot place order for another user';
+    END IF;
     IF p_coins_used < 0 THEN RAISE EXCEPTION 'Invalid coins_used value'; END IF;
     IF p_shipping < 0 OR p_shipping > 2000 THEN
         RAISE EXCEPTION 'Shipping amount out of valid range (0–2000)';
@@ -538,7 +598,28 @@ BEGIN
         END IF;
     END IF;
 
-    -- ── 3. Insert order shell (totals updated after item loop) ────────────
+    -- ── 3. Server-side coupon validation ───────────────────────────────────
+    IF p_coupon_code IS NOT NULL AND p_coupon_code <> '' THEN
+        SELECT value INTO v_discount_codes FROM app_settings WHERE key = 'discount_codes';
+        -- Find matching active coupon in JSONB array
+        SELECT elem INTO v_coupon FROM jsonb_array_elements(COALESCE(v_discount_codes, '[]'::jsonb)) AS elem
+          WHERE elem->>'code' = UPPER(p_coupon_code) AND (elem->>'active')::boolean = true
+          LIMIT 1;
+        IF v_coupon IS NOT NULL THEN
+            -- Validate schedule (startsAt / endsAt)
+            IF v_coupon->>'startsAt' IS NOT NULL AND (v_coupon->>'startsAt')::timestamptz > now() THEN
+                v_coupon := NULL;  -- not active yet
+            END IF;
+            IF v_coupon IS NOT NULL AND v_coupon->>'endsAt' IS NOT NULL AND (v_coupon->>'endsAt')::timestamptz < now() THEN
+                v_coupon := NULL;  -- expired
+            END IF;
+        END IF;
+        IF v_coupon IS NOT NULL THEN
+            v_coupon_pct := COALESCE((v_coupon->>'percentage')::numeric, 0);
+        END IF;
+    END IF;
+
+    -- ── 4. Insert order shell (totals updated after item loop) ────────────
     INSERT INTO orders (
         user_id, status, shipping_address, payment_method,
         total_amount_inr, subtotal, shipping, shipping_amount, gst_amount,
@@ -546,10 +627,10 @@ BEGIN
     ) VALUES (
         p_user_id, 'placed', p_address, 'cod',
         0, 0, 0, 0, 0,
-        0, p_coins_used, GREATEST(0, COALESCE(p_discount, 0)), p_coupon_code
+        0, p_coins_used, 0, CASE WHEN v_coupon IS NOT NULL THEN p_coupon_code ELSE NULL END
     ) RETURNING id INTO v_order_id;
 
-    -- ── 4. Loop items: fetch DB price → check stock → deduct → insert ─────
+    -- ── 5. Loop items: fetch DB price → check stock → deduct → insert ─────
     FOR v_item IN SELECT * FROM jsonb_array_elements(p_items) LOOP
         v_product_id := (v_item->>'product_id')::UUID;
         v_variant_id := CASE WHEN (v_item->>'variant_id') IS NOT NULL AND (v_item->>'variant_id') <> ''
@@ -584,7 +665,7 @@ BEGIN
         v_count    := v_count + v_qty;
     END LOOP;
 
-    -- ── 5. Server-side shipping and GST calculation ───────────────────────
+    -- ── 6. Server-side shipping and GST calculation ───────────────────────
     -- Shipping: use flat rate if configured; otherwise accept client's pincode rate
     IF v_flat_shipping > 0 THEN
         v_shipping_final := v_flat_shipping;
@@ -601,18 +682,20 @@ BEGIN
                          THEN ROUND(v_subtotal * v_gst_pct / 100)
                          ELSE 0 END;
 
-    -- ── 6. Coin discount and final total ─────────────────────────────────
+    -- ── 7. Coupon discount (server-calculated), coin discount, final total ─
+    v_discount := CASE WHEN v_coupon_pct > 0 THEN ROUND(v_subtotal * v_coupon_pct / 100) ELSE 0 END;
+
     SELECT COALESCE((value->>'coin_value_inr')::numeric, 1) INTO v_coin_value
       FROM app_settings WHERE key = 'corecoins_config';
     v_coin_disc := COALESCE(p_coins_used, 0) * COALESCE(v_coin_value, 1);
-    v_total     := GREATEST(0, v_subtotal + v_shipping_final + v_gst_amount - v_coin_disc - GREATEST(0, COALESCE(p_discount, 0)));
+    v_total     := GREATEST(0, v_subtotal + v_shipping_final + v_gst_amount - v_coin_disc - v_discount);
 
     UPDATE orders
       SET subtotal         = v_subtotal,
           shipping_amount  = v_shipping_final,
           shipping         = v_shipping_final,
           gst_amount       = v_gst_amount,
-          discount_amount  = GREATEST(0, COALESCE(p_discount, 0)),
+          discount_amount  = v_discount,
           total_amount_inr = v_total,
           total_items      = v_count
       WHERE id = v_order_id;
@@ -640,7 +723,7 @@ CREATE OR REPLACE FUNCTION public.place_order_prepaid(
     p_coins_used          INT     DEFAULT 0,
     p_shipping            NUMERIC DEFAULT 0,  -- used only when flat rate = 0 (pincode mode)
     p_gst                 NUMERIC DEFAULT 0,  -- IGNORED — GST is recalculated server-side
-    p_discount            NUMERIC DEFAULT 0,  -- coupon discount amount (client-calculated)
+    p_discount            NUMERIC DEFAULT 0,  -- IGNORED — discount is recalculated server-side from coupon
     p_coupon_code         TEXT    DEFAULT NULL
 ) RETURNS UUID
 LANGUAGE plpgsql SECURITY DEFINER
@@ -664,8 +747,18 @@ DECLARE
     v_gst_pct        NUMERIC := 0;
     v_gst_amount     NUMERIC := 0;
     v_shipping_final NUMERIC := 0;
+    -- Server-side coupon validation
+    v_discount_codes JSONB;
+    v_coupon         JSONB;
+    v_coupon_pct     NUMERIC := 0;
+    v_discount       NUMERIC := 0;
 BEGIN
-    -- ── 0. Input sanity guards ────────────────────────────────────────────
+    -- ── 0. Auth + input sanity guards ─────────────────────────────────────
+    -- Allow both direct user calls (auth.uid check) and service-role calls
+    -- (auth.uid() is NULL for service-role, so skip check in that case)
+    IF auth.uid() IS NOT NULL AND p_user_id <> auth.uid() THEN
+        RAISE EXCEPTION 'Unauthorized: cannot place order for another user';
+    END IF;
     IF p_coins_used < 0 THEN RAISE EXCEPTION 'Invalid coins_used value'; END IF;
     IF p_shipping < 0 OR p_shipping > 2000 THEN
         RAISE EXCEPTION 'Shipping amount out of valid range (0–2000)';
@@ -691,7 +784,26 @@ BEGIN
         END IF;
     END IF;
 
-    -- ── 3. Insert order shell ────────────────────────────────────────────
+    -- ── 3. Server-side coupon validation ───────────────────────────────────
+    IF p_coupon_code IS NOT NULL AND p_coupon_code <> '' THEN
+        SELECT value INTO v_discount_codes FROM app_settings WHERE key = 'discount_codes';
+        SELECT elem INTO v_coupon FROM jsonb_array_elements(COALESCE(v_discount_codes, '[]'::jsonb)) AS elem
+          WHERE elem->>'code' = UPPER(p_coupon_code) AND (elem->>'active')::boolean = true
+          LIMIT 1;
+        IF v_coupon IS NOT NULL THEN
+            IF v_coupon->>'startsAt' IS NOT NULL AND (v_coupon->>'startsAt')::timestamptz > now() THEN
+                v_coupon := NULL;
+            END IF;
+            IF v_coupon IS NOT NULL AND v_coupon->>'endsAt' IS NOT NULL AND (v_coupon->>'endsAt')::timestamptz < now() THEN
+                v_coupon := NULL;
+            END IF;
+        END IF;
+        IF v_coupon IS NOT NULL THEN
+            v_coupon_pct := COALESCE((v_coupon->>'percentage')::numeric, 0);
+        END IF;
+    END IF;
+
+    -- ── 4. Insert order shell ──────────────────────────────────────────
     INSERT INTO orders (
         user_id, status, shipping_address, payment_method,
         razorpay_payment_id, razorpay_order_id,
@@ -701,10 +813,10 @@ BEGIN
         p_user_id, 'placed', p_address, p_payment_method,
         p_razorpay_payment_id, p_razorpay_order_id,
         0, 0, 0, 0, 0,
-        0, p_coins_used, GREATEST(0, COALESCE(p_discount, 0)), p_coupon_code
+        0, p_coins_used, 0, CASE WHEN v_coupon IS NOT NULL THEN p_coupon_code ELSE NULL END
     ) RETURNING id INTO v_order_id;
 
-    -- ── 4. Loop items: fetch DB price → check stock → deduct → insert ─────
+    -- ── 5. Loop items: fetch DB price → check stock → deduct → insert ─────
     FOR v_item IN SELECT * FROM jsonb_array_elements(p_items) LOOP
         v_product_id := (v_item->>'product_id')::UUID;
         v_variant_id := CASE WHEN (v_item->>'variant_id') IS NOT NULL AND (v_item->>'variant_id') <> ''
@@ -738,7 +850,7 @@ BEGIN
         v_count    := v_count + v_qty;
     END LOOP;
 
-    -- ── 5. Server-side shipping and GST ──────────────────────────────────
+    -- ── 6. Server-side shipping and GST ──────────────────────────────────
     IF v_flat_shipping > 0 THEN
         v_shipping_final := v_flat_shipping;
     ELSE
@@ -752,18 +864,20 @@ BEGIN
                          THEN ROUND(v_subtotal * v_gst_pct / 100)
                          ELSE 0 END;
 
-    -- ── 6. Coin discount and final total ─────────────────────────────────
+    -- ── 7. Coupon discount (server-calculated), coin discount, final total ─
+    v_discount := CASE WHEN v_coupon_pct > 0 THEN ROUND(v_subtotal * v_coupon_pct / 100) ELSE 0 END;
+
     SELECT COALESCE((value->>'coin_value_inr')::numeric, 1) INTO v_coin_value
       FROM app_settings WHERE key = 'corecoins_config';
     v_coin_disc := COALESCE(p_coins_used, 0) * COALESCE(v_coin_value, 1);
-    v_total     := GREATEST(0, v_subtotal + v_shipping_final + v_gst_amount - v_coin_disc - GREATEST(0, COALESCE(p_discount, 0)));
+    v_total     := GREATEST(0, v_subtotal + v_shipping_final + v_gst_amount - v_coin_disc - v_discount);
 
     UPDATE orders
       SET subtotal         = v_subtotal,
           shipping_amount  = v_shipping_final,
           shipping         = v_shipping_final,
           gst_amount       = v_gst_amount,
-          discount_amount  = GREATEST(0, COALESCE(p_discount, 0)),
+          discount_amount  = v_discount,
           total_amount_inr = v_total,
           total_items      = v_count
       WHERE id = v_order_id;
@@ -934,6 +1048,11 @@ DECLARE
     v_coins      INTEGER;
     v_total      INTEGER := 0;
 BEGIN
+    -- Auth guard: only allow crediting your own orders
+    IF p_user_id <> auth.uid() THEN
+        RAISE EXCEPTION 'Unauthorized';
+    END IF;
+
     SELECT value INTO v_config FROM app_settings WHERE key = 'corecoins_config';
     v_earn_rate  := COALESCE((v_config->>'earn_rate')::numeric,  2);
     v_earn_per   := COALESCE((v_config->>'earn_per_rupees')::numeric, 100);
@@ -988,6 +1107,42 @@ BEGIN
         RAISE EXCEPTION 'Order cannot be cancelled (not found, not yours, or already shipped)';
     END IF;
 END; $$;
+
+
+-- ══════════════════════════════════════════════════════════════════════════
+--  12. wa_notifications
+--     Tracks WhatsApp notification sends to customers.
+--     One row per order-status notification sent.
+-- ══════════════════════════════════════════════════════════════════════════
+CREATE TABLE IF NOT EXISTS public.wa_notifications (
+    id              bigint GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
+    order_id        uuid NOT NULL REFERENCES public.orders(id) ON DELETE CASCADE,
+    status          text NOT NULL,
+    phone           text,
+    customer_name   text,
+    sent_by         text,
+    sent_at         timestamp NOT NULL DEFAULT (now() AT TIME ZONE 'Asia/Kolkata')
+);
+
+ALTER TABLE public.wa_notifications ENABLE ROW LEVEL SECURITY;
+CREATE POLICY "Admins can manage wa_notifications" ON public.wa_notifications FOR ALL USING (public.is_admin());
+
+
+-- ══════════════════════════════════════════════════════════════════════════
+--  13. store_settings
+--     Legacy settings table. Similar shape to app_settings but may hold
+--     older configuration or be used by a different code path.
+-- ══════════════════════════════════════════════════════════════════════════
+CREATE TABLE IF NOT EXISTS public.store_settings (
+    key         text PRIMARY KEY,
+    value       jsonb NOT NULL,
+    updated_at  timestamptz NOT NULL DEFAULT now(),
+    updated_by  uuid
+);
+
+ALTER TABLE public.store_settings ENABLE ROW LEVEL SECURITY;
+CREATE POLICY "Public can read store_settings" ON public.store_settings FOR SELECT USING (true);
+CREATE POLICY "Only admins can write store_settings" ON public.store_settings FOR ALL USING (public.is_admin());
 
 
 -- ══════════════════════════════════════════════════════════════════════════

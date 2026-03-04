@@ -34,12 +34,22 @@
 
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 import { getCorsHeaders, handleCorsPreflightRequest } from "../_shared/cors.ts";
+import { checkRateLimit, getClientIp } from "../_shared/rate-limit.ts";
 
 Deno.serve(async (req) => {
     if (req.method === "OPTIONS") {
         return handleCorsPreflightRequest(req);
     }
     const corsHeaders = getCorsHeaders(req);
+
+    // Rate limit: 10 requests per 60 seconds per IP
+    const limited = await checkRateLimit(req, corsHeaders, {
+        endpoint: "delhivery-create-shipment",
+        maxRequests: 10,
+        windowSeconds: 60,
+        identifier: getClientIp(req),
+    });
+    if (limited) return limited;
 
     try {
         // ── Admin auth check ──
@@ -76,15 +86,33 @@ Deno.serve(async (req) => {
             Deno.env.get("DELHIVERY_BASE_URL") ||
             "https://track.delhivery.com"
         ).replace(/\/$/, "");
-        const CLIENT_NAME = Deno.env.get("DELHIVERY_CLIENT_NAME");
-        const PICKUP_NAME = Deno.env.get("DELHIVERY_PICKUP_NAME") || CLIENT_NAME;
+        let CLIENT_NAME = Deno.env.get("DELHIVERY_CLIENT_NAME") || "";
+        let PICKUP_NAME = Deno.env.get("DELHIVERY_PICKUP_NAME") || "";
 
-        // Warehouse / return address — will be populated after parsing request body
-        // (request body `warehouse` takes priority over env vars)
+        // Fall back to app_settings if env vars aren't set
+        if (!CLIENT_NAME || !PICKUP_NAME) {
+            try {
+                const sbUrl = Deno.env.get("SUPABASE_URL")!;
+                const sbKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
+                const settingsSb = createClient(sbUrl, sbKey);
+                const keys = ["delhivery_client_name", "delhivery_pickup_name"];
+                const { data: rows } = await settingsSb
+                    .from("app_settings").select("key, value").in("key", keys);
+                const settingsMap: Record<string, string> = {};
+                (rows || []).forEach((r: { key: string; value: string }) => {
+                    settingsMap[r.key] = typeof r.value === "string" ? r.value : String(r.value || "");
+                });
+                if (!CLIENT_NAME) CLIENT_NAME = settingsMap["delhivery_client_name"] || "";
+                if (!PICKUP_NAME) PICKUP_NAME = settingsMap["delhivery_pickup_name"] || CLIENT_NAME;
+            } catch (e) {
+                console.warn("Could not read Delhivery settings from DB:", e);
+            }
+        }
+        if (!PICKUP_NAME) PICKUP_NAME = CLIENT_NAME;
 
         if (!DELHIVERY_TOKEN || !CLIENT_NAME) {
             return new Response(
-                JSON.stringify({ error: "Delhivery credentials not configured" }),
+                JSON.stringify({ error: "Delhivery credentials not configured. Set DELHIVERY_CLIENT_NAME in Supabase secrets or add 'delhivery_client_name' to app_settings." }),
                 {
                     status: 500,
                     headers: { ...corsHeaders, "Content-Type": "application/json" },
@@ -304,11 +332,22 @@ Deno.serve(async (req) => {
         const success = pkg.status === "Success" || createData.success;
 
         if (!success) {
-            const remarks = (pkg.remarks || []).join("; ") || "Unknown error";
-            console.error("Delhivery shipment rejected:", remarks, createData);
+            // Delhivery may return errors in various fields — collect them all
+            const remarksArr = Array.isArray(pkg.remarks) ? pkg.remarks : (pkg.remarks ? [pkg.remarks] : []);
+            const rmk = createData.rmk || "";
+            const pkgStatus = pkg.status && pkg.status !== "Success" ? pkg.status : "";
+            const topError = createData.error || createData.message || "";
+
+            // Build descriptive error from all available info
+            const errorParts = [...remarksArr, rmk, pkgStatus, topError]
+                .map(s => String(s).trim())
+                .filter(Boolean);
+            const errorDetail = errorParts.length > 0 ? errorParts.join(" — ") : JSON.stringify(createData);
+
+            console.error("Delhivery shipment rejected:", errorDetail, createData);
             return new Response(
                 JSON.stringify({
-                    error: `Delhivery rejected shipment: ${remarks}`,
+                    error: `Delhivery rejected shipment: ${errorDetail}`,
                     details: createData,
                 }),
                 {
@@ -334,8 +373,7 @@ Deno.serve(async (req) => {
                     delhivery_waybill: waybill,
                     courier_name: "Delhivery",
                     tracking_url: trackingUrl,
-                    shipped_at: new Date().toISOString(),
-                    status: "shipped",
+                    status: "processing",
                 })
                 .eq("id", order_id);
 

@@ -1146,6 +1146,31 @@ CREATE POLICY "Only admins can write store_settings" ON public.store_settings FO
 
 
 -- ══════════════════════════════════════════════════════════════════════════
+--  14. rate_limits
+--     Tracks per-IP / per-user request counts for Edge Function rate limiting.
+--     Used by _shared/rate-limit.ts via service role (no user access).
+-- ══════════════════════════════════════════════════════════════════════════
+CREATE TABLE IF NOT EXISTS public.rate_limits (
+    id         BIGINT GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
+    identifier TEXT NOT NULL,
+    endpoint   TEXT NOT NULL,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+
+CREATE INDEX IF NOT EXISTS idx_rate_limits_lookup
+    ON public.rate_limits (identifier, endpoint, created_at DESC);
+
+ALTER TABLE public.rate_limits ENABLE ROW LEVEL SECURITY;
+-- No user-level policies — only service role can read/write
+
+-- Cleanup function: call periodically to purge entries older than 1 hour
+CREATE OR REPLACE FUNCTION public.cleanup_rate_limits()
+RETURNS void LANGUAGE sql SECURITY DEFINER AS $$
+    DELETE FROM public.rate_limits WHERE created_at < now() - interval '1 hour';
+$$;
+
+
+-- ══════════════════════════════════════════════════════════════════════════
 --  Reload PostgREST schema cache
 -- ══════════════════════════════════════════════════════════════════════════
 NOTIFY pgrst, 'reload schema';

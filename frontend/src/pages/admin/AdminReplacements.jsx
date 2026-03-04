@@ -11,6 +11,7 @@ import { useEffect, useState } from "react";
 import { supabase } from "../../services/supabase/client";
 import { useToast } from "../../context/ToastContext";
 import { money } from "../../utils/format";
+import ShipmentTracker from "../../components/ShipmentTracker";
 
 const STATUS_STYLES = {
     pending: "bg-amber-50 text-amber-700 border border-amber-200",
@@ -520,22 +521,25 @@ export default function AdminReplacements({ onCountChange }) {
 
                                     {/* Replacement tracking info */}
                                     {r.replacement_waybill && (
-                                        <div className="rounded-xl border border-teal-200 bg-teal-50 p-3">
-                                            <div className="text-xs font-semibold text-teal-700 uppercase tracking-wide mb-1">Replacement Shipment</div>
-                                            <div className="text-sm text-teal-800">
-                                                AWB: <span className="font-mono font-medium">{r.replacement_waybill}</span>
+                                        <>
+                                            <div className="rounded-xl border border-teal-200 bg-teal-50 p-3">
+                                                <div className="text-xs font-semibold text-teal-700 uppercase tracking-wide mb-1">Replacement Shipment</div>
+                                                <div className="text-sm text-teal-800">
+                                                    AWB: <span className="font-mono font-medium">{r.replacement_waybill}</span>
+                                                </div>
+                                                {r.replacement_tracking_url && (
+                                                    <a
+                                                        href={r.replacement_tracking_url}
+                                                        target="_blank"
+                                                        rel="noopener noreferrer"
+                                                        className="inline-flex items-center gap-1 mt-1 text-xs font-medium text-teal-700 hover:underline"
+                                                    >
+                                                        Track on Delhivery ↗
+                                                    </a>
+                                                )}
                                             </div>
-                                            {r.replacement_tracking_url && (
-                                                <a
-                                                    href={r.replacement_tracking_url}
-                                                    target="_blank"
-                                                    rel="noopener noreferrer"
-                                                    className="inline-flex items-center gap-1 mt-1 text-xs font-medium text-teal-700 hover:underline"
-                                                >
-                                                    Track on Delhivery ↗
-                                                </a>
-                                            )}
-                                        </div>
+                                            <ShipmentTracker waybill={r.replacement_waybill} trackingUrl={r.replacement_tracking_url} />
+                                        </>
                                     )}
 
                                     {/* ── Admin actions based on status ── */}
@@ -650,22 +654,25 @@ export default function AdminReplacements({ onCountChange }) {
                                     {r.status === "pickup_scheduled" && (
                                         <div className="space-y-3 pt-2 border-t border-[#E8E4DE]">
                                             {r.reverse_waybill && (
-                                                <div className="rounded-xl border border-blue-200 bg-blue-50 p-3">
-                                                    <div className="text-xs font-semibold text-blue-700 uppercase tracking-wide mb-1">Reverse Pickup Shipment</div>
-                                                    <div className="text-sm text-blue-800">
-                                                        AWB: <span className="font-mono font-medium">{r.reverse_waybill}</span>
+                                                <>
+                                                    <div className="rounded-xl border border-blue-200 bg-blue-50 p-3">
+                                                        <div className="text-xs font-semibold text-blue-700 uppercase tracking-wide mb-1">Reverse Pickup Shipment</div>
+                                                        <div className="text-sm text-blue-800">
+                                                            AWB: <span className="font-mono font-medium">{r.reverse_waybill}</span>
+                                                        </div>
+                                                        {r.reverse_tracking_url && (
+                                                            <a
+                                                                href={r.reverse_tracking_url}
+                                                                target="_blank"
+                                                                rel="noopener noreferrer"
+                                                                className="inline-flex items-center gap-1 mt-1 text-xs font-medium text-blue-700 hover:underline"
+                                                            >
+                                                                Track reverse pickup ↗
+                                                            </a>
+                                                        )}
                                                     </div>
-                                                    {r.reverse_tracking_url && (
-                                                        <a
-                                                            href={r.reverse_tracking_url}
-                                                            target="_blank"
-                                                            rel="noopener noreferrer"
-                                                            className="inline-flex items-center gap-1 mt-1 text-xs font-medium text-blue-700 hover:underline"
-                                                        >
-                                                            Track reverse pickup ↗
-                                                        </a>
-                                                    )}
-                                                </div>
+                                                    <ShipmentTracker waybill={r.reverse_waybill} trackingUrl={r.reverse_tracking_url} />
+                                                </>
                                             )}
                                             <div className="rounded-xl bg-blue-50 border border-blue-200 p-3 text-xs text-blue-700">
                                                 <strong>Reverse pickup is scheduled.</strong> Once the damaged product is received at your warehouse, mark it as received to proceed.

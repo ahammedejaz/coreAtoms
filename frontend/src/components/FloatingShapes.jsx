@@ -31,7 +31,7 @@ const ICONS = [
 const REPEL_RADIUS = 40;
 const REPEL_STRENGTH = 6;
 const FRICTION = 0.97;
-const BASE_SPEED = 0.3;
+const BASE_SPEED = 0.45;
 
 function randomBetween(a, b) {
     return a + Math.random() * (b - a);
@@ -78,9 +78,9 @@ export default function FloatingShapes() {
             emoji: icon.emoji,
             size: icon.size,
             angle: Math.random() * Math.PI * 2,
-            angleSpeed: randomBetween(0.002, 0.005) * (Math.random() > 0.5 ? 1 : -1),
+            angleSpeed: randomBetween(0.001, 0.003) * (Math.random() > 0.5 ? 1 : -1),
             rotation: Math.random() * Math.PI * 2,
-            rotationSpeed: randomBetween(0.003, 0.01) * (Math.random() > 0.5 ? 1 : -1),
+            rotationSpeed: randomBetween(0.002, 0.006) * (Math.random() > 0.5 ? 1 : -1),
             opacity: randomBetween(0.18, 0.35),
         }));
 
@@ -92,8 +92,8 @@ export default function FloatingShapes() {
             for (const p of particles) {
                 // Idle drift
                 p.angle += p.angleSpeed;
-                p.vx += Math.cos(p.angle) * 0.015;
-                p.vy += Math.sin(p.angle) * 0.015;
+                p.vx += Math.cos(p.angle) * 0.009;
+                p.vy += Math.sin(p.angle) * 0.009;
 
                 // Mouse repulsion
                 const dx = p.x - mouse.x;
@@ -111,7 +111,7 @@ export default function FloatingShapes() {
 
                 // Clamp speed
                 const speed = Math.sqrt(p.vx * p.vx + p.vy * p.vy);
-                if (speed > 5) { p.vx = (p.vx / speed) * 5; p.vy = (p.vy / speed) * 5; }
+                if (speed > 4) { p.vx = (p.vx / speed) * 4; p.vy = (p.vy / speed) * 4; }
 
                 // Move
                 p.x += p.vx;

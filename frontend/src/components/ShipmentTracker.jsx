@@ -4,6 +4,10 @@
  * Fetches real-time tracking data from the delhivery-track edge function
  * and displays a visual step-by-step timeline:
  *   Order Placed → Picked Up → In Transit → Out for Delivery → Delivered
+ *   (or → Cancelled / RTO when applicable)
+ *
+ * Also auto-syncs the order status in the database when Delhivery
+ * reports a terminal status (delivered, cancelled, RTO, shipped).
  *
  * @module components/ShipmentTracker
  */
@@ -19,14 +23,25 @@ const STAGES = [
     { key: "delivered", label: "Delivered", icon: "✅" },
 ];
 
+/** Terminal / negative statuses that break out of the normal flow */
+const NEGATIVE_STAGES = {
+    cancelled: { label: "Cancelled", icon: "❌" },
+    rto: { label: "Returned (RTO)", icon: "↩️" },
+};
+
 /**
  * Map Delhivery status codes / strings to our stage keys.
- * Delhivery uses StatusCode like "UD", "IT", "OT", "DL", "RT" etc.
+ * Delhivery uses StatusCode like "UD", "IT", "OT", "DL", "RT", "CN" etc.
  */
 function mapStatusToStage(status, statusCode) {
     const s = (status || "").toLowerCase();
     const c = (statusCode || "").toUpperCase();
 
+    // Terminal / negative states
+    if (c === "CN" || c === "X-PNP" || s.includes("cancel") || s.includes("cancelled") || s.includes("not picked")) return "cancelled";
+    if (c === "RT" || c === "RTO" || s.includes("rto") || s.includes("return")) return "rto";
+
+    // Normal flow
     if (c === "DL" || s.includes("delivered")) return "delivered";
     if (c === "OT" || s.includes("out for delivery")) return "out_for_delivery";
     if (c === "IT" || s.includes("in transit") || s.includes("dispatched")) return "in_transit";
@@ -34,7 +49,20 @@ function mapStatusToStage(status, statusCode) {
     return "placed";
 }
 
-export default function ShipmentTracker({ waybill, trackingUrl }) {
+/** Map Delhivery stage to our DB order status */
+function stageToOrderStatus(stage) {
+    switch (stage) {
+        case "delivered": return "delivered";
+        case "cancelled": return "cancelled";
+        case "rto": return "cancelled";
+        case "out_for_delivery": return "out_for_delivery";
+        case "in_transit": return "shipped";
+        case "picked_up": return "processing";
+        default: return null; // no change
+    }
+}
+
+export default function ShipmentTracker({ waybill, trackingUrl, orderId, onStatusSync }) {
     const [tracking, setTracking] = useState(null);
     const [loading, setLoading] = useState(false);
     const [error, setError] = useState("");
@@ -51,6 +79,8 @@ export default function ShipmentTracker({ waybill, trackingUrl }) {
                 { body: { waybill } }
             );
 
+
+
             if (fnErr) {
                 let detail = fnErr.message || "Tracking failed";
                 if (fnErr.context && typeof fnErr.context.json === "function") {
@@ -62,16 +92,70 @@ export default function ShipmentTracker({ waybill, trackingUrl }) {
                 throw new Error(detail);
             }
 
+            if (!result) {
+                throw new Error("No tracking data returned");
+            }
+
             setTracking(result);
+
+            // Auto-sync order status if we have an orderId (separate try/catch so it doesn't break tracking display)
+            // Only sync FORWARD — never downgrade status (e.g. shipped → processing)
+            if (orderId && result) {
+                try {
+                    const STATUS_RANK = { placed: 0, processing: 1, shipped: 2, out_for_delivery: 3, delivered: 4, cancelled: 99 };
+                    const stage = mapStatusToStage(result.status, result.status_code);
+                    const newDbStatus = stageToOrderStatus(stage);
+
+
+                    if (newDbStatus) {
+                        // Fetch current order status from DB to compare
+                        const { data: currentOrder } = await supabase
+                            .from("orders")
+                            .select("status")
+                            .eq("id", orderId)
+                            .single();
+
+                        const currentRank = STATUS_RANK[currentOrder?.status] ?? -1;
+                        const newRank = STATUS_RANK[newDbStatus] ?? -1;
+
+                        // Only update if moving forward or to a terminal state (cancelled)
+                        if (newRank > currentRank) {
+                            const updateFields = { status: newDbStatus };
+                            if (newDbStatus === "shipped") {
+                                updateFields.shipped_at = new Date().toISOString();
+                            }
+                            if (newDbStatus === "delivered") {
+                                updateFields.delivered_at = new Date().toISOString();
+                            }
+                            await supabase.from("orders").update(updateFields).eq("id", orderId);
+                            if (onStatusSync) onStatusSync(newDbStatus);
+
+                        } else {
+
+                        }
+                    }
+                } catch (syncErr) {
+
+                }
+            }
         } catch (err) {
+
             setError(err.message || "Failed to fetch tracking");
         } finally {
             setLoading(false);
         }
     };
 
+    // Auto-fetch on mount to sync status silently (runs once on page load)
     useEffect(() => {
-        if (expanded && !tracking && !loading) {
+        if (waybill && !tracking && !loading) {
+            fetchTracking();
+        }
+    }, [waybill]);
+
+    // Re-fetch when user manually expands (to get latest data)
+    useEffect(() => {
+        if (expanded && waybill) {
             fetchTracking();
         }
     }, [expanded]);
@@ -80,7 +164,8 @@ export default function ShipmentTracker({ waybill, trackingUrl }) {
         ? mapStatusToStage(tracking.status, tracking.status_code)
         : "placed";
 
-    const currentStageIndex = STAGES.findIndex((s) => s.key === currentStage);
+    const isNegative = currentStage === "cancelled" || currentStage === "rto";
+    const currentStageIndex = isNegative ? -1 : STAGES.findIndex((s) => s.key === currentStage);
 
     return (
         <div className="mt-4">
@@ -137,56 +222,77 @@ export default function ShipmentTracker({ waybill, trackingUrl }) {
                             )}
                         </div>
 
-                        {/* Stage progress bar */}
-                        <div className="relative">
-                            <div className="flex items-center justify-between mb-2">
-                                {STAGES.map((stage, i) => {
-                                    const isComplete = i <= currentStageIndex;
-                                    const isCurrent = i === currentStageIndex;
-                                    return (
-                                        <div key={stage.key} className="flex flex-col items-center flex-1">
-                                            <div className={`
-                        h-8 w-8 rounded-full flex items-center justify-center text-sm
-                        transition-all duration-300
-                        ${isCurrent
-                                                    ? "bg-[#1e3a5f] text-white ring-4 ring-[#1e3a5f]/15 scale-110"
-                                                    : isComplete
-                                                        ? "bg-emerald-500 text-white"
-                                                        : "bg-stone-100 text-stone-400"
-                                                }
-                      `}>
-                                                {isComplete && !isCurrent ? "✓" : stage.icon}
-                                            </div>
-                                            <span className={`mt-1.5 text-[10px] font-medium text-center leading-tight ${isCurrent ? "text-[#1e3a5f] font-semibold" : isComplete ? "text-emerald-600" : "text-stone-400"}`}>
-                                                {stage.label}
-                                            </span>
-                                        </div>
-                                    );
-                                })}
-                            </div>
-                            {/* Progress line */}
-                            <div className="absolute top-4 left-[10%] right-[10%] h-0.5 bg-stone-100 -z-10">
-                                <div
-                                    className="h-full bg-gradient-to-r from-emerald-400 to-[#1e3a5f] transition-all duration-500"
-                                    style={{ width: `${(currentStageIndex / (STAGES.length - 1)) * 100}%` }}
-                                />
-                            </div>
-                        </div>
-
-                        {/* Current status */}
-                        <div className="rounded-xl bg-[#1e3a5f]/5 p-3">
-                            <p className="text-sm font-semibold text-[#1e3a5f]">
-                                {tracking.status}
-                            </p>
-                            {tracking.status_location && (
-                                <p className="text-xs text-stone-500 mt-0.5">📍 {tracking.status_location}</p>
-                            )}
-                            {tracking.status_datetime && (
-                                <p className="text-xs text-stone-400 mt-0.5">
-                                    {new Date(tracking.status_datetime).toLocaleString("en-IN", { day: "numeric", month: "short", hour: "2-digit", minute: "2-digit" })}
+                        {/* Cancelled / RTO banner */}
+                        {isNegative && (
+                            <div className={`rounded-xl p-3 ${currentStage === "cancelled" ? "bg-red-50 border border-red-200" : "bg-orange-50 border border-orange-200"}`}>
+                                <p className={`text-sm font-semibold ${currentStage === "cancelled" ? "text-red-700" : "text-orange-700"}`}>
+                                    {NEGATIVE_STAGES[currentStage].icon} {NEGATIVE_STAGES[currentStage].label}
                                 </p>
-                            )}
-                        </div>
+                                <p className={`text-xs mt-0.5 ${currentStage === "cancelled" ? "text-red-600" : "text-orange-600"}`}>
+                                    {tracking.status}
+                                </p>
+                                {tracking.status_datetime && (
+                                    <p className="text-xs text-stone-400 mt-0.5">
+                                        {new Date(tracking.status_datetime).toLocaleString("en-IN", { day: "numeric", month: "short", hour: "2-digit", minute: "2-digit" })}
+                                    </p>
+                                )}
+                            </div>
+                        )}
+
+                        {/* Stage progress bar (only for normal flow) */}
+                        {!isNegative && (
+                            <div className="relative">
+                                <div className="flex items-center justify-between mb-2">
+                                    {STAGES.map((stage, i) => {
+                                        const isComplete = i <= currentStageIndex;
+                                        const isCurrent = i === currentStageIndex;
+                                        return (
+                                            <div key={stage.key} className="flex flex-col items-center flex-1">
+                                                <div className={`
+                            h-8 w-8 rounded-full flex items-center justify-center text-sm
+                            transition-all duration-300
+                            ${isCurrent
+                                                        ? "bg-[#1e3a5f] text-white ring-4 ring-[#1e3a5f]/15 scale-110"
+                                                        : isComplete
+                                                            ? "bg-emerald-500 text-white"
+                                                            : "bg-stone-100 text-stone-400"
+                                                    }
+                          `}>
+                                                    {isComplete && !isCurrent ? "✓" : stage.icon}
+                                                </div>
+                                                <span className={`mt-1.5 text-[10px] font-medium text-center leading-tight ${isCurrent ? "text-[#1e3a5f] font-semibold" : isComplete ? "text-emerald-600" : "text-stone-400"}`}>
+                                                    {stage.label}
+                                                </span>
+                                            </div>
+                                        );
+                                    })}
+                                </div>
+                                {/* Progress line */}
+                                <div className="absolute top-4 left-[10%] right-[10%] h-0.5 bg-stone-100 -z-10">
+                                    <div
+                                        className="h-full bg-gradient-to-r from-emerald-400 to-[#1e3a5f] transition-all duration-500"
+                                        style={{ width: `${(currentStageIndex / (STAGES.length - 1)) * 100}%` }}
+                                    />
+                                </div>
+                            </div>
+                        )}
+
+                        {/* Current status (for non-negative) */}
+                        {!isNegative && (
+                            <div className="rounded-xl bg-[#1e3a5f]/5 p-3">
+                                <p className="text-sm font-semibold text-[#1e3a5f]">
+                                    {tracking.status}
+                                </p>
+                                {tracking.status_location && (
+                                    <p className="text-xs text-stone-500 mt-0.5">📍 {tracking.status_location}</p>
+                                )}
+                                {tracking.status_datetime && (
+                                    <p className="text-xs text-stone-400 mt-0.5">
+                                        {new Date(tracking.status_datetime).toLocaleString("en-IN", { day: "numeric", month: "short", hour: "2-digit", minute: "2-digit" })}
+                                    </p>
+                                )}
+                            </div>
+                        )}
 
                         {/* Scan timeline */}
                         {tracking.scans?.length > 0 && (
@@ -211,18 +317,24 @@ export default function ShipmentTracker({ waybill, trackingUrl }) {
                             </details>
                         )}
 
-                        {/* External tracking link */}
-                        {trackingUrl && (
-                            <a
-                                href={trackingUrl}
-                                target="_blank"
-                                rel="noopener noreferrer"
-                                className="inline-flex items-center gap-1.5 text-xs font-medium text-[#1e3a5f] hover:underline"
-                            >
-                                Track on Delhivery website
-                                <svg className="h-3 w-3" viewBox="0 0 20 20" fill="currentColor"><path d="M11 3a1 1 0 100 2h2.586l-6.293 6.293a1 1 0 101.414 1.414L15 6.414V9a1 1 0 102 0V4a1 1 0 00-1-1h-5z" /><path d="M5 5a2 2 0 00-2 2v8a2 2 0 002 2h8a2 2 0 002-2v-3a1 1 0 10-2 0v3H5V7h3a1 1 0 000-2H5z" /></svg>
-                            </a>
-                        )}
+                        {/* Refresh + External tracking link */}
+                        <div className="flex items-center gap-4">
+                            <button onClick={fetchTracking} className="inline-flex items-center gap-1.5 text-xs font-medium text-stone-500 hover:text-[#1e3a5f] transition-colors">
+                                <svg className="h-3.5 w-3.5" viewBox="0 0 20 20" fill="currentColor"><path fillRule="evenodd" d="M4 2a1 1 0 011 1v2.101a7.002 7.002 0 0111.601 2.566 1 1 0 11-1.885.666A5.002 5.002 0 005.999 7H9a1 1 0 010 2H4a1 1 0 01-1-1V3a1 1 0 011-1zm.008 9.057a1 1 0 011.276.61A5.002 5.002 0 0014.001 13H11a1 1 0 110-2h5a1 1 0 011 1v5a1 1 0 11-2 0v-2.101a7.002 7.002 0 01-11.601-2.566 1 1 0 01.61-1.276z" clipRule="evenodd" /></svg>
+                                Refresh
+                            </button>
+                            {trackingUrl && (
+                                <a
+                                    href={trackingUrl}
+                                    target="_blank"
+                                    rel="noopener noreferrer"
+                                    className="inline-flex items-center gap-1.5 text-xs font-medium text-[#1e3a5f] hover:underline"
+                                >
+                                    Track on Delhivery website
+                                    <svg className="h-3 w-3" viewBox="0 0 20 20" fill="currentColor"><path d="M11 3a1 1 0 100 2h2.586l-6.293 6.293a1 1 0 101.414 1.414L15 6.414V9a1 1 0 102 0V4a1 1 0 00-1-1h-5z" /><path d="M5 5a2 2 0 00-2 2v8a2 2 0 002 2h8a2 2 0 002-2v-3a1 1 0 10-2 0v3H5V7h3a1 1 0 000-2H5z" /></svg>
+                                </a>
+                            )}
+                        </div>
                     </div>
                 )}
             </div>

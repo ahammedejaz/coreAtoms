@@ -87,6 +87,7 @@ export default function Checkout() {
   const [shippingBase, setShippingBase] = useState(0);
   const [freeShippingMin, setFreeShippingMin] = useState(0);
   const [gstPercent, setGstPercent] = useState(0);
+  const [warehouseState, setWarehouseState] = useState("Andhra Pradesh");
   const [pincodeShipping, setPincodeShipping] = useState(null); // from Delhivery API
   const [shippingLoading, setShippingLoading] = useState(false);
   const [shippingPinLabel, setShippingPinLabel] = useState(""); // pincode the rate was calculated for
@@ -179,6 +180,13 @@ export default function Checkout() {
         const n = Number(data?.value?.percentage);
         if (Number.isFinite(n) && n >= 0) setGstPercent(n);
       });
+    // Load warehouse state for GST split
+    supabase.from("app_settings").select("value")
+      .eq("key", "warehouse_address").maybeSingle()
+      .then(({ data }) => {
+        const st = data?.value?.state;
+        if (st && typeof st === "string") setWarehouseState(st.trim());
+      });
 
     // CoreCoins
     supabase.from("app_settings").select("value")
@@ -256,6 +264,12 @@ export default function Checkout() {
   const qualifiesFreeShipping = freeShippingMin > 0 && sub >= freeShippingMin;
   const shipping = qualifiesFreeShipping ? 0 : effectiveBase;
   const gstAmount = gstPercent > 0 ? Math.round((sub * gstPercent) / 100) : 0;
+
+  // GST split: CGST+SGST for intra-state (Andhra Pradesh), IGST for inter-state
+  const deliveryState = (form.state || "").trim();
+  const isIntraState = deliveryState.toLowerCase() === warehouseState.toLowerCase();
+  const halfGst = gstPercent / 2;  // e.g. 5% → 2.5%
+  const halfGstAmount = gstAmount > 0 ? Math.round(gstAmount / 2) : 0;
   const discountAmount = appliedCoupon ? Math.round((sub * appliedCoupon.percentage) / 100) : 0;
 
   // CoreCoins discount calculation
@@ -332,6 +346,9 @@ export default function Checkout() {
     showToast("Coupon removed", "info");
   };
 
+  // Track whether we've done the initial auto-select
+  const didAutoSelect = useRef(false);
+
   // Load saved addresses from Supabase
   const loadAddresses = useCallback(async () => {
     if (!user?.id) return;
@@ -343,8 +360,9 @@ export default function Checkout() {
       .order("created_at", { ascending: false });
     const list = data || [];
     setSavedAddresses(list);
-    // Auto-select the most recent saved address if any
-    if (list.length > 0 && selectedAddressId === null) {
+    // Auto-select the most recent saved address only on initial load
+    if (list.length > 0 && !didAutoSelect.current) {
+      didAutoSelect.current = true;
       setSelectedAddressId(list[0].id);
       const a = list[0];
       setForm({
@@ -358,7 +376,7 @@ export default function Checkout() {
       });
     }
     setLoadingAddresses(false);
-  }, [user?.id, selectedAddressId]);
+  }, [user?.id]);
 
   useEffect(() => { loadAddresses(); }, [loadAddresses]);
 
@@ -508,6 +526,9 @@ export default function Checkout() {
         shipping,
         gstAmount,
         gstPercent,
+        isIntraState,
+        halfGst,
+        halfGstAmount,
         discountAmount,
         coupon: appliedCoupon ? { code: appliedCoupon.code, percentage: appliedCoupon.percentage } : null,
         coinsUsed,
@@ -612,6 +633,9 @@ export default function Checkout() {
               shipping,
               gstAmount,
               gstPercent,
+              isIntraState,
+              halfGst,
+              halfGstAmount,
               discountAmount,
               coupon: appliedCoupon ? { code: appliedCoupon.code, percentage: appliedCoupon.percentage } : null,
               coinsUsed,
@@ -694,10 +718,23 @@ export default function Checkout() {
                 </div>
               )}
               {r.gstAmount > 0 && (
-                <div className="flex justify-between text-sm">
-                  <span className="text-stone-500">GST ({r.gstPercent}%)</span>
-                  <span className="text-stone-800">₹{r.gstAmount.toLocaleString('en-IN')}</span>
-                </div>
+                r.isIntraState ? (
+                  <>
+                    <div className="flex justify-between text-sm">
+                      <span className="text-stone-500">CGST ({r.halfGst}%)</span>
+                      <span className="text-stone-800">₹{r.halfGstAmount.toLocaleString('en-IN')}</span>
+                    </div>
+                    <div className="flex justify-between text-sm">
+                      <span className="text-stone-500">SGST ({r.halfGst}%)</span>
+                      <span className="text-stone-800">₹{(r.gstAmount - r.halfGstAmount).toLocaleString('en-IN')}</span>
+                    </div>
+                  </>
+                ) : (
+                  <div className="flex justify-between text-sm">
+                    <span className="text-stone-500">IGST ({r.gstPercent}%)</span>
+                    <span className="text-stone-800">₹{r.gstAmount.toLocaleString('en-IN')}</span>
+                  </div>
+                )
               )}
               {r.coupon && r.discountAmount > 0 && (
                 <div className="flex justify-between text-sm">
@@ -797,19 +834,23 @@ export default function Checkout() {
                     <p className="text-xs text-stone-500">{addr.phone}</p>
                   </div>
                   {/* Edit & Delete buttons */}
-                  <div className="flex items-center gap-2 shrink-0" onClick={(e) => e.stopPropagation()}>
+                  <div className="flex items-center gap-1.5 shrink-0" onClick={(e) => e.stopPropagation()}>
                     <button type="button" onClick={() => startEditAddress(addr)}
-                      className="text-xs text-stone-400 hover:text-[#1e3a5f] transition-colors" title="Edit address">✎</button>
+                      className="h-7 w-7 flex items-center justify-center rounded-lg bg-blue-50 text-blue-600 hover:bg-blue-100 hover:text-blue-700 transition-all active:scale-95" title="Edit address">
+                      <svg className="h-3.5 w-3.5" viewBox="0 0 20 20" fill="currentColor"><path d="M13.586 3.586a2 2 0 112.828 2.828l-.793.793-2.828-2.828.793-.793zM11.379 5.793L3 14.172V17h2.828l8.38-8.379-2.83-2.828z" /></svg>
+                    </button>
                     {pendingDeleteId === addr.id ? (
-                      <>
+                      <div className="flex items-center gap-1">
                         <button type="button" onClick={() => confirmDeleteAddress(addr.id)}
-                          className="text-xs font-semibold text-red-600 hover:text-red-700 transition-colors">Remove</button>
+                          className="h-7 px-2.5 flex items-center justify-center rounded-lg bg-red-500 text-white text-[11px] font-semibold hover:bg-red-600 transition-all active:scale-95">Remove</button>
                         <button type="button" onClick={() => setPendingDeleteId(null)}
-                          className="text-xs text-stone-400 hover:text-stone-600 transition-colors">Cancel</button>
-                      </>
+                          className="h-7 px-2.5 flex items-center justify-center rounded-lg bg-stone-100 text-stone-500 text-[11px] font-semibold hover:bg-stone-200 transition-all active:scale-95">Cancel</button>
+                      </div>
                     ) : (
                       <button type="button" onClick={() => setPendingDeleteId(addr.id)}
-                        className="text-xs text-stone-300 hover:text-red-400 transition-colors" title="Delete address">✕</button>
+                        className="h-7 w-7 flex items-center justify-center rounded-lg bg-red-50 text-red-400 hover:bg-red-100 hover:text-red-600 transition-all active:scale-95" title="Delete address">
+                        <svg className="h-3.5 w-3.5" viewBox="0 0 20 20" fill="currentColor"><path fillRule="evenodd" d="M9 2a1 1 0 00-.894.553L7.382 4H4a1 1 0 000 2v10a2 2 0 002 2h8a2 2 0 002-2V6a1 1 0 100-2h-3.382l-.724-1.447A1 1 0 0011 2H9zM7 8a1 1 0 012 0v6a1 1 0 11-2 0V8zm5-1a1 1 0 00-1 1v6a1 1 0 102 0V8a1 1 0 00-1-1z" clipRule="evenodd" /></svg>
+                      </button>
                     )}
                   </div>
                 </div>
@@ -863,7 +904,45 @@ export default function Checkout() {
                 </div>
                 <div>
                   <label className="text-xs font-semibold text-stone-500 block mb-1.5">State *</label>
-                  <input value={form.state} onChange={(e) => setForm(a => ({ ...a, state: e.target.value }))} placeholder="State" className={inputCls} />
+                  <select value={form.state} onChange={(e) => setForm(a => ({ ...a, state: e.target.value }))} className={inputCls}>
+                    <option value="">Select state</option>
+                    <option value="Andhra Pradesh">Andhra Pradesh</option>
+                    <option value="Arunachal Pradesh">Arunachal Pradesh</option>
+                    <option value="Assam">Assam</option>
+                    <option value="Bihar">Bihar</option>
+                    <option value="Chhattisgarh">Chhattisgarh</option>
+                    <option value="Goa">Goa</option>
+                    <option value="Gujarat">Gujarat</option>
+                    <option value="Haryana">Haryana</option>
+                    <option value="Himachal Pradesh">Himachal Pradesh</option>
+                    <option value="Jharkhand">Jharkhand</option>
+                    <option value="Karnataka">Karnataka</option>
+                    <option value="Kerala">Kerala</option>
+                    <option value="Madhya Pradesh">Madhya Pradesh</option>
+                    <option value="Maharashtra">Maharashtra</option>
+                    <option value="Manipur">Manipur</option>
+                    <option value="Meghalaya">Meghalaya</option>
+                    <option value="Mizoram">Mizoram</option>
+                    <option value="Nagaland">Nagaland</option>
+                    <option value="Odisha">Odisha</option>
+                    <option value="Punjab">Punjab</option>
+                    <option value="Rajasthan">Rajasthan</option>
+                    <option value="Sikkim">Sikkim</option>
+                    <option value="Tamil Nadu">Tamil Nadu</option>
+                    <option value="Telangana">Telangana</option>
+                    <option value="Tripura">Tripura</option>
+                    <option value="Uttar Pradesh">Uttar Pradesh</option>
+                    <option value="Uttarakhand">Uttarakhand</option>
+                    <option value="West Bengal">West Bengal</option>
+                    <option value="Andaman and Nicobar Islands">Andaman and Nicobar Islands</option>
+                    <option value="Chandigarh">Chandigarh</option>
+                    <option value="Dadra and Nagar Haveli and Daman and Diu">Dadra and Nagar Haveli and Daman and Diu</option>
+                    <option value="Delhi">Delhi</option>
+                    <option value="Jammu and Kashmir">Jammu and Kashmir</option>
+                    <option value="Ladakh">Ladakh</option>
+                    <option value="Lakshadweep">Lakshadweep</option>
+                    <option value="Puducherry">Puducherry</option>
+                  </select>
                 </div>
                 <div>
                   <label className="text-xs font-semibold text-stone-500 block mb-1.5">Pincode *</label>
@@ -969,10 +1048,23 @@ export default function Checkout() {
                 </div>
               )}
               {gstPercent > 0 && (
-                <div className="flex justify-between text-stone-600">
-                  <span>GST ({gstPercent}%)</span>
-                  <span className="font-semibold text-stone-900">{money(gstAmount)}</span>
-                </div>
+                isIntraState ? (
+                  <>
+                    <div className="flex justify-between text-stone-600">
+                      <span>CGST ({halfGst}%)</span>
+                      <span className="font-semibold text-stone-900">{money(halfGstAmount)}</span>
+                    </div>
+                    <div className="flex justify-between text-stone-600">
+                      <span>SGST ({halfGst}%)</span>
+                      <span className="font-semibold text-stone-900">{money(gstAmount - halfGstAmount)}</span>
+                    </div>
+                  </>
+                ) : (
+                  <div className="flex justify-between text-stone-600">
+                    <span>IGST ({gstPercent}%)</span>
+                    <span className="font-semibold text-stone-900">{money(gstAmount)}</span>
+                  </div>
+                )
               )}
               {appliedCoupon && (
                 <div className="flex justify-between text-emerald-600">

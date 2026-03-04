@@ -263,6 +263,7 @@ const STATUS_STYLES = {
   placed: "bg-blue-50 text-blue-700 border border-blue-200",
   processing: "bg-amber-50 text-amber-700 border border-amber-200",
   shipped: "bg-violet-50 text-violet-700 border border-violet-200",
+  out_for_delivery: "bg-indigo-50 text-indigo-700 border border-indigo-200",
   delivered: "bg-emerald-50 text-emerald-700 border border-emerald-200",
   cancelled: "bg-red-50 text-red-600 border border-red-200",
   payment_failed: "bg-red-100 text-red-700 border border-red-300",
@@ -272,6 +273,7 @@ const STATUS_LABELS = {
   placed: "Placed",
   processing: "Processing",
   shipped: "Shipped",
+  out_for_delivery: "Out for Delivery",
   delivered: "Delivered",
   cancelled: "Cancelled",
   payment_failed: "Payment Failed",
@@ -296,6 +298,7 @@ export default function MyOrders() {
   const [replacementWindowMinutes, setReplacementWindowMinutes] = useState(0);
   const [replacementMap, setReplacementMap] = useState({});  // order_id → replacement
   const [openReplacementForm, setOpenReplacementForm] = useState(null); // order_id or null
+  const [warehouseState, setWarehouseState] = useState("Andhra Pradesh");
 
   // CoreCoins state
   const [corecoinsEnabled, setCorecoinsEnabled] = useState(false);
@@ -308,7 +311,7 @@ export default function MyOrders() {
     setLoading(true);
     const { data } = await supabase
       .from("orders")
-      .select("id,status,created_at,total_amount_inr,total_items,payment_method,razorpay_payment_id,delhivery_waybill,courier_name,tracking_url,shipped_at,delivered_at,coins_credited,coins_used,coins_credit_after,shipping_amount,gst_amount,discount_amount,coupon_code,order_items(id,product_id,product_name,qty,unit_price_inr,line_total_inr,image_url)")
+      .select("id,status,created_at,total_amount_inr,total_items,payment_method,razorpay_payment_id,delhivery_waybill,courier_name,tracking_url,shipped_at,delivered_at,coins_credited,coins_used,coins_credit_after,shipping_amount,gst_amount,discount_amount,coupon_code,shipping_address,order_items(id,product_id,product_name,qty,unit_price_inr,line_total_inr,image_url)")
       .eq("user_id", userId)
       .order("created_at", { ascending: false });
     setOrders(data || []);
@@ -322,6 +325,12 @@ export default function MyOrders() {
     setReplacementsEnabled(settingData?.value?.enabled === true);
     if (settingData?.value?.window_days) setReplacementWindowDays(settingData.value.window_days);
     if (settingData?.value?.window_minutes != null) setReplacementWindowMinutes(Number(settingData.value.window_minutes) || 0);
+
+    // Fetch warehouse state for GST split display
+    const { data: whData } = await supabase
+      .from("app_settings").select("value")
+      .eq("key", "warehouse_address").maybeSingle();
+    if (whData?.value?.state) setWarehouseState(whData.value.state.trim());
 
     // Fetch existing replacement requests for this user
     const { data: repData } = await supabase
@@ -566,7 +575,7 @@ export default function MyOrders() {
                 {/* Delhivery tracking — shown when waybill exists */}
                 {o.delhivery_waybill && (
                   <div className="border-t border-[#E8E4DE] pt-3">
-                    <ShipmentTracker waybill={o.delhivery_waybill} trackingUrl={o.tracking_url} />
+                    <ShipmentTracker waybill={o.delhivery_waybill} trackingUrl={o.tracking_url} orderId={o.id} onStatusSync={(newStatus) => setOrders(prev => prev.map(ord => ord.id === o.id ? { ...ord, status: newStatus } : ord))} />
                   </div>
                 )}
 
@@ -616,12 +625,28 @@ export default function MyOrders() {
                                   <span className="text-emerald-600 font-medium">Free</span>
                                 </div>
                               )}
-                              {gstAmt > 0 && (
-                                <div className="flex justify-between text-xs">
-                                  <span className="text-stone-400">GST</span>
-                                  <span className="text-stone-600">{money(gstAmt)}</span>
-                                </div>
-                              )}
+                              {gstAmt > 0 && (() => {
+                                const orderState = (o.shipping_address?.state || "").trim();
+                                const isIntra = orderState.toLowerCase() === warehouseState.toLowerCase();
+                                const halfAmt = Math.round(gstAmt / 2);
+                                return isIntra ? (
+                                  <>
+                                    <div className="flex justify-between text-xs">
+                                      <span className="text-stone-400">CGST</span>
+                                      <span className="text-stone-600">{money(halfAmt)}</span>
+                                    </div>
+                                    <div className="flex justify-between text-xs">
+                                      <span className="text-stone-400">SGST</span>
+                                      <span className="text-stone-600">{money(gstAmt - halfAmt)}</span>
+                                    </div>
+                                  </>
+                                ) : (
+                                  <div className="flex justify-between text-xs">
+                                    <span className="text-stone-400">IGST</span>
+                                    <span className="text-stone-600">{money(gstAmt)}</span>
+                                  </div>
+                                );
+                              })()}
                             </>
                           ) : derivedExtra !== null && derivedExtra > 0 ? (
                             <div className="flex justify-between text-xs">

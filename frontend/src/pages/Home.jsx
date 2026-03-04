@@ -201,7 +201,7 @@ export default function Home() {
   return (
     <div className="space-y-24">
       <SEO
-        title="Core Atoms | Premium Nutraceuticals"
+        title="Core Atoms | Nutraceuticals"
         description="Modern nutraceuticals designed for real routines. Clean formulas, structured stacks, COD available across India."
       />
 

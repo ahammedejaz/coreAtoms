@@ -79,7 +79,7 @@ export default function ShipmentTracker({ waybill, trackingUrl, orderId, onStatu
                 { body: { waybill } }
             );
 
-            console.log("[ShipmentTracker] Edge Function response:", { result, fnErr });
+
 
             if (fnErr) {
                 let detail = fnErr.message || "Tracking failed";
@@ -105,7 +105,7 @@ export default function ShipmentTracker({ waybill, trackingUrl, orderId, onStatu
                     const STATUS_RANK = { placed: 0, processing: 1, shipped: 2, out_for_delivery: 3, delivered: 4, cancelled: 99 };
                     const stage = mapStatusToStage(result.status, result.status_code);
                     const newDbStatus = stageToOrderStatus(stage);
-                    console.log("[ShipmentTracker] Auto-sync:", { stage, newDbStatus, orderId });
+
 
                     if (newDbStatus) {
                         // Fetch current order status from DB to compare
@@ -129,25 +129,33 @@ export default function ShipmentTracker({ waybill, trackingUrl, orderId, onStatu
                             }
                             await supabase.from("orders").update(updateFields).eq("id", orderId);
                             if (onStatusSync) onStatusSync(newDbStatus);
-                            console.log("[ShipmentTracker] Status synced:", currentOrder?.status, "→", newDbStatus);
+
                         } else {
-                            console.log("[ShipmentTracker] Skipped sync (would downgrade):", currentOrder?.status, "→", newDbStatus);
+
                         }
                     }
                 } catch (syncErr) {
-                    console.warn("[ShipmentTracker] Auto-sync failed (non-critical):", syncErr);
+
                 }
             }
         } catch (err) {
-            console.error("[ShipmentTracker] Fetch error:", err);
+
             setError(err.message || "Failed to fetch tracking");
         } finally {
             setLoading(false);
         }
     };
 
+    // Auto-fetch on mount to sync status silently (runs once on page load)
     useEffect(() => {
-        if (expanded && !tracking && !loading) {
+        if (waybill && !tracking && !loading) {
+            fetchTracking();
+        }
+    }, [waybill]);
+
+    // Re-fetch when user manually expands (to get latest data)
+    useEffect(() => {
+        if (expanded && waybill) {
             fetchTracking();
         }
     }, [expanded]);

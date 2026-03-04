@@ -1,3 +1,14 @@
+/**
+ * AdminReviews.jsx — Admin review moderation page.
+ *
+ * Displays all product reviews with search (by product, customer, or text),
+ * pagination, and permanent deletion. Reviews are enriched with profile
+ * data (full_name, email) for display.
+ *
+ * Ctrl+S shortcut refreshes the review list from the database.
+ *
+ * @module pages/admin/AdminReviews
+ */
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { supabase } from "../../services/supabase/client";
 import { SkeletonAdminList } from "../../components/Skeleton";

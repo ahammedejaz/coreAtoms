@@ -25,6 +25,7 @@ import MainLayout from "../layouts/MainLayout";
 
 import Home from "../pages/Home";
 import Login from "../pages/Login";
+import ForgotPassword from "../pages/ForgotPassword";
 import NotFound from "../pages/NotFound";
 import ErrorPage from "../pages/ErrorPage";
 
@@ -34,6 +35,7 @@ const Cart = React.lazy(() => import("../pages/Cart"));
 const ProductDetail = React.lazy(() => import("../pages/ProductDetail"));
 const MyOrders = React.lazy(() => import("../pages/MyOrders"));
 const Checkout = React.lazy(() => import("../pages/Checkout"));
+const ResetPassword = React.lazy(() => import("../pages/ResetPassword"));
 const AdminDashboard = React.lazy(() => import("../pages/AdminDashboard.jsx"));
 
 import ProtectedRoute from "./ProtectedRoute";
@@ -61,6 +63,8 @@ export const router = createBrowserRouter([
       { path: "cart", element: <Cart /> },
       { path: "product/:id", element: <ProductDetail /> },
       { path: "login", element: <Login /> },
+      { path: "forgot-password", element: <ForgotPassword /> },
+      { path: "reset-password", element: <Suspense fallback={<div className="py-20 text-center text-sm text-stone-400 animate-pulse">Loading…</div>}><ResetPassword /></Suspense> },
 
       {
         path: "orders",

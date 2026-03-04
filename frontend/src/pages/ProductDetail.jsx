@@ -1,9 +1,14 @@
 /**
  * ProductDetail.jsx — Single-product page with variant selection.
  *
- * Fetches one product by URL param `:id`, shows image gallery with
- * thumbnails, variant picker, quantity stepper, stock/order-limit
- * warnings, highlight pills, about section, and customer reviews.
+ * Fetches one product by URL param `:id` and `gst_percentage` from
+ * `app_settings` in parallel. Shows image gallery with thumbnails,
+ * variant picker, quantity stepper, stock/order-limit warnings,
+ * highlight pills, about section, and customer reviews.
+ *
+ * The price label reads "Excl. GST & Shipping" when GST > 0,
+ * or "Excl. Shipping" when GST is disabled.
+ *
  * Uses composite cart keys (`productId_variantId`) for variant items.
  *
  * @module pages/ProductDetail
@@ -12,7 +17,9 @@ import { useEffect, useMemo, useState } from "react";
 import { Link, useNavigate, useParams } from "react-router-dom";
 import { useCart } from "../context/CartContext";
 import { fetchProductById } from "../services/products";
+import { supabase } from "../services/supabase/client";
 import SEO from "../components/SEO";
+import PincodeChecker from "../components/PincodeChecker";
 import { SkeletonProductDetail } from "../components/Skeleton";
 
 import { money } from "../utils/format";
@@ -31,6 +38,7 @@ export default function ProductDetail() {
   const [err, setErr] = useState("");
   const [selectedVariant, setSelectedVariant] = useState(null);
   const [activeImg, setActiveImg] = useState(0);
+  const [gstPercent, setGstPercent] = useState(0);
 
   useEffect(() => {
     let alive = true;
@@ -38,10 +46,14 @@ export default function ProductDetail() {
       try {
         setLoading(true);
         setErr("");
-        const p = await fetchProductById(id);
+        const [p, gstRes] = await Promise.all([
+          fetchProductById(id),
+          supabase.from("app_settings").select("value").eq("key", "gst_percentage").maybeSingle(),
+        ]);
         if (alive) {
           setProduct(p);
           setActiveImg(0);
+          setGstPercent(Number(gstRes?.data?.value?.percentage ?? 0));
           if (p?.variants?.length > 0) {
             const firstAvail = p.variants.find((v) => v.stockQty > 0) || p.variants[0];
             setSelectedVariant(firstAvail);
@@ -141,16 +153,31 @@ export default function ProductDetail() {
         <div className="grid gap-8 lg:grid-cols-2 items-start">
 
           {/* ══ LEFT — Image Gallery ══ */}
-          <div className="space-y-3">
-            {/* Main image */}
+          <div className="space-y-3 lg:sticky lg:top-24 lg:self-start">
+            {/* Main image with hover zoom */}
             <div
-              className="rounded-2xl border border-[#E8E4DE] bg-white overflow-hidden"
+              className="rounded-2xl border border-[#E8E4DE] bg-white overflow-hidden cursor-zoom-in"
               style={{ height: 440 }}
+              onMouseMove={(e) => {
+                const img = e.currentTarget.querySelector("img");
+                if (!img) return;
+                const rect = e.currentTarget.getBoundingClientRect();
+                const x = ((e.clientX - rect.left) / rect.width) * 100;
+                const y = ((e.clientY - rect.top) / rect.height) * 100;
+                img.style.transformOrigin = `${x}% ${y}%`;
+                img.style.transform = "scale(2)";
+              }}
+              onMouseLeave={(e) => {
+                const img = e.currentTarget.querySelector("img");
+                if (!img) return;
+                img.style.transformOrigin = "center center";
+                img.style.transform = "scale(1)";
+              }}
             >
               <img
                 src={images[activeImg] || product.image}
                 alt={product.name}
-                className="h-full w-full object-cover"
+                className="h-full w-full object-cover transition-transform duration-300 ease-out"
                 loading="lazy"
                 sizes="(max-width: 1024px) 100vw, 50vw"
               />
@@ -259,7 +286,9 @@ export default function ProductDetail() {
                 <div className="text-3xl font-semibold tracking-tight text-stone-900">
                   {money(activePrice)}
                 </div>
-                <p className="text-xs text-stone-400 mt-1">Cash on Delivery · India only</p>
+                <p className="text-xs text-stone-400 mt-1">
+                  {Number(gstPercent) > 0 ? "Excl. GST & Shipping" : "Excl. Shipping"}
+                </p>
               </div>
               <span className={`inline-flex items-center gap-1.5 text-xs font-semibold px-3 py-1.5 rounded-full ${activeStock > 0
                 ? "bg-emerald-50 border border-emerald-200 text-emerald-700"
@@ -269,6 +298,9 @@ export default function ProductDetail() {
                 {activeStock > 0 ? "In stock" : "Out of stock"}
               </span>
             </div>
+
+            {/* ── Pincode Delivery Check ── */}
+            <PincodeChecker />
 
             {/* ── Qty stepper + CTA ── */}
             <div className="flex flex-wrap items-center gap-3">

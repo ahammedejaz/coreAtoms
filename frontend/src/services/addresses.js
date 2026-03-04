@@ -15,7 +15,7 @@ import { supabase } from "./supabase/client";
  */
 export async function fetchUserAddresses(userId) {
     const { data, error } = await supabase
-        .from("addresses")
+        .from("user_addresses")
         .select("*")
         .eq("user_id", userId)
         .order("created_at", { ascending: false });
@@ -32,7 +32,7 @@ export async function fetchUserAddresses(userId) {
  */
 export async function createAddress(userId, address) {
     const { data, error } = await supabase
-        .from("addresses")
+        .from("user_addresses")
         .insert([{
             user_id: userId,
             full_name: address.fullName?.trim(),
@@ -57,7 +57,7 @@ export async function createAddress(userId, address) {
  */
 export async function deleteAddress(addressId, userId) {
     const { error } = await supabase
-        .from("addresses")
+        .from("user_addresses")
         .delete()
         .eq("id", addressId)
         .eq("user_id", userId);

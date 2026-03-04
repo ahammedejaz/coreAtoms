@@ -9,6 +9,7 @@
 import { Link, useNavigate } from "react-router-dom";
 import { useCart } from "../context/CartContext";
 import { useAuth } from "../context/AuthContext";
+import { useToast } from "../context/ToastContext";
 import { supabase } from "../services/supabase/client";
 import SEO from "../components/SEO";
 import ScrollReveal from "../components/ScrollReveal";
@@ -19,19 +20,41 @@ import { money } from "../utils/format";
 export default function Cart() {
   const navigate = useNavigate();
   const { isAuthenticated } = useAuth();
+  const { showToast } = useToast();
   const { items, totalItems, subtotal, updateQty, removeItem, clear } = useCart();
-  const [shipping, setShipping] = useState(0);
+  const [shippingBase, setShippingBase] = useState(0);
+  const [freeShippingMin, setFreeShippingMin] = useState(0);
+  const [gstPercent, setGstPercent] = useState(0);
 
   useEffect(() => {
     supabase.from("app_settings").select("value")
       .eq("key", "shipping_amount").maybeSingle()
       .then(({ data }) => {
         const n = Number(data?.value?.amount);
-        if (Number.isFinite(n) && n >= 0) setShipping(n);
+        if (Number.isFinite(n) && n >= 0) setShippingBase(n);
+      });
+    supabase.from("app_settings").select("value")
+      .eq("key", "free_shipping_min").maybeSingle()
+      .then(({ data }) => {
+        const n = Number(data?.value?.amount);
+        if (Number.isFinite(n) && n >= 0) setFreeShippingMin(n);
+      });
+    supabase.from("app_settings").select("value")
+      .eq("key", "gst_percentage").maybeSingle()
+      .then(({ data }) => {
+        const n = Number(data?.value?.percentage);
+        if (Number.isFinite(n) && n >= 0) setGstPercent(n);
       });
   }, []);
 
-  const total = Number(subtotal || 0) + shipping;
+  const sub = Number(subtotal || 0);
+  const qualifiesFreeShipping = freeShippingMin > 0 && sub >= freeShippingMin;
+  // If admin flat rate = 0, shipping will be calculated by Delhivery at checkout
+  const shippingTBD = shippingBase === 0 && !qualifiesFreeShipping;
+  const shipping = qualifiesFreeShipping ? 0 : shippingBase;
+  const gstAmount = gstPercent > 0 ? Math.round((sub * gstPercent) / 100) : 0;
+  const total = sub + shipping + gstAmount;
+  const amountToFreeShipping = freeShippingMin > 0 && !qualifiesFreeShipping ? freeShippingMin - sub : 0;
 
   return (
     <div>
@@ -118,7 +141,32 @@ export default function Cart() {
                   </div>
                   <div className="flex justify-between text-stone-600">
                     <span>Shipping</span>
-                    <span className={`font-semibold ${shipping === 0 ? "text-emerald-600" : "text-stone-900"}`}>{shipping === 0 ? "Free" : money(shipping)}</span>
+                    {qualifiesFreeShipping ? (
+                      <span className="font-semibold text-emerald-600">Free</span>
+                    ) : shippingTBD ? (
+                      <span className="font-semibold text-stone-400 text-xs">Calculated at checkout</span>
+                    ) : (
+                      <span className="font-semibold text-stone-900">{money(shipping)}</span>
+                    )}
+                  </div>
+                  {amountToFreeShipping > 0 && (
+                    <div className="rounded-lg bg-amber-50 border border-amber-200 px-3 py-2 text-xs text-amber-700">
+                      🚚 Add {money(amountToFreeShipping)} more for <span className="font-semibold">free shipping!</span>
+                    </div>
+                  )}
+                  {qualifiesFreeShipping && (
+                    <div className="rounded-lg bg-emerald-50 border border-emerald-200 px-3 py-2 text-xs text-emerald-700">
+                      ✅ You qualify for <span className="font-semibold">free shipping!</span>
+                    </div>
+                  )}
+                  {gstPercent > 0 && (
+                    <div className="flex justify-between text-stone-600">
+                      <span>GST ({gstPercent}%)</span>
+                      <span className="font-semibold text-stone-900">{money(gstAmount)}</span>
+                    </div>
+                  )}
+                  <div className="rounded-lg bg-blue-50 border border-blue-100 px-3 py-2 text-xs text-blue-700">
+                    🎟️ Coupon codes &amp; loyalty discounts are applied at checkout.
                   </div>
                 </div>
 
@@ -126,12 +174,22 @@ export default function Cart() {
 
                 <div className="flex justify-between mb-6">
                   <span className="font-semibold text-stone-900">Total</span>
-                  <span className="text-xl font-semibold text-stone-900">{money(total)}</span>
+                  <div className="text-right">
+                    <span className="text-xl font-semibold text-stone-900">{money(total)}</span>
+                    {shippingTBD && <p className="text-[11px] text-stone-400">+ shipping</p>}
+                  </div>
                 </div>
 
                 <button
                   type="button"
-                  onClick={() => { if (!isAuthenticated) navigate("/login"); else navigate("/checkout"); }}
+                  onClick={() => {
+                    if (!isAuthenticated) {
+                      showToast("Please sign in to checkout", "info");
+                      navigate("/login", { state: { from: "/checkout" } });
+                    } else {
+                      navigate("/checkout");
+                    }
+                  }}
                   className="btn-primary w-full py-3 text-[14px]"
                 >
                   Proceed to checkout

@@ -5,6 +5,9 @@
  * grid. Includes a search bar, category filter dropdown, skeleton loading
  * states, and an inline toast notification on add-to-cart.
  *
+ * Also fetches `gst_percentage` from `app_settings` to conditionally show
+ * "Excl. GST & Shipping" or "Excl. Shipping" on product cards.
+ *
  * Also exports the `ProductCard` and `Stars` sub-components used by `Home.jsx`.
  *
  * @module pages/Shop
@@ -13,6 +16,7 @@ import React, { useEffect, useMemo, useRef, useState } from "react";
 import { Link, useSearchParams } from "react-router-dom";
 import { fetchProducts } from "../services/products";
 import { useCart } from "../context/CartContext";
+import { supabase } from "../services/supabase/client";
 import useDebounce from "../hooks/useDebounce";
 import SEO from "../components/SEO";
 import { useToast } from "../context/ToastContext";
@@ -32,7 +36,7 @@ export function Stars({ rating, count }) {
   );
 }
 
-export const ProductCard = React.memo(function ProductCard({ p, onAdd, justAdded }) {
+export const ProductCard = React.memo(function ProductCard({ p, onAdd, justAdded, gstPercent }) {
   const out = (p.stockQty ?? 0) <= 0;
   const desc = String(p.description || "").replace(/\s+/g, " ").trim().slice(0, 110) ||
     "Premium daily supplement with clean ingredients and reliable quality.";
@@ -106,6 +110,9 @@ export const ProductCard = React.memo(function ProductCard({ p, onAdd, justAdded
               </span>
               <span className="text-lg font-semibold text-stone-900">
                 {p.variants && p.variants.length > 0 ? "From " : ""}{money(p.price)}
+              </span>
+              <span className="text-[10px] text-stone-400 block mt-0.5">
+                {Number(gstPercent) > 0 ? "Excl. GST & Shipping" : "Excl. Shipping"}
               </span>
             </div>
             <Link to={`/product/${p.id}`} className="text-[12px] font-semibold text-[#1e3a5f] hover:underline underline-offset-2">
@@ -185,13 +192,26 @@ export default function Shop() {
   const debouncedQuery = useDebounce(query, 300);
 
   const [justAddedId, setJustAddedId] = useState(null);
+  const [gstPercent, setGstPercent] = useState(0);
 
   useEffect(() => {
     let alive = true;
     (async () => {
-      try { setLoading(true); const list = await fetchProducts(); if (alive) setProducts(list); }
-      catch (e) { if (alive) setErr(e?.message || "Failed to load"); }
-      finally { if (alive) setLoading(false); }
+      try {
+        setLoading(true);
+        const [list, settingsRes] = await Promise.all([
+          fetchProducts(),
+          supabase.from("app_settings").select("value").eq("key", "gst_percentage").maybeSingle(),
+        ]);
+        if (alive) {
+          setProducts(list);
+          setGstPercent(Number(settingsRes?.data?.value?.percentage ?? 0));
+        }
+      } catch (e) {
+        if (alive) setErr(e?.message || "Failed to load");
+      } finally {
+        if (alive) setLoading(false);
+      }
     })();
     return () => { alive = false; };
   }, []);
@@ -323,21 +343,19 @@ export default function Shop() {
         <div className="card p-6 mb-6 text-sm text-red-600">{err}</div>
       )}
 
-      <ScrollReveal delay={100}>
-        {active.length === 0 ? (
-          <div className="card p-12 text-center">
-            <p className="text-base font-semibold text-stone-900">No products found</p>
-            <p className="mt-1 text-sm text-stone-500">Try a different search or category.</p>
-            <button onClick={() => { setCategory("All"); setQuery(""); }} className="btn-ghost mt-5">Reset filters</button>
-          </div>
-        ) : (
-          <div className="grid gap-5 sm:grid-cols-2 lg:grid-cols-3">
-            {active.map((p) => (
-              <ProductCard key={p.id} p={p} onAdd={handleAdd} justAdded={justAddedId === p.id} />
-            ))}
-          </div>
-        )}
-      </ScrollReveal>
+      {active.length === 0 ? (
+        <div className="card p-12 text-center">
+          <p className="text-base font-semibold text-stone-900">No products found</p>
+          <p className="mt-1 text-sm text-stone-500">Try a different search or category.</p>
+          <button onClick={() => { setCategory("All"); setQuery(""); }} className="btn-ghost mt-5">Reset filters</button>
+        </div>
+      ) : (
+        <div className="grid gap-5 sm:grid-cols-2 lg:grid-cols-3">
+          {active.map((p) => (
+            <ProductCard key={p.id} p={p} onAdd={handleAdd} justAdded={justAddedId === p.id} gstPercent={gstPercent} />
+          ))}
+        </div>
+      )}
 
     </div>
   );

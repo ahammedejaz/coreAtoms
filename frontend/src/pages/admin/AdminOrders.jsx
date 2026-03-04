@@ -1,3 +1,23 @@
+/**
+ * AdminOrders.jsx — Admin order management panel.
+ *
+ * Fetches all orders with full detail (order_items, shipping_amount, gst_amount,
+ * coins_used, Delhivery waybill, payment info) and renders a searchable,
+ * filterable, paginated table with expandable detail cards.
+ *
+ * Features:
+ *  - Status pipeline: placed → processing → shipped → delivered / cancelled
+ *  - Payment Breakdown card: items subtotal, shipping, GST, CoreCoins discount, total
+ *    (reads stored shipping_amount / gst_amount; falls back to derivation for old orders)
+ *  - Delhivery shipping: create shipment → assign waybill + tracking URL on order
+ *  - Live Delhivery tracking (ShipmentTracker component inside detail card)
+ *  - CSV export of currently-filtered orders (keyboard shortcut: Ctrl+S)
+ *  - Bulk status update for selected orders
+ *  - WhatsApp click-to-chat notifications logged to wa_notifications table
+ *  - Handles 'payment_failed' status orders (visible, non-actionable)
+ *
+ * @module pages/admin/AdminOrders
+ */
 import { Fragment, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { supabase } from "../../services/supabase/client";
 import { SkeletonAdminTable } from "../../components/Skeleton";
@@ -12,6 +32,7 @@ export default function AdminOrders({ onOrdersChange }) {
     const [loadingOrders, setLoadingOrders] = useState(false);
     const [orderErr, setOrderErr] = useState("");
     const [confirmDlg, setConfirmDlg] = useState(null);
+    const [shippingOrderId, setShippingOrderId] = useState(null); // order currently being shipped via Delhivery
 
     // Ctrl+S → export CSV
     const exportRef = useRef(null);
@@ -138,9 +159,11 @@ export default function AdminOrders({ onOrdersChange }) {
             variant: "info",
             onConfirm: async () => {
                 setConfirmDlg(null);
+                const updatePayload = { status: newStatus };
+                if (newStatus === "delivered") updatePayload.delivered_at = new Date().toISOString();
                 const { error } = await supabase
                     .from("orders")
-                    .update({ status: newStatus })
+                    .update(updatePayload)
                     .eq("id", orderId);
                 if (error) { showToast(error.message, "error"); return; }
                 showToast(`Order status → ${STATUS_LABELS[newStatus]}`, "success");
@@ -214,6 +237,16 @@ export default function AdminOrders({ onOrdersChange }) {
           shipping_address,
           payment_method,
           razorpay_payment_id,
+          delhivery_waybill,
+          courier_name,
+          tracking_url,
+          shipped_at,
+          delivered_at,
+          coins_used,
+          shipping_amount,
+          gst_amount,
+          discount_amount,
+          coupon_code,
           profiles (
             id,
             email,
@@ -452,6 +485,70 @@ export default function AdminOrders({ onOrdersChange }) {
     };
     exportRef.current = exportOrdersCSV;
 
+    // ── Delhivery: Ship Order ──────────────────────────────────────
+    const shipViaDelhivery = async (order) => {
+        const st = String(order.status || "").toLowerCase();
+        if (st !== "placed" && st !== "processing") {
+            showToast("Order must be Placed or Processing to ship", "error");
+            return;
+        }
+
+        setShippingOrderId(order.id);
+
+        try {
+            const addr = order.shipping_address || {};
+            const items = (order.order_items_detailed || []).map((it) => ({
+                name: it.product_name || "Product",
+                qty: it.qty_num || 1,
+                price: it.line_total_num || 0,
+            }));
+
+            const { data: result, error: fnErr } = await supabase.functions.invoke(
+                "delhivery-create-shipment",
+                {
+                    body: {
+                        order_id: order.id,
+                        shipping_address: {
+                            name: order.shipping_name || order.user_full_name || "Customer",
+                            phone: order.shipping_phone || "",
+                            address: [order.shipping_address_1, order.shipping_address_2].filter(Boolean).join(", "),
+                            city: order.shipping_city || "",
+                            state: order.shipping_state || "",
+                            pin: order.shipping_pincode || "",
+                            country: order.shipping_country || "India",
+                        },
+                        items,
+                        total_amount: order.computed_total_inr || 0,
+                        payment_method: order.payment_method || "cod",
+                        weight: 500,
+                    },
+                }
+            );
+
+            if (fnErr) {
+                let detail = fnErr.message || "Shipping failed";
+                if (fnErr.context && typeof fnErr.context.json === "function") {
+                    try {
+                        const errBody = await fnErr.context.json();
+                        detail = errBody?.error || errBody?.message || detail;
+                    } catch (_) { }
+                }
+                throw new Error(detail);
+            }
+
+            if (!result?.success && !result?.waybill) {
+                throw new Error(result?.error || "Shipping failed — no waybill returned");
+            }
+
+            showToast(`Shipped! Waybill: ${result.waybill}`, "success");
+            load(); // refresh orders
+        } catch (err) {
+            showToast(err.message || "Failed to ship order", "error");
+        } finally {
+            setShippingOrderId(null);
+        }
+    };
+
     return (
         <>
             <div className="rounded-2xl border border-[#E8E4DE] bg-white p-4 sm:p-5">
@@ -661,7 +758,9 @@ export default function AdminOrders({ onOrdersChange }) {
                                                 <select
                                                     value={st}
                                                     onChange={(e) => updateOrderStatus(o.id, e.target.value)}
-                                                    className="w-full rounded-xl border border-[#E8E4DE] bg-white px-3 py-2 text-xs"
+                                                    disabled={!!o.delhivery_waybill || st === "shipped" || st === "delivered"}
+                                                    className={`w-full rounded-xl border border-[#E8E4DE] bg-white px-3 py-2 text-xs ${o.delhivery_waybill || st === "shipped" || st === "delivered" ? "opacity-50 cursor-not-allowed" : ""}`}
+                                                    title={o.delhivery_waybill ? "Status locked — shipped via Delhivery" : ""}
                                                 >
                                                     <option value="placed">Placed</option>
                                                     <option value="processing">Processing</option>
@@ -751,6 +850,49 @@ export default function AdminOrders({ onOrdersChange }) {
                                                                     .map((line, idx) => (
                                                                         <div key={idx}>{line}</div>
                                                                     ))}
+                                                            </div>
+                                                        </div>
+
+                                                        {/* Delhivery Shipping */}
+                                                        <div className="rounded-xl border border-[#E8E4DE] bg-white p-3">
+                                                            <div className="text-xs font-semibold text-stone-400">Shipping</div>
+                                                            <div className="mt-2">
+                                                                {o.delhivery_waybill ? (
+                                                                    <div className="space-y-2">
+                                                                        <div className="flex items-center gap-2">
+                                                                            <span className="inline-flex items-center gap-1 rounded-full bg-blue-50 px-2 py-1 text-[11px] font-semibold text-blue-700">
+                                                                                <svg className="h-3 w-3" viewBox="0 0 20 20" fill="currentColor"><path d="M8 16.5a1.5 1.5 0 11-3 0 1.5 1.5 0 013 0zM15 16.5a1.5 1.5 0 11-3 0 1.5 1.5 0 013 0z" /><path d="M3 4a1 1 0 00-1 1v10a1 1 0 001 1h1.05a2.5 2.5 0 014.9 0H10a1 1 0 001-1V5a1 1 0 00-1-1H3zM14 7a1 1 0 00-1 1v6.05A2.5 2.5 0 0115.95 16H17a1 1 0 001-1v-5a1 1 0 00-.293-.707l-2-2A1 1 0 0015 7h-1z" /></svg>
+                                                                                {o.courier_name || 'Delhivery'}
+                                                                            </span>
+                                                                        </div>
+                                                                        <div className="text-xs text-stone-600">
+                                                                            <span className="text-stone-400">AWB:</span> <span className="font-mono font-medium">{o.delhivery_waybill}</span>
+                                                                        </div>
+                                                                        {o.shipped_at && (
+                                                                            <div className="text-[11px] text-stone-400">Shipped: {new Date(o.shipped_at).toLocaleString()}</div>
+                                                                        )}
+                                                                        {o.tracking_url && (
+                                                                            <a href={o.tracking_url} target="_blank" rel="noopener noreferrer" className="inline-flex items-center gap-1 text-xs font-medium text-[#1e3a5f] hover:underline">
+                                                                                Track on Delhivery ↗
+                                                                            </a>
+                                                                        )}
+                                                                    </div>
+                                                                ) : (st === "placed" || st === "processing") ? (
+                                                                    <button
+                                                                        type="button"
+                                                                        onClick={() => shipViaDelhivery(o)}
+                                                                        disabled={shippingOrderId === o.id}
+                                                                        className="w-full rounded-xl bg-gradient-to-r from-blue-600 to-blue-700 px-3 py-2 text-xs font-semibold text-white shadow-sm hover:from-blue-700 hover:to-blue-800 active:scale-95 transition-all duration-150 disabled:opacity-50 flex items-center justify-center gap-1.5"
+                                                                    >
+                                                                        {shippingOrderId === o.id ? (
+                                                                            <><div className="h-3.5 w-3.5 rounded-full border-2 border-white/30 border-t-white animate-spin" /> Shipping…</>
+                                                                        ) : (
+                                                                            <><svg className="h-3.5 w-3.5" viewBox="0 0 20 20" fill="currentColor"><path d="M8 16.5a1.5 1.5 0 11-3 0 1.5 1.5 0 013 0zM15 16.5a1.5 1.5 0 11-3 0 1.5 1.5 0 013 0z" /><path d="M3 4a1 1 0 00-1 1v10a1 1 0 001 1h1.05a2.5 2.5 0 014.9 0H10a1 1 0 001-1V5a1 1 0 00-1-1H3zM14 7a1 1 0 00-1 1v6.05A2.5 2.5 0 0115.95 16H17a1 1 0 001-1v-5a1 1 0 00-.293-.707l-2-2A1 1 0 0015 7h-1z" /></svg> Ship via Delhivery</>
+                                                                        )}
+                                                                    </button>
+                                                                ) : (
+                                                                    <div className="text-xs text-stone-400 italic">Not shipped yet</div>
+                                                                )}
                                                             </div>
                                                         </div>
 
@@ -894,7 +1036,9 @@ export default function AdminOrders({ onOrdersChange }) {
                                                                 <select
                                                                     value={st}
                                                                     onChange={(e) => updateOrderStatus(o.id, e.target.value)}
-                                                                    className="w-full rounded-lg border border-[#E8E4DE] bg-white px-2 py-1.5 text-xs"
+                                                                    disabled={!!o.delhivery_waybill || st === "shipped" || st === "delivered"}
+                                                                    className={`w-full rounded-lg border border-[#E8E4DE] bg-white px-2 py-1.5 text-xs ${o.delhivery_waybill || st === "shipped" || st === "delivered" ? "opacity-50 cursor-not-allowed" : ""}`}
+                                                                    title={o.delhivery_waybill ? "Status locked — shipped via Delhivery" : ""}
                                                                 >
                                                                     <option value="placed">Placed</option>
                                                                     <option value="processing">Processing</option>
@@ -943,7 +1087,7 @@ export default function AdminOrders({ onOrdersChange }) {
 
                                                     {expandedOrderIds.has(o.id) && (
                                                         <tr className="border-b bg-stone-50/50">
-                                                            <td colSpan={7} className="py-3 px-2">
+                                                            <td colSpan={8} className="py-3 px-2">
                                                                 <div className="grid gap-4 md:grid-cols-3">
                                                                     {/* Customer */}
                                                                     <div className="rounded-xl border border-[#E8E4DE] bg-white p-4">
@@ -961,13 +1105,95 @@ export default function AdminOrders({ onOrdersChange }) {
                                                                         </div>
                                                                     </div>
 
-                                                                    {/* Payment info */}
+                                                                    {/* Payment Breakdown */}
                                                                     <div className="rounded-xl border border-[#E8E4DE] bg-white p-4">
-                                                                        <div className="text-xs font-semibold text-stone-400">Payment</div>
-                                                                        <div className="mt-2 text-xs text-stone-600">
-                                                                            <div>Method: <span className="font-semibold text-stone-900">{o.payment_method === 'prepaid' ? 'Online (Razorpay)' : 'Cash on Delivery'}</span></div>
+                                                                        <div className="text-xs font-semibold text-stone-400 mb-3">Payment Breakdown</div>
+                                                                        <div className="space-y-2">
+                                                                            {/* Method */}
+                                                                            <div className="flex items-center justify-between">
+                                                                                <span className="text-xs text-stone-500">Method</span>
+                                                                                <span className={`inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-[10px] font-bold uppercase tracking-wide ${o.payment_method === 'prepaid'
+                                                                                    ? 'bg-emerald-50 text-emerald-700 border border-emerald-200'
+                                                                                    : 'bg-amber-50 text-amber-700 border border-amber-200'
+                                                                                    }`}>
+                                                                                    {o.payment_method === 'prepaid' ? '💳 Online (Razorpay)' : '💵 Cash on Delivery'}
+                                                                                </span>
+                                                                            </div>
+
+                                                                            {/* Items subtotal */}
+                                                                            {(() => {
+                                                                                const itemsTotal = (o.order_items_detailed || []).reduce((s, it) => s + (it.line_total_num || 0), 0);
+                                                                                const finalTotal = Number(o.computed_total_inr || 0);
+                                                                                const coinsUsed = Number(o.coins_used || 0);
+                                                                                const coinsDiscountInr = coinsUsed;
+                                                                                // Use stored columns if available, otherwise derive
+                                                                                const shippingAmt = Number(o.shipping_amount ?? 0);
+                                                                                const gstAmt = Number(o.gst_amount ?? 0);
+                                                                                const hasStoredBreakdown = shippingAmt > 0 || gstAmt > 0;
+                                                                                const derivedShippingAndGst = !hasStoredBreakdown && itemsTotal > 0
+                                                                                    ? Math.max(0, finalTotal + coinsDiscountInr - itemsTotal)
+                                                                                    : null;
+                                                                                return (
+                                                                                    <>
+                                                                                        <div className="border-t border-dashed border-[#E8E4DE] my-1" />
+                                                                                        {itemsTotal > 0 && (
+                                                                                            <div className="flex justify-between text-xs">
+                                                                                                <span className="text-stone-500">Items subtotal</span>
+                                                                                                <span className="font-medium text-stone-800">₹{itemsTotal.toLocaleString('en-IN')}</span>
+                                                                                            </div>
+                                                                                        )}
+                                                                                        {hasStoredBreakdown ? (
+                                                                                            <>
+                                                                                                {shippingAmt > 0 && (
+                                                                                                    <div className="flex justify-between text-xs">
+                                                                                                        <span className="text-stone-500">Shipping</span>
+                                                                                                        <span className="font-medium text-stone-800">₹{shippingAmt.toLocaleString('en-IN')}</span>
+                                                                                                    </div>
+                                                                                                )}
+                                                                                                {gstAmt > 0 && (
+                                                                                                    <div className="flex justify-between text-xs">
+                                                                                                        <span className="text-stone-500">GST</span>
+                                                                                                        <span className="font-medium text-stone-800">₹{gstAmt.toLocaleString('en-IN')}</span>
+                                                                                                    </div>
+                                                                                                )}
+                                                                                            </>
+                                                                                        ) : derivedShippingAndGst !== null && derivedShippingAndGst > 0 ? (
+                                                                                            <div className="flex justify-between text-xs">
+                                                                                                <span className="text-stone-500">Shipping + GST</span>
+                                                                                                <span className="font-medium text-stone-800">₹{derivedShippingAndGst.toLocaleString('en-IN')}</span>
+                                                                                            </div>
+                                                                                        ) : null}
+                                                                                        {coinsUsed > 0 && (
+                                                                                            <div className="flex justify-between text-xs">
+                                                                                                <span className="text-amber-600 flex items-center gap-1">
+                                                                                                    <svg className="h-3 w-3" viewBox="0 0 20 20" fill="currentColor"><path d="M10 2a8 8 0 100 16A8 8 0 0010 2z" /></svg>
+                                                                                                    CoreCoins used ({coinsUsed} coins)
+                                                                                                </span>
+                                                                                                <span className="font-medium text-amber-700">−₹{coinsDiscountInr.toLocaleString('en-IN')}</span>
+                                                                                            </div>
+                                                                                        )}
+                                                                                        {Number(o.discount_amount ?? 0) > 0 && (
+                                                                                            <div className="flex justify-between text-xs">
+                                                                                                <span className="text-emerald-600">
+                                                                                                    🎉 Discount{o.coupon_code ? <> (<span className="font-mono font-bold">{o.coupon_code}</span>)</> : ""}
+                                                                                                </span>
+                                                                                                <span className="font-medium text-emerald-700">−₹{Number(o.discount_amount).toLocaleString('en-IN')}</span>
+                                                                                            </div>
+                                                                                        )}
+                                                                                        <div className="border-t border-[#E8E4DE] mt-1 pt-1.5 flex justify-between text-sm">
+                                                                                            <span className="font-semibold text-stone-700">Total Paid</span>
+                                                                                            <span className="font-bold text-stone-900">₹{finalTotal.toLocaleString('en-IN')}</span>
+                                                                                        </div>
+                                                                                    </>
+                                                                                );
+                                                                            })()}
+
+                                                                            {/* Razorpay ID */}
                                                                             {o.razorpay_payment_id && (
-                                                                                <div className="mt-1">Payment ID: <span className="font-mono text-[11px] text-stone-500">{o.razorpay_payment_id}</span></div>
+                                                                                <div className="pt-1">
+                                                                                    <span className="text-[10px] text-stone-400">Razorpay ID: </span>
+                                                                                    <span className="font-mono text-[10px] text-stone-500 break-all">{o.razorpay_payment_id}</span>
+                                                                                </div>
                                                                             )}
                                                                         </div>
                                                                     </div>
@@ -989,6 +1215,49 @@ export default function AdminOrders({ onOrdersChange }) {
                                                                                         <div key={idx}>{line}</div>
                                                                                     ))}
                                                                             </div>
+                                                                        </div>
+                                                                    </div>
+
+                                                                    {/* Delhivery Shipping */}
+                                                                    <div className="rounded-xl border border-[#E8E4DE] bg-white p-4">
+                                                                        <div className="text-xs font-semibold text-stone-400">Shipping</div>
+                                                                        <div className="mt-2">
+                                                                            {o.delhivery_waybill ? (
+                                                                                <div className="space-y-2">
+                                                                                    <div className="flex items-center gap-2">
+                                                                                        <span className="inline-flex items-center gap-1 rounded-full bg-blue-50 px-2 py-1 text-[11px] font-semibold text-blue-700">
+                                                                                            <svg className="h-3 w-3" viewBox="0 0 20 20" fill="currentColor"><path d="M8 16.5a1.5 1.5 0 11-3 0 1.5 1.5 0 013 0zM15 16.5a1.5 1.5 0 11-3 0 1.5 1.5 0 013 0z" /><path d="M3 4a1 1 0 00-1 1v10a1 1 0 001 1h1.05a2.5 2.5 0 014.9 0H10a1 1 0 001-1V5a1 1 0 00-1-1H3zM14 7a1 1 0 00-1 1v6.05A2.5 2.5 0 0115.95 16H17a1 1 0 001-1v-5a1 1 0 00-.293-.707l-2-2A1 1 0 0015 7h-1z" /></svg>
+                                                                                            {o.courier_name || 'Delhivery'}
+                                                                                        </span>
+                                                                                    </div>
+                                                                                    <div className="text-xs text-stone-600">
+                                                                                        <span className="text-stone-400">AWB:</span> <span className="font-mono font-medium">{o.delhivery_waybill}</span>
+                                                                                    </div>
+                                                                                    {o.shipped_at && (
+                                                                                        <div className="text-[11px] text-stone-400">Shipped: {new Date(o.shipped_at).toLocaleString()}</div>
+                                                                                    )}
+                                                                                    {o.tracking_url && (
+                                                                                        <a href={o.tracking_url} target="_blank" rel="noopener noreferrer" className="inline-flex items-center gap-1 text-xs font-medium text-[#1e3a5f] hover:underline">
+                                                                                            Track on Delhivery ↗
+                                                                                        </a>
+                                                                                    )}
+                                                                                </div>
+                                                                            ) : (st === "placed" || st === "processing") ? (
+                                                                                <button
+                                                                                    type="button"
+                                                                                    onClick={() => shipViaDelhivery(o)}
+                                                                                    disabled={shippingOrderId === o.id}
+                                                                                    className="w-full rounded-xl bg-gradient-to-r from-blue-600 to-blue-700 px-3 py-2 text-xs font-semibold text-white shadow-sm hover:from-blue-700 hover:to-blue-800 active:scale-95 transition-all duration-150 disabled:opacity-50 flex items-center justify-center gap-1.5"
+                                                                                >
+                                                                                    {shippingOrderId === o.id ? (
+                                                                                        <><div className="h-3.5 w-3.5 rounded-full border-2 border-white/30 border-t-white animate-spin" /> Shipping…</>
+                                                                                    ) : (
+                                                                                        <><svg className="h-3.5 w-3.5" viewBox="0 0 20 20" fill="currentColor"><path d="M8 16.5a1.5 1.5 0 11-3 0 1.5 1.5 0 013 0zM15 16.5a1.5 1.5 0 11-3 0 1.5 1.5 0 013 0z" /><path d="M3 4a1 1 0 00-1 1v10a1 1 0 001 1h1.05a2.5 2.5 0 014.9 0H10a1 1 0 001-1V5a1 1 0 00-1-1H3zM14 7a1 1 0 00-1 1v6.05A2.5 2.5 0 0115.95 16H17a1 1 0 001-1v-5a1 1 0 00-.293-.707l-2-2A1 1 0 0015 7h-1z" /></svg> Ship via Delhivery</>
+                                                                                    )}
+                                                                                </button>
+                                                                            ) : (
+                                                                                <div className="text-xs text-stone-400 italic">Not shipped yet</div>
+                                                                            )}
                                                                         </div>
                                                                     </div>
 

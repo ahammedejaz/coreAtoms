@@ -32,6 +32,11 @@ export function loadRazorpay() {
                     resolve(window.Razorpay);
                 }
             }, 100);
+            // Prevent interval from running forever if script failed silently
+            setTimeout(() => {
+                clearInterval(interval);
+                if (!window.Razorpay) reject(new Error('Razorpay SDK load timed out'));
+            }, 15000);
             return;
         }
 

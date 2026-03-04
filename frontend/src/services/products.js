@@ -7,7 +7,8 @@
  *
  * ### Key functions:
  * - `fetchProducts()` — all active products (for Shop/Home pages)
- * - `fetchProductById(id)` — single product with full reviews + reviewer names
+ * - `fetchProductById(id)` — single product with full reviews
+ *   (reads `reviewer_name` directly from `product_reviews`, NOT from `profiles`)
  * - `mapDbProduct(row)` — raw DB row → frontend product object
  *
  * @module services/products
@@ -103,7 +104,7 @@ export async function fetchProductById(id) {
   const { data, error } = await supabase
     .from("products")
     .select(
-      "id,name,sku,category,description,price_inr,stock_qty,image_url,image_position,is_active,created_at,updated_at,about_text,best_for,pairs_well_with,recommended_stack,highlights,product_images(id,image_url,sort_order),product_reviews(id,rating,title,body,created_at,user_id,order_id),product_variants(id,label,price_inr,stock_qty,sku,sort_order,is_active)"
+      "id,name,sku,category,description,price_inr,stock_qty,image_url,image_position,is_active,created_at,updated_at,about_text,best_for,pairs_well_with,recommended_stack,highlights,product_images(id,image_url,sort_order),product_reviews(id,rating,title,body,created_at,user_id,order_id,reviewer_name),product_variants(id,label,price_inr,stock_qty,sku,sort_order,is_active)"
     )
     .eq("id", id)
     .maybeSingle();
@@ -114,18 +115,8 @@ export async function fetchProductById(id) {
   const product = mapDbProduct(data);
   const rawReviews = Array.isArray(data.product_reviews) ? data.product_reviews : [];
 
-  const userIds = [...new Set(rawReviews.map((r) => r.user_id).filter(Boolean))];
-  const nameMap = {};
-  if (userIds.length > 0) {
-    const { data: profileRows } = await supabase
-      .from("profiles")
-      .select("id,full_name")
-      .in("id", userIds);
-    (profileRows || []).forEach((p) => {
-      nameMap[p.id] = p.full_name || "Customer";
-    });
-  }
-
+  // Use the reviewer_name already stored in product_reviews at write time
+  // — no need to query the profiles table (avoids cross-user data leakage)
   product.reviews = [...rawReviews]
     .sort((a, b) => new Date(b.created_at) - new Date(a.created_at))
     .map((r) => ({
@@ -136,7 +127,7 @@ export async function fetchProductById(id) {
       createdAt: r.created_at,
       userId: r.user_id,
       orderId: r.order_id,
-      reviewerName: nameMap[r.user_id] || "Customer",
+      reviewerName: r.reviewer_name || "Customer",
     }));
 
   return product;

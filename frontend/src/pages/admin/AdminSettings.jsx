@@ -1,3 +1,33 @@
+/**
+ * AdminSettings.jsx — Admin settings panel with accordion sections.
+ *
+ * All settings are persisted to the `app_settings` Supabase table.
+ * The UI is organised as collapsible accordion sections:
+ *
+ *  │ Shipping & Tax
+ *  ├─ Flat shipping rate (INR). 0 = use Delhivery per-pincode rate.
+ *  ├─ Free shipping threshold (INR). 0 = disabled.
+ *  └─ GST percentage. 0 = GST disabled (hides 'Excl. GST' labels on product cards).
+ *
+ *  │ Payments
+ *  ├─ Razorpay toggle (shows/hides online payment option at checkout)
+ *  └─ COD toggle (shows/hides cash-on-delivery option at checkout)
+ *
+ *  │ Discount Codes
+ *  └─ Add/remove coupon codes: percentage, date range, active flag
+ *
+ *  │ CoreCoins
+ *  └─ Enable loyalty programme + configure earn_rate, earn_per_rupees,
+ *       coin_value_inr, min_redeem
+ *
+ *  │ Replacements
+ *  └─ Enable replacement system + configure replacement window in days
+ *
+ *  │ Promo Banner
+ *  └─ Floating announcement bar: text, link, colours
+ *
+ * @module pages/admin/AdminSettings
+ */
 import { useCallback, useEffect, useRef, useState } from "react";
 import { supabase } from "../../services/supabase/client";
 import { useToast } from "../../context/ToastContext";
@@ -7,7 +37,24 @@ export default function AdminSettings() {
     const { showToast } = useToast();
     const [maxItems, setMaxItems] = useState(15);
     const [shippingAmount, setShippingAmount] = useState(0);
+    const [freeShippingMin, setFreeShippingMin] = useState(500);
+    const [gstPercent, setGstPercent] = useState(0);
     const [saving, setSaving] = useState(false);
+
+    // Accordion state — tracks which sections are open
+    const [openSections, setOpenSections] = useState(new Set());
+    const toggleSection = (key) => setOpenSections(prev => {
+        const next = new Set(prev);
+        next.has(key) ? next.delete(key) : next.add(key);
+        return next;
+    });
+    const Chevron = ({ section }) => (
+        <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none"
+            stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"
+            className={`text-stone-400 shrink-0 transition-transform duration-200 ${openSections.has(section) ? "rotate-180" : ""}`}>
+            <polyline points="6 9 12 15 18 9" />
+        </svg>
+    );
 
     // Razorpay toggle
     const [razorpayEnabled, setRazorpayEnabled] = useState(false);
@@ -19,12 +66,47 @@ export default function AdminSettings() {
     const [codLoading, setCodLoading] = useState(true);
     const [codSaving, setCodSaving] = useState(false);
 
+    // Replacements toggle
+    const [replacementsEnabled, setReplacementsEnabled] = useState(false);
+    const [replacementsLoading, setReplacementsLoading] = useState(true);
+    const [replacementsSaving, setReplacementsSaving] = useState(false);
+    const [replacementWindowDays, setReplacementWindowDays] = useState(1);
+    const [replacementWindowMinutes, setReplacementWindowMinutes] = useState(0);
+
+    // Warehouse address
+    const [warehouse, setWarehouse] = useState({ name: "", phone: "", address: "", city: "", state: "", pin: "" });
+    const [warehouseLoading, setWarehouseLoading] = useState(true);
+    const [warehouseSaving, setWarehouseSaving] = useState(false);
+
     // Discount codes
     const [discountCodes, setDiscountCodes] = useState([]);
     const [discountLoading, setDiscountLoading] = useState(true);
     const [newCode, setNewCode] = useState("");
     const [newPercent, setNewPercent] = useState("");
+    const [newStartsAt, setNewStartsAt] = useState("");
+    const [newEndsAt, setNewEndsAt] = useState("");
+    const [newEmails, setNewEmails] = useState("");
+    const [newUsersOnly, setNewUsersOnly] = useState(false);
     const [addingCode, setAddingCode] = useState(false);
+
+    // CoreCoins loyalty program
+    const [corecoinsEnabled, setCorecoinsEnabled] = useState(false);
+    const [corecoinsLoading, setCorecoinsLoading] = useState(true);
+    const [corecoinsSaving, setCorecoinsSaving] = useState(false);
+    const [corecoinsConfig, setCorecoinsConfig] = useState({
+        earn_rate: 1,         // coins earned per threshold
+        earn_per_rupees: 100, // threshold in ₹
+        min_redeem: 100,      // minimum coins to redeem
+        coin_value_inr: 1,    // value of 1 coin in ₹
+    });
+
+    // Promo banner
+    const [bannerEnabled, setBannerEnabled] = useState(false);
+    const [bannerImageUrl, setBannerImageUrl] = useState("");
+    const [bannerLoading, setBannerLoading] = useState(true);
+    const [bannerSaving, setBannerSaving] = useState(false);
+    const [bannerFile, setBannerFile] = useState(null);
+    const [bannerPreview, setBannerPreview] = useState("");
 
     useEffect(() => {
         supabase.from("app_settings").select("value")
@@ -39,6 +121,20 @@ export default function AdminSettings() {
             .then(({ data }) => {
                 const n = Number(data?.value?.amount);
                 if (Number.isFinite(n) && n >= 0) setShippingAmount(n);
+            });
+
+        supabase.from("app_settings").select("value")
+            .eq("key", "free_shipping_min").maybeSingle()
+            .then(({ data }) => {
+                const n = Number(data?.value?.amount);
+                if (Number.isFinite(n) && n >= 0) setFreeShippingMin(n);
+            });
+
+        supabase.from("app_settings").select("value")
+            .eq("key", "gst_percentage").maybeSingle()
+            .then(({ data }) => {
+                const n = Number(data?.value?.percentage);
+                if (Number.isFinite(n) && n >= 0) setGstPercent(n);
             });
 
         // Load Razorpay toggle
@@ -57,12 +153,58 @@ export default function AdminSettings() {
                 setCodLoading(false);
             });
 
+        // Load replacements toggle
+        supabase.from("app_settings").select("value")
+            .eq("key", "replacements_enabled").maybeSingle()
+            .then(({ data }) => {
+                setReplacementsEnabled(data?.value?.enabled === true);
+                if (data?.value?.window_days) setReplacementWindowDays(data.value.window_days);
+                if (data?.value?.window_minutes) setReplacementWindowMinutes(data.value.window_minutes);
+                setReplacementsLoading(false);
+            });
+
+        // Load warehouse address
+        supabase.from("app_settings").select("value")
+            .eq("key", "warehouse_address").maybeSingle()
+            .then(({ data }) => {
+                if (data?.value && typeof data.value === "object") {
+                    setWarehouse(prev => ({ ...prev, ...data.value }));
+                }
+                setWarehouseLoading(false);
+            });
+
         // Load discount codes
         supabase.from("app_settings").select("value")
             .eq("key", "discount_codes").maybeSingle()
             .then(({ data }) => {
                 setDiscountCodes(Array.isArray(data?.value) ? data.value : []);
                 setDiscountLoading(false);
+            });
+
+        // Load CoreCoins
+        supabase.from("app_settings").select("value")
+            .eq("key", "corecoins_enabled").maybeSingle()
+            .then(({ data }) => {
+                setCorecoinsEnabled(data?.value?.enabled === true);
+            });
+        supabase.from("app_settings").select("value")
+            .eq("key", "corecoins_config").maybeSingle()
+            .then(({ data }) => {
+                if (data?.value && typeof data.value === "object") {
+                    setCorecoinsConfig(prev => ({ ...prev, ...data.value }));
+                }
+                setCorecoinsLoading(false);
+            });
+
+        // Load promo banner
+        supabase.from("app_settings").select("value")
+            .eq("key", "promo_banner").maybeSingle()
+            .then(({ data }) => {
+                if (data?.value) {
+                    setBannerEnabled(!!data.value.enabled);
+                    setBannerImageUrl(data.value.image_url || "");
+                }
+                setBannerLoading(false);
             });
     }, []);
 
@@ -80,9 +222,23 @@ export default function AdminSettings() {
             setSaving(false);
             return;
         }
+        const freeMin = Number(freeShippingMin);
+        if (!Number.isFinite(freeMin) || freeMin < 0) {
+            showToast("Free shipping minimum must be 0 or more", "error");
+            setSaving(false);
+            return;
+        }
+        const gst = Number(gstPercent);
+        if (!Number.isFinite(gst) || gst < 0 || gst > 100) {
+            showToast("GST % must be between 0 and 100", "error");
+            setSaving(false);
+            return;
+        }
         const results = await Promise.all([
             supabase.from("app_settings").upsert({ key: "max_items_per_order", value: { n } }, { onConflict: "key" }),
             supabase.from("app_settings").upsert({ key: "shipping_amount", value: { amount: shipAmt } }, { onConflict: "key" }),
+            supabase.from("app_settings").upsert({ key: "free_shipping_min", value: { amount: freeMin } }, { onConflict: "key" }),
+            supabase.from("app_settings").upsert({ key: "gst_percentage", value: { percentage: gst } }, { onConflict: "key" }),
         ]);
         const err = results.find(r => r.error);
         if (err) {
@@ -94,8 +250,12 @@ export default function AdminSettings() {
     };
 
     const toggleRazorpay = async () => {
-        setRazorpaySaving(true);
         const newVal = !razorpayEnabled;
+        if (!newVal && !codEnabled) {
+            showToast("Cannot disable Razorpay — COD is also disabled. Enable at least one payment method.", "error");
+            return;
+        }
+        setRazorpaySaving(true);
         const { error } = await supabase.from("app_settings")
             .upsert({ key: "razorpay_enabled", value: { enabled: newVal } }, { onConflict: "key" });
         if (error) {
@@ -108,8 +268,12 @@ export default function AdminSettings() {
     };
 
     const toggleCod = async () => {
-        setCodSaving(true);
         const newVal = !codEnabled;
+        if (!newVal && !razorpayEnabled) {
+            showToast("Cannot disable COD — Razorpay is also disabled. Enable at least one payment method.", "error");
+            return;
+        }
+        setCodSaving(true);
         const { error } = await supabase.from("app_settings")
             .upsert({ key: "cod_enabled", value: { enabled: newVal } }, { onConflict: "key" });
         if (error) {
@@ -119,6 +283,85 @@ export default function AdminSettings() {
             showToast(newVal ? "Cash on Delivery enabled" : "Cash on Delivery disabled", "success");
         }
         setCodSaving(false);
+    };
+
+    const toggleReplacements = async () => {
+        setReplacementsSaving(true);
+        const newVal = !replacementsEnabled;
+        const { error } = await supabase.from("app_settings")
+            .upsert({ key: "replacements_enabled", value: { enabled: newVal, window_days: Number(replacementWindowDays) || 1, window_minutes: Number(replacementWindowMinutes) || 0 } }, { onConflict: "key" });
+        if (error) {
+            showToast(error.message, "error");
+        } else {
+            setReplacementsEnabled(newVal);
+            showToast(newVal ? "Replacements enabled" : "Replacements disabled", "success");
+        }
+        setReplacementsSaving(false);
+    };
+
+    const saveReplacementWindowDays = async () => {
+        setReplacementsSaving(true);
+        const { error } = await supabase.from("app_settings")
+            .upsert({ key: "replacements_enabled", value: { enabled: replacementsEnabled, window_days: Number(replacementWindowDays) || 1, window_minutes: Number(replacementWindowMinutes) || 0 } }, { onConflict: "key" });
+        if (error) showToast(error.message, "error");
+        else showToast("Replacement window saved", "success");
+        setReplacementsSaving(false);
+    };
+
+    // ── CoreCoins helpers ──
+    const toggleCorecoins = async () => {
+        setCorecoinsSaving(true);
+        const newVal = !corecoinsEnabled;
+        const { error } = await supabase.from("app_settings")
+            .upsert({ key: "corecoins_enabled", value: { enabled: newVal } }, { onConflict: "key" });
+        if (error) {
+            showToast(error.message, "error");
+        } else {
+            setCorecoinsEnabled(newVal);
+            showToast(newVal ? "CoreCoins program enabled" : "CoreCoins program disabled", "success");
+        }
+        setCorecoinsSaving(false);
+    };
+
+    const saveCorecoinsConfig = async () => {
+        const c = corecoinsConfig;
+        const earnRate = Number(c.earn_rate);
+        const earnPer = Number(c.earn_per_rupees);
+        const minRedeem = Number(c.min_redeem);
+        const coinVal = Number(c.coin_value_inr);
+        if (!Number.isFinite(earnRate) || earnRate <= 0) { showToast("Earn rate must be > 0", "error"); return; }
+        if (!Number.isFinite(earnPer) || earnPer <= 0) { showToast("Earn per ₹ must be > 0", "error"); return; }
+        if (!Number.isFinite(minRedeem) || minRedeem <= 0) { showToast("Min redeem must be > 0", "error"); return; }
+        if (!Number.isFinite(coinVal) || coinVal <= 0) { showToast("Coin value must be > 0", "error"); return; }
+        setCorecoinsSaving(true);
+        const { error } = await supabase.from("app_settings").upsert(
+            { key: "corecoins_config", value: { earn_rate: earnRate, earn_per_rupees: earnPer, min_redeem: minRedeem, coin_value_inr: coinVal } },
+            { onConflict: "key" }
+        );
+        if (error) showToast(error.message, "error");
+        else showToast("CoreCoins settings saved", "success");
+        setCorecoinsSaving(false);
+    };
+
+    const saveWarehouse = async () => {
+        const w = warehouse;
+        if (!w.name || !w.phone || !w.address || !w.city || !w.state || !w.pin) {
+            showToast("All warehouse fields are required", "error");
+            return;
+        }
+        if (!/^\d{6}$/.test(w.pin)) {
+            showToast("Pincode must be 6 digits", "error");
+            return;
+        }
+        setWarehouseSaving(true);
+        const { error } = await supabase.from("app_settings")
+            .upsert({ key: "warehouse_address", value: w }, { onConflict: "key" });
+        if (error) {
+            showToast(error.message, "error");
+        } else {
+            showToast("Warehouse address saved", "success");
+        }
+        setWarehouseSaving(false);
     };
 
     // ── Discount code helpers ──
@@ -136,9 +379,16 @@ export default function AdminSettings() {
         if (!code) { showToast("Enter a code", "error"); return; }
         if (!Number.isFinite(pct) || pct <= 0 || pct > 100) { showToast("Percentage must be 1–100", "error"); return; }
         if (discountCodes.some(c => c.code === code)) { showToast("Code already exists", "error"); return; }
+        if (newStartsAt && newEndsAt && newStartsAt >= newEndsAt) { showToast("End date must be after start date", "error"); return; }
         setAddingCode(true);
-        const ok = await saveDiscountCodes([...discountCodes, { code, percentage: pct, active: true }]);
-        if (ok) { setNewCode(""); setNewPercent(""); showToast(`Code "${code}" added`, "success"); }
+        const entry = { code, percentage: pct, active: true };
+        if (newStartsAt) entry.startsAt = newStartsAt;
+        if (newEndsAt) entry.endsAt = newEndsAt;
+        const emailList = newEmails.split(",").map(e => e.trim().toLowerCase()).filter(Boolean);
+        if (emailList.length > 0) entry.emails = emailList;
+        if (newUsersOnly) entry.newUsersOnly = true;
+        const ok = await saveDiscountCodes([...discountCodes, entry]);
+        if (ok) { setNewCode(""); setNewPercent(""); setNewStartsAt(""); setNewEndsAt(""); setNewEmails(""); setNewUsersOnly(false); showToast(`Code "${code}" added`, "success"); }
         setAddingCode(false);
     };
 
@@ -159,220 +409,530 @@ export default function AdminSettings() {
     const handleCtrlS = useCallback((e) => { e.preventDefault(); saveRef.current(); }, []);
     useKeyboardShortcut("ctrl+s", handleCtrlS);
 
+    // ── Promo Banner helpers ──
+    const toggleBanner = async () => {
+        setBannerSaving(true);
+        const next = !bannerEnabled;
+        const { error } = await supabase.from("app_settings").upsert(
+            { key: "promo_banner", value: { enabled: next, image_url: bannerImageUrl } },
+            { onConflict: "key" }
+        );
+        if (error) showToast(error.message, "error");
+        else { setBannerEnabled(next); showToast(next ? "Banner activated" : "Banner deactivated", "success"); }
+        setBannerSaving(false);
+    };
+
+    const handleBannerFile = (e) => {
+        const f = e.target.files?.[0];
+        if (!f) return;
+        setBannerFile(f);
+        setBannerPreview(URL.createObjectURL(f));
+    };
+
+    const saveBanner = async () => {
+        setBannerSaving(true);
+        let url = bannerImageUrl;
+
+        // Upload image if new file selected
+        if (bannerFile) {
+            // Delete old banner from storage before uploading new one
+            if (bannerImageUrl) {
+                try {
+                    const oldPath = bannerImageUrl.split("/hero-images/")[1];
+                    if (oldPath) await supabase.storage.from("hero-images").remove([oldPath]);
+                } catch { /* ignore delete errors — proceed with upload */ }
+            }
+            const ext = bannerFile.name.split(".").pop();
+            const path = `promo-banner/banner-${Date.now()}.${ext}`;
+            const { error: upErr } = await supabase.storage.from("hero-images").upload(path, bannerFile, { cacheControl: "3600", upsert: true });
+            if (upErr) { showToast(upErr.message, "error"); setBannerSaving(false); return; }
+            const { data: pd } = supabase.storage.from("hero-images").getPublicUrl(path);
+            url = pd.publicUrl;
+        }
+
+        const { error } = await supabase.from("app_settings").upsert(
+            { key: "promo_banner", value: { enabled: bannerEnabled, image_url: url } },
+            { onConflict: "key" }
+        );
+        if (error) showToast(error.message, "error");
+        else {
+            setBannerImageUrl(url);
+            setBannerFile(null);
+            setBannerPreview("");
+            showToast("Banner saved", "success");
+        }
+        setBannerSaving(false);
+    };
+
     return (
-        <div className="max-w-2xl space-y-6">
+        <div className="max-w-2xl space-y-4">
+            {/* ── Promo Banner ── */}
+            <div className="rounded-2xl border border-[#E8E4DE] bg-white">
+                <button type="button" onClick={() => toggleSection("banner")} className="w-full flex items-center justify-between p-5 text-left">
+                    <div>
+                        <div className="flex items-center gap-2">
+                            <div className="text-base font-semibold text-stone-900">Promo Banner</div>
+                            <span className={["text-[11px] font-semibold px-2 py-0.5 rounded-full border",
+                                bannerEnabled ? "bg-emerald-50 border-emerald-200 text-emerald-700" : "bg-stone-100 border-stone-200 text-stone-400"].join(" ")}>
+                                {bannerLoading ? "..." : bannerEnabled ? "Active" : "Inactive"}
+                            </span>
+                        </div>
+                        <div className="mt-0.5 text-xs text-stone-500">Show a promotional banner on the homepage for sales or events.</div>
+                    </div>
+                    <Chevron section="banner" />
+                </button>
+                {openSections.has("banner") && (
+                    <div className="px-5 pb-5 border-t border-[#E8E4DE] pt-4">
+                        <div className="flex items-center justify-between mb-4">
+                            <span className="text-sm font-medium text-stone-700">Enable banner</span>
+                            <button type="button" role="switch" aria-checked={bannerEnabled} disabled={bannerLoading || bannerSaving} onClick={toggleBanner}
+                                className={["relative inline-flex h-7 w-12 shrink-0 cursor-pointer items-center rounded-full transition-colors duration-200 focus:outline-none disabled:opacity-50 disabled:cursor-not-allowed",
+                                    bannerEnabled ? "bg-emerald-500" : "bg-stone-300"].join(" ")}>
+                                <span className={["inline-block h-5 w-5 rounded-full bg-white shadow-md transform transition-transform duration-200",
+                                    bannerEnabled ? "translate-x-6" : "translate-x-1"].join(" ")} />
+                            </button>
+                        </div>
+                        <div className="space-y-3">
+                            {(bannerPreview || bannerImageUrl) && (
+                                <div className="rounded-xl overflow-hidden border border-[#E8E4DE]">
+                                    <img src={bannerPreview || bannerImageUrl} alt="Banner preview" className="w-full h-auto object-cover" style={{ maxHeight: "200px" }} />
+                                </div>
+                            )}
+                            <div className="flex items-center gap-3">
+                                <label className="cursor-pointer inline-flex items-center gap-2 rounded-xl border border-[#E8E4DE] bg-white px-4 py-2.5 text-sm font-medium text-stone-700 hover:bg-stone-50 transition-colors">
+                                    📷 {bannerImageUrl ? "Change Image" : "Upload Banner Image"}
+                                    <input type="file" accept="image/*" onChange={handleBannerFile} className="hidden" />
+                                </label>
+                                {bannerFile && (
+                                    <button type="button" onClick={saveBanner} disabled={bannerSaving} className="btn-primary py-2.5 px-5 text-sm disabled:opacity-50">
+                                        {bannerSaving ? "Uploading…" : "Save Banner"}
+                                    </button>
+                                )}
+                            </div>
+                            {!bannerImageUrl && !bannerFile && (
+                                <p className="text-[11px] text-stone-400">Upload an image to display in the banner. Recommended: 1200×400px or wider.</p>
+                            )}
+                        </div>
+                    </div>
+                )}
+            </div>
+
             {/* ── Order Settings ── */}
-            <div className="rounded-2xl border border-[#E8E4DE] bg-white p-5">
-                <div className="text-base font-semibold text-stone-900">Order settings</div>
-                <div className="mt-2 text-sm text-stone-500">
-                    Set the max number of total items allowed per order.
-                </div>
-                <div className="mt-4 grid gap-4 sm:grid-cols-2">
+            <div className="rounded-2xl border border-[#E8E4DE] bg-white">
+                <button type="button" onClick={() => toggleSection("orders")} className="w-full flex items-center justify-between p-5 text-left">
                     <div>
-                        <div className="text-xs text-stone-400">Max items per order</div>
-                        <input type="number" value={maxItems} onChange={(e) => setMaxItems(e.target.value)} min={1}
-                            className="mt-1 w-full rounded-xl border border-[#E8E4DE] bg-white px-4 py-3 text-sm text-stone-900 focus:ring-2 focus:ring-[#1e3a5f]/20 outline-none" />
+                        <div className="text-base font-semibold text-stone-900">Order Settings</div>
+                        <div className="mt-0.5 text-xs text-stone-500">Max items, shipping, free shipping threshold, GST.</div>
                     </div>
-                    <div>
-                        <div className="text-xs text-stone-400">Shipping amount (₹)</div>
-                        <input type="number" value={shippingAmount} onChange={(e) => setShippingAmount(e.target.value)} min={0}
-                            className="mt-1 w-full rounded-xl border border-[#E8E4DE] bg-white px-4 py-3 text-sm text-stone-900 focus:ring-2 focus:ring-[#1e3a5f]/20 outline-none" />
-                        <p className="text-[11px] text-stone-400 mt-1">Set to 0 for free shipping</p>
+                    <Chevron section="orders" />
+                </button>
+                {openSections.has("orders") && (
+                    <div className="px-5 pb-5 border-t border-[#E8E4DE] pt-4">
+                        <div className="grid gap-4 sm:grid-cols-2">
+                            <div>
+                                <div className="text-xs text-stone-400">Max items per order</div>
+                                <input type="number" value={maxItems} onChange={(e) => setMaxItems(e.target.value)} min={1}
+                                    className="mt-1 w-full rounded-xl border border-[#E8E4DE] bg-white px-4 py-3 text-sm text-stone-900 focus:ring-2 focus:ring-[#1e3a5f]/20 outline-none" />
+                            </div>
+                            <div>
+                                <div className="text-xs text-stone-400">Shipping amount (₹)</div>
+                                <input type="number" value={shippingAmount} onChange={(e) => setShippingAmount(e.target.value)} min={0}
+                                    className="mt-1 w-full rounded-xl border border-[#E8E4DE] bg-white px-4 py-3 text-sm text-stone-900 focus:ring-2 focus:ring-[#1e3a5f]/20 outline-none" />
+                                <p className="text-[11px] text-stone-400 mt-1">Flat shipping fee charged when applicable</p>
+                            </div>
+                            <div>
+                                <div className="text-xs text-stone-400">Free shipping above (₹)</div>
+                                <input type="number" value={freeShippingMin} onChange={(e) => setFreeShippingMin(e.target.value)} min={0}
+                                    className="mt-1 w-full rounded-xl border border-[#E8E4DE] bg-white px-4 py-3 text-sm text-stone-900 focus:ring-2 focus:ring-[#1e3a5f]/20 outline-none" />
+                                <p className="text-[11px] text-stone-400 mt-1">Orders ≥ this amount get free shipping. Set to 0 to always charge shipping.</p>
+                            </div>
+                            <div>
+                                <div className="text-xs text-stone-400">GST %</div>
+                                <input type="number" value={gstPercent} onChange={(e) => setGstPercent(e.target.value)} min={0} max={100} step={0.1}
+                                    className="mt-1 w-full rounded-xl border border-[#E8E4DE] bg-white px-4 py-3 text-sm text-stone-900 focus:ring-2 focus:ring-[#1e3a5f]/20 outline-none" />
+                                <p className="text-[11px] text-stone-400 mt-1">Applied on subtotal. Set to 0 to disable GST.</p>
+                            </div>
+                        </div>
+                        <div className="mt-4 flex items-center gap-3">
+                            <button onClick={save} disabled={saving} className="btn-primary disabled:opacity-50">{saving ? "Saving..." : "Save"}</button>
+                            <span className="text-xs text-stone-400">Ctrl+S</span>
+                        </div>
                     </div>
-                </div>
-                <div className="mt-4 flex items-center gap-3">
-                    <button onClick={save} disabled={saving} className="btn-primary disabled:opacity-50">
-                        {saving ? "Saving..." : "Save"}
-                    </button>
-                    <span className="text-xs text-stone-400">Ctrl+S</span>
-                </div>
+                )}
             </div>
 
             {/* ── Payment Methods ── */}
-            <div className="rounded-2xl border border-[#E8E4DE] bg-white p-5">
-                <div className="text-base font-semibold text-stone-900 mb-1">Payment Methods</div>
-                <div className="text-sm text-stone-500 mb-5">Control which payment options are available to customers at checkout.</div>
-
-                {/* COD Toggle */}
-                <div className="rounded-xl border border-[#E8E4DE] p-4 mb-4">
-                    <div className="flex items-center justify-between gap-4">
-                        <div>
-                            <div className="text-sm font-semibold text-stone-900 flex items-center gap-2">
-                                Cash on Delivery
-                                <span className={[
-                                    "inline-flex items-center rounded-full px-2 py-0.5 text-[10px] font-bold uppercase tracking-wide",
-                                    codEnabled
-                                        ? "bg-emerald-50 text-emerald-700"
-                                        : "bg-stone-100 text-stone-400",
-                                ].join(" ")}>
-                                    {codLoading ? "..." : codEnabled ? "Active" : "Inactive"}
-                                </span>
-                            </div>
-                            <div className="mt-0.5 text-xs text-stone-500">
-                                Allow customers to pay at the time of delivery.
+            <div className="rounded-2xl border border-[#E8E4DE] bg-white">
+                <button type="button" onClick={() => toggleSection("payments")} className="w-full flex items-center justify-between p-5 text-left">
+                    <div>
+                        <div className="text-base font-semibold text-stone-900">Payment Methods</div>
+                        <div className="mt-0.5 text-xs text-stone-500">Control which payment options are available at checkout.</div>
+                    </div>
+                    <Chevron section="payments" />
+                </button>
+                {openSections.has("payments") && (
+                    <div className="px-5 pb-5 border-t border-[#E8E4DE] pt-4">
+                        <div className="rounded-xl border border-[#E8E4DE] p-4 mb-4">
+                            <div className="flex items-center justify-between gap-4">
+                                <div>
+                                    <div className="text-sm font-semibold text-stone-900 flex items-center gap-2">
+                                        Cash on Delivery
+                                        <span className={["inline-flex items-center rounded-full px-2 py-0.5 text-[10px] font-bold uppercase tracking-wide",
+                                            codEnabled ? "bg-emerald-50 text-emerald-700" : "bg-stone-100 text-stone-400"].join(" ")}>
+                                            {codLoading ? "..." : codEnabled ? "Active" : "Inactive"}
+                                        </span>
+                                    </div>
+                                    <div className="mt-0.5 text-xs text-stone-500">Allow customers to pay cash on delivery.</div>
+                                </div>
+                                <button type="button" role="switch" aria-checked={codEnabled} disabled={codLoading || codSaving} onClick={toggleCod}
+                                    className={["relative inline-flex h-7 w-12 shrink-0 cursor-pointer items-center rounded-full transition-colors duration-200 focus:outline-none disabled:opacity-50 disabled:cursor-not-allowed",
+                                        codEnabled ? "bg-emerald-500" : "bg-stone-300"].join(" ")}>
+                                    <span className={["inline-block h-5 w-5 rounded-full bg-white shadow-md transform transition-transform duration-200",
+                                        codEnabled ? "translate-x-6" : "translate-x-1"].join(" ")} />
+                                </button>
                             </div>
                         </div>
-                        <button
-                            type="button"
-                            role="switch"
-                            aria-checked={codEnabled}
-                            disabled={codLoading || codSaving}
-                            onClick={toggleCod}
-                            className={[
-                                "relative inline-flex h-7 w-12 shrink-0 cursor-pointer items-center rounded-full transition-colors duration-200 ease-in-out focus:outline-none focus:ring-2 focus:ring-[#1e3a5f]/30 focus:ring-offset-2 disabled:opacity-50 disabled:cursor-not-allowed",
-                                codEnabled ? "bg-emerald-500" : "bg-stone-300",
-                            ].join(" ")}
-                        >
-                            <span
-                                className={[
-                                    "inline-block h-5 w-5 rounded-full bg-white shadow-md transform transition-transform duration-200 ease-in-out",
-                                    codEnabled ? "translate-x-6" : "translate-x-1",
-                                ].join(" ")}
-                            />
+                        <div className="rounded-xl border border-[#E8E4DE] p-4">
+                            <div className="flex items-center justify-between gap-4">
+                                <div>
+                                    <div className="text-sm font-semibold text-stone-900 flex items-center gap-2">
+                                        Razorpay (Online Payments)
+                                        <span className={["inline-flex items-center rounded-full px-2 py-0.5 text-[10px] font-bold uppercase tracking-wide",
+                                            razorpayEnabled ? "bg-emerald-50 text-emerald-700" : "bg-stone-100 text-stone-400"].join(" ")}>
+                                            {razorpayLoading ? "..." : razorpayEnabled ? "Active" : "Inactive"}
+                                        </span>
+                                    </div>
+                                    <div className="mt-0.5 text-xs text-stone-500">Accept UPI, cards, wallets, and net banking via Razorpay.</div>
+                                </div>
+                                <button type="button" role="switch" aria-checked={razorpayEnabled} disabled={razorpayLoading || razorpaySaving} onClick={toggleRazorpay}
+                                    className={["relative inline-flex h-7 w-12 shrink-0 cursor-pointer items-center rounded-full transition-colors duration-200 focus:outline-none disabled:opacity-50 disabled:cursor-not-allowed",
+                                        razorpayEnabled ? "bg-emerald-500" : "bg-stone-300"].join(" ")}>
+                                    <span className={["inline-block h-5 w-5 rounded-full bg-white shadow-md transform transition-transform duration-200",
+                                        razorpayEnabled ? "translate-x-6" : "translate-x-1"].join(" ")} />
+                                </button>
+                            </div>
+                            <div className="mt-3 rounded-lg bg-stone-50 border border-[#E8E4DE] px-3 py-2.5 text-xs text-stone-500">
+                                {razorpayEnabled ? (
+                                    <><div className="font-semibold text-emerald-700 mb-1">Razorpay is enabled ✓</div><p className="text-emerald-600">Make sure your Razorpay API keys are configured in the environment variables.</p></>
+                                ) : (
+                                    <><div className="font-semibold mb-1">Razorpay payments are disabled</div><p>Only <strong>Cash on Delivery</strong> is available at checkout.</p></>
+                                )}
+                            </div>
+                            <details className="mt-3 rounded-xl border border-[#E8E4DE] bg-stone-50/50">
+                                <summary className="cursor-pointer px-4 py-3 text-xs font-semibold text-stone-500 hover:text-stone-700 transition-colors">Setup instructions</summary>
+                                <div className="px-4 pb-4 text-xs text-stone-500 space-y-2 leading-relaxed">
+                                    <p>To enable Razorpay, add these environment variables:</p>
+                                    <div className="rounded-lg bg-stone-900 text-stone-100 p-3 font-mono text-[11px] space-y-1">
+                                        <div><span className="text-stone-400"># Frontend .env file</span></div>
+                                        <div>VITE_RAZORPAY_KEY_ID=rzp_test_xxxxxxxxxx</div>
+                                        <div><span className="text-stone-400"># Supabase Edge Function secrets</span></div>
+                                        <div>RAZORPAY_KEY_ID=rzp_test_xxxxxxxxxx</div>
+                                        <div>RAZORPAY_KEY_SECRET=your_key_secret_here</div>
+                                    </div>
+                                    <p className="text-stone-400">Get your API keys from the <a href="https://dashboard.razorpay.com/app/keys" target="_blank" rel="noopener noreferrer" className="underline hover:text-stone-600">Razorpay Dashboard</a>.</p>
+                                </div>
+                            </details>
+                        </div>
+                    </div>
+                )}
+            </div>
+
+            {/* ── Replacements ── */}
+            <div className="rounded-2xl border border-[#E8E4DE] bg-white">
+                <button type="button" onClick={() => toggleSection("replacements")} className="w-full flex items-center justify-between p-5 text-left">
+                    <div>
+                        <div className="flex items-center gap-2">
+                            <div className="text-base font-semibold text-stone-900">Replacements</div>
+                            <span className={["text-[11px] font-semibold px-2 py-0.5 rounded-full border",
+                                replacementsEnabled ? "bg-emerald-50 border-emerald-200 text-emerald-700" : "bg-stone-100 border-stone-200 text-stone-400"].join(" ")}>
+                                {replacementsLoading ? "..." : replacementsEnabled ? "Active" : "Inactive"}
+                            </span>
+                        </div>
+                        <div className="mt-0.5 text-xs text-stone-500">Allow customers to request product replacements for damaged shipments.</div>
+                    </div>
+                    <Chevron section="replacements" />
+                </button>
+                {openSections.has("replacements") && (
+                    <div className="px-5 pb-5 border-t border-[#E8E4DE] pt-4 space-y-4">
+                        <div className="flex items-center justify-between gap-4">
+                            <span className="text-sm font-medium text-stone-700">Enable replacements</span>
+                            <button type="button" role="switch" aria-checked={replacementsEnabled} disabled={replacementsLoading || replacementsSaving} onClick={toggleReplacements}
+                                className={["relative inline-flex h-7 w-12 shrink-0 cursor-pointer items-center rounded-full transition-colors duration-200 focus:outline-none disabled:opacity-50 disabled:cursor-not-allowed",
+                                    replacementsEnabled ? "bg-emerald-500" : "bg-stone-300"].join(" ")}>
+                                <span className={["inline-block h-5 w-5 rounded-full bg-white shadow-md transform transition-transform duration-200",
+                                    replacementsEnabled ? "translate-x-6" : "translate-x-1"].join(" ")} />
+                            </button>
+                        </div>
+                        {/* Replacement window duration */}
+                        <div className="flex items-end gap-3">
+                            <div className="flex-1">
+                                <label className="block text-xs text-stone-400 mb-1">Replacement window (days)</label>
+                                <input
+                                    type="number" min={0} max={30}
+                                    value={replacementWindowDays}
+                                    onChange={(e) => setReplacementWindowDays(e.target.value)}
+                                    className="w-full rounded-lg border border-stone-200 bg-stone-50 px-3 py-2 text-sm text-stone-800 focus:outline-none focus:ring-2 focus:ring-amber-400"
+                                />
+                                <p className="text-[11px] text-stone-400 mt-1">Customers can request a replacement within this many days of delivery. CoreCoins are credited after this window closes.</p>
+                            </div>
+                            <button
+                                type="button"
+                                onClick={saveReplacementWindowDays}
+                                disabled={replacementsSaving}
+                                className="px-4 py-2 rounded-lg bg-stone-900 text-white text-sm font-medium hover:bg-stone-700 disabled:opacity-50 transition-colors"
+                            >
+                                Save
+                            </button>
+                        </div>
+                        {/* Replacement window in minutes (overrides days when > 0) */}
+                        <div className="flex items-end gap-3">
+                            <div className="flex-1">
+                                <label className="block text-xs text-stone-400 mb-1">Replacement window (minutes)</label>
+                                <input
+                                    type="number" min={0} max={1440}
+                                    value={replacementWindowMinutes}
+                                    onChange={(e) => setReplacementWindowMinutes(e.target.value)}
+                                    className="w-full rounded-lg border border-stone-200 bg-stone-50 px-3 py-2 text-sm text-stone-800 focus:outline-none focus:ring-2 focus:ring-amber-400"
+                                />
+                                <p className="text-[11px] text-stone-400 mt-1">When set to a value greater than 0, minutes are used instead of days. Set to 0 to use the days value above.</p>
+                            </div>
+                            <button
+                                type="button"
+                                onClick={saveReplacementWindowDays}
+                                disabled={replacementsSaving}
+                                className="px-4 py-2 rounded-lg bg-stone-900 text-white text-sm font-medium hover:bg-stone-700 disabled:opacity-50 transition-colors"
+                            >
+                                Save
+                            </button>
+                        </div>
+                    </div>
+                )}
+            </div>
+
+            {/* ── CoreCoins Loyalty Program ── */}
+            <div className="rounded-2xl border border-[#E8E4DE] bg-white">
+                <button type="button" onClick={() => toggleSection("corecoins")} className="w-full flex items-center justify-between p-5 text-left">
+                    <div>
+                        <div className="flex items-center gap-2">
+                            <div className="text-base font-semibold text-stone-900">CoreCoins Loyalty Program</div>
+                            <span className={["text-[11px] font-semibold px-2 py-0.5 rounded-full border",
+                                corecoinsEnabled ? "bg-emerald-50 border-emerald-200 text-emerald-700" : "bg-stone-100 border-stone-200 text-stone-400"].join(" ")}>
+                                {corecoinsLoading ? "..." : corecoinsEnabled ? "Active" : "Inactive"}
+                            </span>
+                        </div>
+                        <div className="mt-0.5 text-xs text-stone-500">Reward customers with coins on purchases. Redeemable for discounts at checkout.</div>
+                    </div>
+                    <Chevron section="corecoins" />
+                </button>
+                {openSections.has("corecoins") && (
+                    <div className="px-5 pb-5 border-t border-[#E8E4DE] pt-4 space-y-5">
+                        {/* Toggle */}
+                        <div className="flex items-center justify-between gap-4">
+                            <span className="text-sm font-medium text-stone-700">Enable CoreCoins</span>
+                            <button type="button" role="switch" aria-checked={corecoinsEnabled} disabled={corecoinsLoading || corecoinsSaving} onClick={toggleCorecoins}
+                                className={["relative inline-flex h-7 w-12 shrink-0 cursor-pointer items-center rounded-full transition-colors duration-200 focus:outline-none disabled:opacity-50 disabled:cursor-not-allowed",
+                                    corecoinsEnabled ? "bg-emerald-500" : "bg-stone-300"].join(" ")}>
+                                <span className={["inline-block h-5 w-5 rounded-full bg-white shadow-md transform transition-transform duration-200",
+                                    corecoinsEnabled ? "translate-x-6" : "translate-x-1"].join(" ")} />
+                            </button>
+                        </div>
+
+                        {/* Config fields */}
+                        <div className="grid gap-4 sm:grid-cols-2">
+                            <div>
+                                <div className="text-xs text-stone-400">Coins earned per purchase</div>
+                                <input type="number" value={corecoinsConfig.earn_rate}
+                                    onChange={(e) => setCorecoinsConfig(p => ({ ...p, earn_rate: e.target.value }))} min={1}
+                                    className="mt-1 w-full rounded-xl border border-[#E8E4DE] bg-white px-4 py-3 text-sm text-stone-900 focus:ring-2 focus:ring-[#1e3a5f]/20 outline-none" />
+                                <p className="text-[11px] text-stone-400 mt-1">Number of coins earned per threshold amount</p>
+                            </div>
+                            <div>
+                                <div className="text-xs text-stone-400">Per ₹ spent</div>
+                                <input type="number" value={corecoinsConfig.earn_per_rupees}
+                                    onChange={(e) => setCorecoinsConfig(p => ({ ...p, earn_per_rupees: e.target.value }))} min={1}
+                                    className="mt-1 w-full rounded-xl border border-[#E8E4DE] bg-white px-4 py-3 text-sm text-stone-900 focus:ring-2 focus:ring-[#1e3a5f]/20 outline-none" />
+                                <p className="text-[11px] text-stone-400 mt-1">e.g. 1 coin per ₹100 spent</p>
+                            </div>
+                            <div>
+                                <div className="text-xs text-stone-400">Minimum coins to redeem</div>
+                                <input type="number" value={corecoinsConfig.min_redeem}
+                                    onChange={(e) => setCorecoinsConfig(p => ({ ...p, min_redeem: e.target.value }))} min={1}
+                                    className="mt-1 w-full rounded-xl border border-[#E8E4DE] bg-white px-4 py-3 text-sm text-stone-900 focus:ring-2 focus:ring-[#1e3a5f]/20 outline-none" />
+                                <p className="text-[11px] text-stone-400 mt-1">Customer must have at least this many coins to use them</p>
+                            </div>
+                            <div>
+                                <div className="text-xs text-stone-400">Value per coin (₹)</div>
+                                <input type="number" value={corecoinsConfig.coin_value_inr}
+                                    onChange={(e) => setCorecoinsConfig(p => ({ ...p, coin_value_inr: e.target.value }))} min={0.1} step={0.1}
+                                    className="mt-1 w-full rounded-xl border border-[#E8E4DE] bg-white px-4 py-3 text-sm text-stone-900 focus:ring-2 focus:ring-[#1e3a5f]/20 outline-none" />
+                                <p className="text-[11px] text-stone-400 mt-1">How much ₹ each coin is worth when redeemed</p>
+                            </div>
+                        </div>
+
+                        {/* Info card */}
+                        <div className="rounded-xl bg-stone-50 border border-[#E8E4DE] px-4 py-3 text-xs text-stone-500 space-y-1">
+                            <p className="font-semibold text-stone-600">How it works</p>
+                            <p>• Coins are credited after delivery{replacementsEnabled ? " and the replacement window closes (1 day)" : ""}.</p>
+                            <p>• With current settings: customer earns <strong className="text-stone-900">{corecoinsConfig.earn_rate} coin{Number(corecoinsConfig.earn_rate) !== 1 ? "s" : ""}</strong> for every <strong className="text-stone-900">₹{corecoinsConfig.earn_per_rupees}</strong> spent.</p>
+                            <p>• Minimum <strong className="text-stone-900">{corecoinsConfig.min_redeem} coins</strong> required to redeem. Each coin = <strong className="text-stone-900">₹{corecoinsConfig.coin_value_inr}</strong>.</p>
+                        </div>
+
+                        <button type="button" onClick={saveCorecoinsConfig} disabled={corecoinsSaving}
+                            className="btn-primary py-2.5 px-5 text-sm disabled:opacity-50">
+                            {corecoinsSaving ? "Saving…" : "Save CoreCoins Settings"}
                         </button>
                     </div>
-                </div>
+                )}
+            </div>
 
-                {/* Razorpay Toggle */}
-                <div className="rounded-xl border border-[#E8E4DE] p-4">
-                    <div className="flex items-center justify-between gap-4">
-                        <div>
-                            <div className="text-sm font-semibold text-stone-900 flex items-center gap-2">
-                                Razorpay (Online)
-                                <span className={[
-                                    "inline-flex items-center rounded-full px-2 py-0.5 text-[10px] font-bold uppercase tracking-wide",
-                                    razorpayEnabled
-                                        ? "bg-emerald-50 text-emerald-700"
-                                        : "bg-stone-100 text-stone-400",
-                                ].join(" ")}>
-                                    {razorpayLoading ? "..." : razorpayEnabled ? "Active" : "Inactive"}
-                                </span>
-                            </div>
-                            <div className="mt-0.5 text-xs text-stone-500">
-                                Accept online payments via UPI, cards, and net banking.
-                            </div>
-                        </div>
-                        <button
-                            type="button"
-                            role="switch"
-                            aria-checked={razorpayEnabled}
-                            disabled={razorpayLoading || razorpaySaving}
-                            onClick={toggleRazorpay}
-                            className={[
-                                "relative inline-flex h-7 w-12 shrink-0 cursor-pointer items-center rounded-full transition-colors duration-200 ease-in-out focus:outline-none focus:ring-2 focus:ring-[#1e3a5f]/30 focus:ring-offset-2 disabled:opacity-50 disabled:cursor-not-allowed",
-                                razorpayEnabled ? "bg-emerald-500" : "bg-stone-300",
-                            ].join(" ")}
-                        >
-                            <span
-                                className={[
-                                    "inline-block h-5 w-5 rounded-full bg-white shadow-md transform transition-transform duration-200 ease-in-out",
-                                    razorpayEnabled ? "translate-x-6" : "translate-x-1",
-                                ].join(" ")}
-                            />
-                        </button>
+            {/* ── Warehouse / Return Address ── */}
+            <div className="rounded-2xl border border-[#E8E4DE] bg-white">
+                <button type="button" onClick={() => toggleSection("warehouse")} className="w-full flex items-center justify-between p-5 text-left">
+                    <div>
+                        <div className="text-base font-semibold text-stone-900">Warehouse / Return Address</div>
+                        <div className="mt-0.5 text-xs text-stone-500">Origin for Delhivery shipments, rate calculations, and return pickups.</div>
                     </div>
-                </div>
-
-                {/* Info panel */}
-                <div className={[
-                    "mt-4 rounded-xl border p-4 text-xs leading-relaxed transition-all",
-                    razorpayEnabled
-                        ? "border-emerald-200 bg-emerald-50/60 text-emerald-800"
-                        : "border-[#E8E4DE] bg-stone-50 text-stone-500",
-                ].join(" ")}>
-                    {razorpayEnabled ? (
-                        <>
-                            <div className="font-semibold mb-1">Razorpay payments are active</div>
-                            <p>Customers will see both <strong>Cash on Delivery</strong> and <strong>Pay Now (Online)</strong> options during checkout.</p>
-                            <p className="mt-2 text-emerald-600">Make sure your Razorpay API keys are configured in the environment variables.</p>
-                        </>
-                    ) : (
-                        <>
-                            <div className="font-semibold mb-1">Razorpay payments are disabled</div>
-                            <p>Only <strong>Cash on Delivery</strong> is available at checkout. Toggle this on to enable online payments via Razorpay.</p>
-                        </>
-                    )}
-                </div>
-
-                {/* Setup instructions (collapsed) */}
-                <details className="mt-3 rounded-xl border border-[#E8E4DE] bg-stone-50/50">
-                    <summary className="cursor-pointer px-4 py-3 text-xs font-semibold text-stone-500 hover:text-stone-700 transition-colors">
-                        Setup instructions
-                    </summary>
-                    <div className="px-4 pb-4 text-xs text-stone-500 space-y-2 leading-relaxed">
-                        <p>To enable Razorpay, add these environment variables:</p>
-                        <div className="rounded-lg bg-stone-900 text-stone-100 p-3 font-mono text-[11px] space-y-1">
-                            <div><span className="text-stone-400"># Frontend .env file</span></div>
-                            <div>VITE_RAZORPAY_KEY_ID=rzp_test_xxxxxxxxxx</div>
-                            <div></div>
-                            <div><span className="text-stone-400"># Supabase Edge Function secrets</span></div>
-                            <div>RAZORPAY_KEY_ID=rzp_test_xxxxxxxxxx</div>
-                            <div>RAZORPAY_KEY_SECRET=your_key_secret_here</div>
-                        </div>
-                        <p className="text-stone-400">Get your API keys from the <a href="https://dashboard.razorpay.com/app/keys" target="_blank" rel="noopener noreferrer" className="underline hover:text-stone-600">Razorpay Dashboard</a>.</p>
+                    <Chevron section="warehouse" />
+                </button>
+                {openSections.has("warehouse") && (
+                    <div className="px-5 pb-5 border-t border-[#E8E4DE] pt-4">
+                        {warehouseLoading ? (
+                            <div className="animate-pulse h-20 bg-stone-100 rounded-xl" />
+                        ) : (
+                            <>
+                                <div className="grid gap-3 sm:grid-cols-2">
+                                    <div>
+                                        <label className="text-xs text-stone-400 block mb-1">Contact name</label>
+                                        <input value={warehouse.name} onChange={e => setWarehouse(prev => ({ ...prev, name: e.target.value }))} placeholder="John Doe"
+                                            className="w-full rounded-xl border border-[#E8E4DE] bg-white px-3 py-2.5 text-sm text-stone-900 placeholder:text-stone-400 focus:ring-2 focus:ring-[#1e3a5f]/20 outline-none" />
+                                    </div>
+                                    <div>
+                                        <label className="text-xs text-stone-400 block mb-1">Phone</label>
+                                        <input value={warehouse.phone} onChange={e => setWarehouse(prev => ({ ...prev, phone: e.target.value.replace(/\D/g, "").slice(0, 10) }))} placeholder="9876543210" maxLength={10}
+                                            className="w-full rounded-xl border border-[#E8E4DE] bg-white px-3 py-2.5 text-sm font-mono text-stone-900 placeholder:text-stone-400 focus:ring-2 focus:ring-[#1e3a5f]/20 outline-none" />
+                                    </div>
+                                    <div className="sm:col-span-2">
+                                        <label className="text-xs text-stone-400 block mb-1">Address</label>
+                                        <textarea value={warehouse.address} onChange={e => setWarehouse(prev => ({ ...prev, address: e.target.value }))} placeholder="123 Industrial Area, Sector 5" rows={2}
+                                            className="w-full rounded-xl border border-[#E8E4DE] bg-white px-3 py-2.5 text-sm text-stone-900 placeholder:text-stone-400 focus:ring-2 focus:ring-[#1e3a5f]/20 outline-none resize-none" />
+                                    </div>
+                                    <div>
+                                        <label className="text-xs text-stone-400 block mb-1">City</label>
+                                        <input value={warehouse.city} onChange={e => setWarehouse(prev => ({ ...prev, city: e.target.value }))} placeholder="Mumbai"
+                                            className="w-full rounded-xl border border-[#E8E4DE] bg-white px-3 py-2.5 text-sm text-stone-900 placeholder:text-stone-400 focus:ring-2 focus:ring-[#1e3a5f]/20 outline-none" />
+                                    </div>
+                                    <div>
+                                        <label className="text-xs text-stone-400 block mb-1">State</label>
+                                        <input value={warehouse.state} onChange={e => setWarehouse(prev => ({ ...prev, state: e.target.value }))} placeholder="Maharashtra"
+                                            className="w-full rounded-xl border border-[#E8E4DE] bg-white px-3 py-2.5 text-sm text-stone-900 placeholder:text-stone-400 focus:ring-2 focus:ring-[#1e3a5f]/20 outline-none" />
+                                    </div>
+                                    <div>
+                                        <label className="text-xs text-stone-400 block mb-1">Pincode</label>
+                                        <input value={warehouse.pin} onChange={e => setWarehouse(prev => ({ ...prev, pin: e.target.value.replace(/\D/g, "").slice(0, 6) }))} placeholder="400001" maxLength={6}
+                                            className="w-full rounded-xl border border-[#E8E4DE] bg-white px-3 py-2.5 text-sm font-mono text-stone-900 placeholder:text-stone-400 focus:ring-2 focus:ring-[#1e3a5f]/20 outline-none" />
+                                    </div>
+                                </div>
+                                <div className="mt-4">
+                                    <button type="button" onClick={saveWarehouse} disabled={warehouseSaving} className="btn-primary py-2.5 px-5 text-sm disabled:opacity-50">
+                                        {warehouseSaving ? "Saving…" : "Save Warehouse Address"}
+                                    </button>
+                                </div>
+                            </>
+                        )}
                     </div>
-                </details>
+                )}
             </div>
 
             {/* ── Discount Codes ── */}
-            <div className="rounded-2xl border border-[#E8E4DE] bg-white p-5">
-                <div className="text-base font-semibold text-stone-900 mb-1">Discount Codes</div>
-                <div className="text-sm text-stone-500 mb-5">Create coupon codes with percentage discounts. Customers can apply these during checkout.</div>
-
-                {/* Add new code */}
-                <div className="rounded-xl border border-[#E8E4DE] p-4 mb-4">
-                    <p className="text-xs font-semibold text-stone-500 uppercase tracking-wide mb-3">Add new code</p>
-                    <div className="flex flex-col gap-3 sm:flex-row sm:items-end">
-                        <div className="flex-1">
-                            <label className="text-xs text-stone-400 block mb-1">Code</label>
-                            <input value={newCode} onChange={(e) => setNewCode(e.target.value.toUpperCase())}
-                                placeholder="e.g. SAVE20" maxLength={20}
-                                className="w-full rounded-xl border border-[#E8E4DE] bg-white px-3 py-2.5 text-sm font-mono text-stone-900 uppercase placeholder:text-stone-400 focus:ring-2 focus:ring-[#1e3a5f]/20 outline-none" />
-                        </div>
-                        <div className="w-full sm:w-28">
-                            <label className="text-xs text-stone-400 block mb-1">Discount %</label>
-                            <input type="number" value={newPercent} onChange={(e) => setNewPercent(e.target.value)}
-                                placeholder="e.g. 20" min={1} max={100}
-                                className="w-full rounded-xl border border-[#E8E4DE] bg-white px-3 py-2.5 text-sm text-stone-900 placeholder:text-stone-400 focus:ring-2 focus:ring-[#1e3a5f]/20 outline-none" />
-                        </div>
-                        <button onClick={addDiscountCode} disabled={addingCode || !newCode.trim() || !newPercent}
-                            className="btn-primary py-2.5 px-5 text-sm whitespace-nowrap disabled:opacity-40">
-                            {addingCode ? "Adding…" : "Add code"}
-                        </button>
+            <div className="rounded-2xl border border-[#E8E4DE] bg-white">
+                <button type="button" onClick={() => toggleSection("discounts")} className="w-full flex items-center justify-between p-5 text-left">
+                    <div>
+                        <div className="text-base font-semibold text-stone-900">Discount Codes</div>
+                        <div className="mt-0.5 text-xs text-stone-500">Create coupon codes with percentage discounts for checkout.</div>
                     </div>
-                </div>
-
-                {/* Existing codes */}
-                {discountLoading ? (
-                    <div className="text-sm text-stone-400 py-4 text-center">Loading codes…</div>
-                ) : discountCodes.length === 0 ? (
-                    <div className="rounded-xl border border-dashed border-[#E8E4DE] p-6 text-center">
-                        <p className="text-sm text-stone-400">No discount codes yet. Add one above.</p>
-                    </div>
-                ) : (
-                    <div className="space-y-2">
-                        {discountCodes.map((dc) => (
-                            <div key={dc.code} className="flex items-center justify-between gap-3 rounded-xl border border-[#E8E4DE] px-4 py-3">
-                                <div className="flex items-center gap-3 min-w-0">
-                                    <span className="font-mono text-sm font-semibold text-stone-900">{dc.code}</span>
-                                    <span className="rounded-full bg-[#1e3a5f]/10 px-2 py-0.5 text-[11px] font-bold text-[#1e3a5f]">{dc.percentage}% off</span>
-                                    <span className={`rounded-full px-2 py-0.5 text-[10px] font-bold uppercase tracking-wide ${dc.active ? "bg-emerald-50 text-emerald-700" : "bg-stone-100 text-stone-400"}`}>
-                                        {dc.active ? "Active" : "Inactive"}
-                                    </span>
+                    <Chevron section="discounts" />
+                </button>
+                {openSections.has("discounts") && (
+                    <div className="px-5 pb-5 border-t border-[#E8E4DE] pt-4">
+                        <div className="rounded-xl border border-[#E8E4DE] p-4 mb-4">
+                            <p className="text-xs font-semibold text-stone-500 uppercase tracking-wide mb-3">Add new code</p>
+                            {/* Row 1: Code + Discount % */}
+                            <div className="flex gap-3">
+                                <div className="flex-1">
+                                    <label className="text-xs text-stone-400 block mb-1">Code</label>
+                                    <input value={newCode} onChange={(e) => setNewCode(e.target.value.toUpperCase())} placeholder="SAVE20" maxLength={20}
+                                        className="w-full rounded-xl border border-[#E8E4DE] bg-white px-3 py-2.5 text-sm font-mono uppercase text-stone-900 placeholder:text-stone-400 focus:ring-2 focus:ring-[#1e3a5f]/20 outline-none" />
                                 </div>
-                                <div className="flex items-center gap-2 shrink-0">
-                                    <button type="button" onClick={() => toggleDiscountCode(dc.code)}
-                                        className="text-xs text-stone-400 hover:text-[#1e3a5f] transition-colors">
-                                        {dc.active ? "Deactivate" : "Activate"}
-                                    </button>
-                                    <button type="button" onClick={() => deleteDiscountCode(dc.code)}
-                                        className="text-xs text-stone-300 hover:text-red-500 transition-colors">✕</button>
+                                <div className="w-28">
+                                    <label className="text-xs text-stone-400 block mb-1">Discount %</label>
+                                    <input type="number" value={newPercent} onChange={(e) => setNewPercent(e.target.value)} placeholder="20" min={1} max={100}
+                                        className="w-full rounded-xl border border-[#E8E4DE] bg-white px-3 py-2.5 text-sm text-stone-900 placeholder:text-stone-400 focus:ring-2 focus:ring-[#1e3a5f]/20 outline-none" />
                                 </div>
                             </div>
-                        ))}
+                            {/* Row 2: Starts at + Ends at */}
+                            <div className="mt-3 flex gap-3">
+                                <div className="flex-1">
+                                    <label className="text-xs text-stone-400 block mb-1">Starts at (optional)</label>
+                                    <input type="datetime-local" value={newStartsAt} onChange={(e) => setNewStartsAt(e.target.value)}
+                                        className="w-full rounded-xl border border-[#E8E4DE] bg-white px-3 py-2.5 text-sm text-stone-900 focus:ring-2 focus:ring-[#1e3a5f]/20 outline-none" />
+                                </div>
+                                <div className="flex-1">
+                                    <label className="text-xs text-stone-400 block mb-1">Ends at (optional)</label>
+                                    <input type="datetime-local" value={newEndsAt} onChange={(e) => setNewEndsAt(e.target.value)}
+                                        className="w-full rounded-xl border border-[#E8E4DE] bg-white px-3 py-2.5 text-sm text-stone-900 focus:ring-2 focus:ring-[#1e3a5f]/20 outline-none" />
+                                </div>
+                            </div>
+                            {/* Row 3: Restrict to emails */}
+                            <div className="mt-3">
+                                <label className="text-xs text-stone-400 block mb-1">Restrict to emails (optional, comma-separated)</label>
+                                <input value={newEmails} onChange={(e) => setNewEmails(e.target.value)} placeholder="user1@example.com, user2@example.com"
+                                    className="w-full rounded-xl border border-[#E8E4DE] bg-white px-3 py-2.5 text-sm text-stone-900 placeholder:text-stone-400 focus:ring-2 focus:ring-[#1e3a5f]/20 outline-none" />
+                            </div>
+                            <div className="mt-3 flex items-center gap-4">
+                                <label className="flex items-center gap-2 cursor-pointer select-none">
+                                    <input type="checkbox" checked={newUsersOnly} onChange={(e) => setNewUsersOnly(e.target.checked)}
+                                        className="rounded border-stone-300 text-emerald-600 focus:ring-emerald-500/30 h-4 w-4" />
+                                    <span className="text-xs text-stone-600">New users only</span>
+                                </label>
+                            </div>
+                            <button type="button" onClick={addDiscountCode} disabled={addingCode} className="mt-3 btn-primary py-2 px-5 text-sm disabled:opacity-50">
+                                {addingCode ? "Adding…" : "Add Code"}
+                            </button>
+                        </div>
+                        {discountLoading ? (
+                            <div className="text-sm text-stone-400 text-center py-4 animate-pulse">Loading codes…</div>
+                        ) : discountCodes.length === 0 ? (
+                            <div className="text-sm text-stone-400 text-center py-4">No discount codes yet.</div>
+                        ) : (
+                            <div className="space-y-2">
+                                {discountCodes.map((dc, i) => (
+                                    <div key={i} className="rounded-xl border border-[#E8E4DE] px-4 py-3 flex items-center justify-between gap-3">
+                                        <div>
+                                            <div className="flex items-center gap-2">
+                                                <span className="font-mono text-sm font-semibold text-stone-900">{dc.code}</span>
+                                                <button type="button" title="Copy code"
+                                                    onClick={(e) => { navigator.clipboard.writeText(dc.code); const btn = e.currentTarget; btn.textContent = "✓"; setTimeout(() => { btn.textContent = "📋"; }, 1200); }}
+                                                    className="text-stone-400 hover:text-stone-700 text-sm transition-colors">📋</button>
+                                                <span className="text-xs text-emerald-600 font-semibold">{dc.percentage}% off</span>
+                                                {dc.newUsersOnly && <span className="inline-flex items-center rounded-full bg-indigo-50 border border-indigo-200 px-2 py-0.5 text-[10px] font-semibold text-indigo-600">🆕 New users</span>}
+                                            </div>
+                                            {(dc.startsAt || dc.endsAt || dc.emails?.length > 0) && (
+                                                <div className="mt-1 flex flex-wrap gap-1.5">
+                                                    {dc.startsAt && <span className="inline-flex items-center gap-1 rounded-full bg-blue-50 px-2 py-0.5 text-[10px] font-medium text-blue-700">🕐 From {new Date(dc.startsAt).toLocaleString("en-IN", { day: "numeric", month: "short", year: "numeric", hour: "2-digit", minute: "2-digit" })}</span>}
+                                                    {dc.endsAt && <span className="inline-flex items-center gap-1 rounded-full bg-amber-50 px-2 py-0.5 text-[10px] font-medium text-amber-700">⏳ Until {new Date(dc.endsAt).toLocaleString("en-IN", { day: "numeric", month: "short", year: "numeric", hour: "2-digit", minute: "2-digit" })}</span>}
+                                                    {dc.emails?.length > 0 && <span className="inline-flex items-center gap-1 rounded-full bg-violet-50 px-2 py-0.5 text-[10px] font-medium text-violet-700">✉ {dc.emails.length === 1 ? dc.emails[0] : `${dc.emails.length} emails`}</span>}
+                                                </div>
+                                            )}
+                                        </div>
+                                        <button type="button" onClick={() => deleteDiscountCode(dc.code)} className="text-red-400 hover:text-red-600 text-xs font-semibold transition-colors shrink-0">Remove</button>
+                                    </div>
+                                ))}
+                            </div>
+                        )}
                     </div>
                 )}
             </div>
         </div>
     );
 }
+

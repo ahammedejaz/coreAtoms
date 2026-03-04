@@ -1,3 +1,22 @@
+/**
+ * AdminHomepage.jsx — Homepage content editor for admins.
+ *
+ * Allows admins to visually configure every section of the public homepage.
+ * All settings are persisted to the `app_settings` table as jsonb values.
+ *
+ * Editable sections (in display order):
+ *   1. Site Logo — navbar logo image
+ *   2. Hero Carousel Images — drag-to-reposition, reorder, upload
+ *   3. Hero Copy & CTAs — headline, body, buttons, trust icons
+ *   4. Value Pillars — the 4 brand pillar cards
+ *   5. Featured Products — pin/unpin products to homepage
+ *   6. Shop by Category — category tiles with emoji, label, category value
+ *   7. Our Philosophy — brand statement section
+ *
+ * Each section includes inline live preview. Ctrl+S saves all sections at once.
+ *
+ * @module pages/admin/AdminHomepage
+ */
 import { useCallback, useEffect, useRef, useState } from "react";
 import { supabase } from "../../services/supabase/client";
 import ImagePositionAdjuster from "../../components/ImagePositionAdjuster";

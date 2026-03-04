@@ -1,9 +1,14 @@
 /**
- * Home.jsx — Marketing-focused landing page.
+ * Home.jsx — Admin-customisable marketing landing page.
  *
- * Fetches homepage settings (hero images, copy, pillars, categories, philosophy)
- * and featured products from Supabase in parallel. All sections are admin-
- * configurable via the `app_settings` table.
+ * Fetches the following from `app_settings` on mount (parallel requests):
+ *   homepage_hero_images, homepage_hero_copy, homepage_pillars,
+ *   homepage_categories, homepage_philosophy, homepage_featured_products,
+ *   gst_percentage (to conditionally show 'Excl. GST & Shipping' on cards)
+ *
+ * All visible text, images, and links are admin-controlled via AdminHomepage.
+ * The hero carousel auto-advances with a 5 s interval.
+ * Featured products strip reuses the `ProductCard` component from Shop.jsx.
  *
  * @module pages/Home
  */
@@ -17,6 +22,7 @@ import SEO from "../components/SEO";
 import { SkeletonGrid } from "../components/Skeleton";
 import { useToast } from "../context/ToastContext";
 import ScrollReveal from "../components/ScrollReveal";
+import PromoBanner from "../components/PromoBanner";
 
 // ── Defaults (shown if admin hasn't saved yet) ────────────────────────────────
 const DEFAULT_HERO_IMAGES = [
@@ -78,6 +84,7 @@ export default function Home() {
   const [pillars, setPillars] = useState(DEFAULT_PILLARS);
   const [categories, setCategories] = useState(DEFAULT_CATEGORIES);
   const [philosophy, setPhilosophy] = useState(DEFAULT_PHILOSOPHY);
+  const [gstPercent, setGstPercent] = useState(0);
 
   // ── Load all settings + products in parallel ─────────────────────────────
   const loadData = useCallback(async () => {
@@ -95,6 +102,7 @@ export default function Home() {
             "homepage_pillars",
             "homepage_categories",
             "homepage_philosophy",
+            "gst_percentage",
           ]),
         fetchProducts(),
       ]);
@@ -130,6 +138,9 @@ export default function Home() {
       if (map.homepage_philosophy && typeof map.homepage_philosophy === "object") {
         setPhilosophy({ ...DEFAULT_PHILOSOPHY, ...map.homepage_philosophy });
       }
+
+      // GST
+      setGstPercent(Number(map.gst_percentage?.percentage ?? 0));
 
       // Featured products
       const featuredIds = Array.isArray(map.homepage_featured_products)
@@ -193,6 +204,9 @@ export default function Home() {
         title="Core Atoms | Premium Nutraceuticals"
         description="Modern nutraceuticals designed for real routines. Clean formulas, structured stacks, COD available across India."
       />
+
+      {/* ── PROMO BANNER (admin-controlled) ─────────────────────────────── */}
+      <PromoBanner />
 
       {/* ── HERO ──────────────────────────────────────────────────────────── */}
       <section className="rounded-3xl bg-white overflow-hidden relative" style={{ boxShadow: '0 4px 20px rgba(0,0,0,0.06), 0 12px 48px rgba(30,58,95,0.08), inset 0 1px 0 rgba(255,255,255,0.9)', border: '1px solid rgba(232,228,222,0.5)' }}>
@@ -337,7 +351,7 @@ export default function Home() {
           ) : (
             <div className="grid gap-5 sm:grid-cols-2 lg:grid-cols-3">
               {products.map((p) => (
-                <ProductCard key={p.id} p={p} onAdd={handleAdd} justAdded={justAddedId === p.id} />
+                <ProductCard key={p.id} p={p} onAdd={handleAdd} justAdded={justAddedId === p.id} gstPercent={gstPercent} />
               ))}
             </div>
           )}

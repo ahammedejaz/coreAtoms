@@ -2,8 +2,9 @@
  * main.jsx — Application entry point.
  *
  * Renders the React root with the following provider hierarchy:
- *   StrictMode → HelmetProvider → AuthProvider → CartProvider → ToastProvider → RouterProvider
+ *   StrictMode → HelmetProvider → ToastProvider → AuthProvider → CartProvider → RouterProvider
  *
+ * Toast wraps Auth so that AuthContext can show session-expiry toasts.
  * Auth wraps Cart so that cart operations can be aware of the user session.
  * The router is created in `AppRoutes.jsx` using `createBrowserRouter`.
  *
@@ -22,13 +23,13 @@ import './index.css'
 ReactDOM.createRoot(document.getElementById('root')).render(
   <React.StrictMode>
     <HelmetProvider>
-      <AuthProvider>
-        <CartProvider>
-          <ToastProvider>
+      <ToastProvider>
+        <AuthProvider>
+          <CartProvider>
             <RouterProvider router={router} />
-          </ToastProvider>
-        </CartProvider>
-      </AuthProvider>
+          </CartProvider>
+        </AuthProvider>
+      </ToastProvider>
     </HelmetProvider>
   </React.StrictMode>,
 )

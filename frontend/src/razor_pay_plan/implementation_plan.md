@@ -1,101 +1,64 @@
-# Razorpay Payment Gateway — Toggle-Based Integration
+# Post-Approval Replacement Automation
 
-Admin gets a simple **ON/OFF toggle** in Settings. API keys are stored securely in environment variables (never exposed on frontend). When toggled ON, checkout shows both COD and Razorpay options.
+After admin approves a replacement request, two paths are available:
 
-## Architecture
+## Flow Overview
 
 ```mermaid
-flowchart TD
-    A[Admin Toggle ON] -->|app_settings| B[Checkout reads toggle]
-    B -->|Razorpay enabled| C[Show 'Pay Now' + 'COD' buttons]
-    C -->|User clicks Pay Now| D[Load Razorpay SDK with VITE_RAZORPAY_KEY_ID]
-    D --> E[Razorpay Checkout popup]
-    E -->|Payment success| F[Supabase Edge Function]
-    F -->|Verify signature with RAZORPAY_KEY_SECRET| G[Create order in DB]
+graph TD
+    A[Admin Approves] --> B{Damage severity?}
+    B -- Severe --> C[Ship Replacement Directly]
+    C --> D[Delhivery forward shipment]
+    D --> E[Status: replacement_shipped]
+    B -- Minor --> F[Schedule Reverse Pickup]
+    F --> G[Status: pickup_scheduled]
+    G --> H[Admin marks pickup received]
+    H --> I[Status: pickup_received]
+    I --> J[Ship Replacement]
+    J --> E
 ```
-
-## Where API Keys Go (Manual Setup)
-
-| Key | Where | How |
-|-----|-------|-----|
-| `VITE_RAZORPAY_KEY_ID` | Frontend `.env` | `rzp_test_xxx` or `rzp_live_xxx` |
-| `RAZORPAY_KEY_ID` | Supabase Edge Function secrets | Same key as above |
-| `RAZORPAY_KEY_SECRET` | Supabase Edge Function secrets | Never touches frontend |
 
 ## Proposed Changes
 
----
+### Database
 
-### 1. Admin Settings — Toggle Only
+#### [MODIFY] [add_replacements_table.sql](file:///Users/syedejazahammed/Documents/GitHub/coreAtoms/frontend/supabase/migrations/add_replacements_table.sql)
 
-#### [MODIFY] [AdminSettings.jsx](file:///Users/syedejazahammed/Documents/GitHub/coreAtoms/frontend/src/pages/admin/AdminSettings.jsx)
+Add new columns + update status check constraint:
 
-- Add a **"Payment Gateway"** card with a styled toggle switch
-- Toggle saves `{ enabled: true/false }` to `app_settings` key `razorpay_enabled`
-- Shows status: "Razorpay payments are **active**" / "**disabled**"
-- No API key inputs — just the toggle
+- `replacement_waybill` (text) — AWB for the replacement shipment
+- `replacement_tracking_url` (text)
+- `reverse_waybill` (text) — AWB for reverse pickup
+- `reverse_tracking_url` (text)
+- Expand `status` enum: `pending → approved → pickup_scheduled → pickup_received → replacement_shipped → rejected`
 
----
-
-### 2. Checkout — Dual Payment Options
-
-#### [MODIFY] [Checkout.jsx](file:///Users/syedejazahammed/Documents/GitHub/coreAtoms/frontend/src/pages/Checkout.jsx)
-
-- Fetch `razorpay_enabled` from `app_settings` on mount
-- If enabled + `VITE_RAZORPAY_KEY_ID` env var exists:
-  - Show **"Pay Now"** button (Razorpay) alongside existing **"Place order · COD"**
-  - On click: open Razorpay Checkout popup → on success, call Edge Function
-- If disabled: zero changes to current COD behavior
+> [!IMPORTANT]
+> New SQL migration must be run in Supabase SQL Editor.
 
 ---
 
-### 3. Razorpay Utility
+### Admin UI
 
-#### [NEW] [razorpay.js](file:///Users/syedejazahammed/Documents/GitHub/coreAtoms/frontend/src/services/razorpay.js)
+#### [MODIFY] [AdminReplacements.jsx](file:///Users/syedejazahammed/Documents/GitHub/coreAtoms/frontend/src/pages/admin/AdminReplacements.jsx)
 
-- `loadRazorpay()` — dynamically loads `checkout.js` script
-- `openRazorpayCheckout({ amount, orderId, name, email, phone, onSuccess, onDismiss })` — opens popup
+After approving, show two action buttons:
+1. **"Ship Replacement Directly"** — calls `delhivery-create-shipment` with the original order's shipping address, updates status to `replacement_shipped`
+2. **"Schedule Reverse Pickup"** — updates status to `pickup_scheduled` (admin arranges pickup manually via Delhivery dashboard for now, since Delhivery reverse pickup API requires warehouse registration)
 
----
-
-### 4. Supabase Edge Function
-
-#### [NEW] [create-razorpay-order/index.ts](file:///Users/syedejazahammed/Documents/GitHub/coreAtoms/frontend/supabase/functions/create-razorpay-order/index.ts)
-
-- Creates a Razorpay order via their API (uses `RAZORPAY_KEY_ID` + `RAZORPAY_KEY_SECRET` from secrets)
-- Returns `razorpay_order_id` to frontend
-- Frontend uses this to open the payment popup
-
-#### [NEW] [verify-razorpay-payment/index.ts](file:///Users/syedejazahammed/Documents/GitHub/coreAtoms/frontend/supabase/functions/verify-razorpay-payment/index.ts)
-
-- Receives `razorpay_order_id`, `razorpay_payment_id`, `razorpay_signature`
-- Verifies signature using HMAC SHA256 with `RAZORPAY_KEY_SECRET`
-- If valid: inserts the order into `orders` table with `payment_method = 'prepaid'`
-- If invalid: returns 400 error
+For `pickup_scheduled` status → show **"Mark Pickup Received"** button → then show **"Ship Replacement"** button
 
 ---
 
-### 5. Database Migration
+### Customer UI
 
-#### [NEW] [add_razorpay_columns.sql](file:///Users/syedejazahammed/Documents/GitHub/coreAtoms/frontend/supabase/migrations/add_razorpay_columns.sql)
+#### [MODIFY] [MyOrders.jsx](file:///Users/syedejazahammed/Documents/GitHub/coreAtoms/frontend/src/pages/MyOrders.jsx)
 
-- Add `payment_method` to `orders` (TEXT, default `'cod'`)
-- Add `razorpay_payment_id` to `orders` (TEXT, nullable)
-- Insert `razorpay_enabled` row in `app_settings`
-
----
-
-### 6. Admin Orders — Payment Badge
-
-#### [MODIFY] [AdminOrders.jsx](file:///Users/syedejazahammed/Documents/GitHub/coreAtoms/frontend/src/pages/admin/AdminOrders.jsx)
-
-- Show `COD` / `Prepaid` badge next to order status
-- Show payment ID in expanded details
+Update replacement status display to show all new statuses with descriptive labels + tracking links when available.
 
 ## Verification Plan
 
-1. Toggle OFF → Checkout shows COD only (no change)
-2. Toggle ON + no env key → Checkout shows COD only (graceful fallback)
-3. Toggle ON + env key set → Both buttons appear
-4. Razorpay test payment → order created with `payment_method = 'prepaid'`
-5. Admin Orders → payment badge shows correctly
+### Automated Tests
+```bash
+npx vite build
+```
+Build must pass with zero errors.

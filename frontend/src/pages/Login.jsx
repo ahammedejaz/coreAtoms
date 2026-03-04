@@ -78,8 +78,8 @@ export default function Login() {
 
         {/* Header */}
         <div className="text-center mb-8">
-          <div className="inline-flex h-14 w-14 items-center justify-center rounded-2xl bg-[#1e3a5f] shadow-sm mx-auto mb-5">
-            <span className="text-lg font-bold text-white tracking-wider">CA</span>
+          <div className="inline-block mx-auto mb-5">
+            <img src="/logo.png" alt="Core Atoms" className="h-14 w-auto object-contain" />
           </div>
           <h1 className="text-2xl font-semibold text-stone-900 tracking-tight">
             {isSignup ? "Create your account" : "Welcome back"}

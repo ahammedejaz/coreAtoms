@@ -203,17 +203,17 @@ export default function ShipmentTracker({ waybill, trackingUrl, orderId, onStatu
                 {tracking && !loading && (
                     <div className="rounded-2xl border border-[#E8E4DE] bg-white p-5 space-y-5">
                         {/* Header info */}
-                        <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2">
+                        <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
                             <div>
                                 <p className="text-xs text-stone-400 uppercase tracking-wider font-semibold">Waybill</p>
-                                <p className="text-sm font-mono font-medium text-stone-900">{tracking.waybill}</p>
+                                <p className="text-sm font-mono font-medium text-stone-900 break-all">{tracking.waybill}</p>
                             </div>
-                            <div className="text-right">
+                            <div className="sm:text-right">
                                 <p className="text-xs text-stone-400 uppercase tracking-wider font-semibold">Courier</p>
                                 <p className="text-sm font-medium text-stone-900">{tracking.courier_name}</p>
                             </div>
                             {tracking.expected_delivery && (
-                                <div className="text-right">
+                                <div className="sm:text-right">
                                     <p className="text-xs text-stone-400 uppercase tracking-wider font-semibold">Expected Delivery</p>
                                     <p className="text-sm font-medium text-stone-900">
                                         {new Date(tracking.expected_delivery).toLocaleDateString("en-IN", { day: "numeric", month: "short", year: "numeric" })}
@@ -247,20 +247,20 @@ export default function ShipmentTracker({ waybill, trackingUrl, orderId, onStatu
                                         const isComplete = i <= currentStageIndex;
                                         const isCurrent = i === currentStageIndex;
                                         return (
-                                            <div key={stage.key} className="flex flex-col items-center flex-1">
+                                            <div key={stage.key} className="flex flex-col items-center flex-1 min-w-0">
                                                 <div className={`
-                            h-8 w-8 rounded-full flex items-center justify-center text-sm
-                            transition-all duration-300
-                            ${isCurrent
-                                                        ? "bg-[#1e3a5f] text-white ring-4 ring-[#1e3a5f]/15 scale-110"
+                                                    h-6 w-6 sm:h-8 sm:w-8 rounded-full flex items-center justify-center text-xs sm:text-sm shrink-0
+                                                    transition-all duration-300
+                                                    ${isCurrent
+                                                        ? "bg-[#1e3a5f] text-white ring-2 sm:ring-4 ring-[#1e3a5f]/15 scale-110"
                                                         : isComplete
                                                             ? "bg-emerald-500 text-white"
                                                             : "bg-stone-100 text-stone-400"
                                                     }
-                          `}>
+                                                `}>
                                                     {isComplete && !isCurrent ? "✓" : stage.icon}
                                                 </div>
-                                                <span className={`mt-1.5 text-[10px] font-medium text-center leading-tight ${isCurrent ? "text-[#1e3a5f] font-semibold" : isComplete ? "text-emerald-600" : "text-stone-400"}`}>
+                                                <span className={`mt-1 sm:mt-1.5 text-[8px] sm:text-[10px] font-medium text-center leading-tight max-w-[48px] sm:max-w-none ${isCurrent ? "text-[#1e3a5f] font-semibold" : isComplete ? "text-emerald-600" : "text-stone-400"}`}>
                                                     {stage.label}
                                                 </span>
                                             </div>
@@ -268,7 +268,7 @@ export default function ShipmentTracker({ waybill, trackingUrl, orderId, onStatu
                                     })}
                                 </div>
                                 {/* Progress line */}
-                                <div className="absolute top-4 left-[10%] right-[10%] h-0.5 bg-stone-100 -z-10">
+                                <div className="absolute top-3 sm:top-4 left-[10%] right-[10%] h-0.5 bg-stone-100 -z-10">
                                     <div
                                         className="h-full bg-gradient-to-r from-emerald-400 to-[#1e3a5f] transition-all duration-500"
                                         style={{ width: `${(currentStageIndex / (STAGES.length - 1)) * 100}%` }}

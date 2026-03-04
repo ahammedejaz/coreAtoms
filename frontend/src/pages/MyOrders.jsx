@@ -263,6 +263,7 @@ const STATUS_STYLES = {
   placed: "bg-blue-50 text-blue-700 border border-blue-200",
   processing: "bg-amber-50 text-amber-700 border border-amber-200",
   shipped: "bg-violet-50 text-violet-700 border border-violet-200",
+  out_for_delivery: "bg-indigo-50 text-indigo-700 border border-indigo-200",
   delivered: "bg-emerald-50 text-emerald-700 border border-emerald-200",
   cancelled: "bg-red-50 text-red-600 border border-red-200",
   payment_failed: "bg-red-100 text-red-700 border border-red-300",
@@ -272,6 +273,7 @@ const STATUS_LABELS = {
   placed: "Placed",
   processing: "Processing",
   shipped: "Shipped",
+  out_for_delivery: "Out for Delivery",
   delivered: "Delivered",
   cancelled: "Cancelled",
   payment_failed: "Payment Failed",
@@ -566,7 +568,7 @@ export default function MyOrders() {
                 {/* Delhivery tracking — shown when waybill exists */}
                 {o.delhivery_waybill && (
                   <div className="border-t border-[#E8E4DE] pt-3">
-                    <ShipmentTracker waybill={o.delhivery_waybill} trackingUrl={o.tracking_url} />
+                    <ShipmentTracker waybill={o.delhivery_waybill} trackingUrl={o.tracking_url} orderId={o.id} onStatusSync={(newStatus) => setOrders(prev => prev.map(ord => ord.id === o.id ? { ...ord, status: newStatus } : ord))} />
                   </div>
                 )}
 

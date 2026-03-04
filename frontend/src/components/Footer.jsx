@@ -23,13 +23,7 @@ export default function Footer() {
           {/* Brand */}
           <div className="md:col-span-2 space-y-5">
             <div className="flex items-center gap-3">
-              <div className="h-10 w-10 rounded-xl bg-[#1e3a5f] grid place-items-center shadow-sm">
-                <span className="text-sm font-bold text-white tracking-wider">CA</span>
-              </div>
-              <div>
-                <div className="text-sm font-semibold text-stone-900">Core Atoms</div>
-                <div className="text-xs text-stone-400 tracking-wide">Premium Nutraceuticals</div>
-              </div>
+              <img src="/logo.png" alt="Core Atoms" className="h-8 w-auto max-w-[140px] object-contain" />
             </div>
 
             <p className="text-sm text-stone-500 leading-relaxed max-w-xs">

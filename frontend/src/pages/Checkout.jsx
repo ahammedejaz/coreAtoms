@@ -332,6 +332,9 @@ export default function Checkout() {
     showToast("Coupon removed", "info");
   };
 
+  // Track whether we've done the initial auto-select
+  const didAutoSelect = useRef(false);
+
   // Load saved addresses from Supabase
   const loadAddresses = useCallback(async () => {
     if (!user?.id) return;
@@ -343,8 +346,9 @@ export default function Checkout() {
       .order("created_at", { ascending: false });
     const list = data || [];
     setSavedAddresses(list);
-    // Auto-select the most recent saved address if any
-    if (list.length > 0 && selectedAddressId === null) {
+    // Auto-select the most recent saved address only on initial load
+    if (list.length > 0 && !didAutoSelect.current) {
+      didAutoSelect.current = true;
       setSelectedAddressId(list[0].id);
       const a = list[0];
       setForm({
@@ -358,7 +362,7 @@ export default function Checkout() {
       });
     }
     setLoadingAddresses(false);
-  }, [user?.id, selectedAddressId]);
+  }, [user?.id]);
 
   useEffect(() => { loadAddresses(); }, [loadAddresses]);
 

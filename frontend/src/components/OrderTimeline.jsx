@@ -8,12 +8,13 @@
  * @module components/OrderTimeline
  */
 
-const STEPS = ["placed", "processing", "shipped", "delivered"];
+const STEPS = ["placed", "processing", "shipped", "out_for_delivery", "delivered"];
 
 const STEP_LABELS = {
     placed: "Placed",
     processing: "Processing",
     shipped: "Shipped",
+    out_for_delivery: "Out for Delivery",
     delivered: "Delivered",
 };
 
@@ -33,6 +34,11 @@ const STEP_ICONS = {
         <svg className="h-3.5 w-3.5" viewBox="0 0 20 20" fill="currentColor">
             <path d="M8 16.5a1.5 1.5 0 11-3 0 1.5 1.5 0 013 0zM15 16.5a1.5 1.5 0 11-3 0 1.5 1.5 0 013 0z" />
             <path d="M3 4a1 1 0 00-1 1v10a1 1 0 001 1h1.05a2.5 2.5 0 014.9 0H10a1 1 0 001-1V5a1 1 0 00-1-1H3zM14 7a1 1 0 00-1 1v6.05A2.5 2.5 0 0115.95 16H17a1 1 0 001-1v-5a1 1 0 00-.293-.707l-2-2A1 1 0 0015 7h-1z" />
+        </svg>
+    ),
+    out_for_delivery: (
+        <svg className="h-3.5 w-3.5" viewBox="0 0 20 20" fill="currentColor">
+            <path fillRule="evenodd" d="M5.05 4.05a7 7 0 119.9 9.9L10 18.9l-4.95-4.95a7 7 0 010-9.9zM10 11a2 2 0 100-4 2 2 0 000 4z" clipRule="evenodd" />
         </svg>
     ),
     delivered: (

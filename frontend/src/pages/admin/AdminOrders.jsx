@@ -24,6 +24,7 @@ import { SkeletonAdminTable } from "../../components/Skeleton";
 import ConfirmDialog from "../../components/ConfirmDialog";
 import { useToast } from "../../context/ToastContext";
 import useKeyboardShortcut from "../../hooks/useKeyboardShortcut";
+import ShipmentTracker from "../../components/ShipmentTracker";
 
 
 export default function AdminOrders({ onOrdersChange }) {
@@ -33,6 +34,16 @@ export default function AdminOrders({ onOrdersChange }) {
     const [orderErr, setOrderErr] = useState("");
     const [confirmDlg, setConfirmDlg] = useState(null);
     const [shippingOrderId, setShippingOrderId] = useState(null); // order currently being shipped via Delhivery
+    const [warehouse, setWarehouse] = useState(null);
+    const [testMode, setTestMode] = useState(() => localStorage.getItem("admin_test_mode") === "true");
+
+    const toggleTestMode = () => {
+        setTestMode((prev) => {
+            const next = !prev;
+            localStorage.setItem("admin_test_mode", String(next));
+            return next;
+        });
+    };
 
     // Ctrl+S → export CSV
     const exportRef = useRef(null);
@@ -52,22 +63,26 @@ export default function AdminOrders({ onOrdersChange }) {
         });
     };
 
-    const STATUS_OPTIONS = ["placed", "processing", "shipped", "delivered", "cancelled"];
+    const STATUS_OPTIONS = ["placed", "processing", "shipped", "out_for_delivery", "delivered", "cancelled"];
 
     const STATUS_LABELS = {
         placed: "Placed",
         processing: "Processing",
         shipped: "Shipped",
+        out_for_delivery: "Out for Delivery",
         delivered: "Delivered",
         cancelled: "Cancelled",
+        payment_failed: "Payment Failed",
     };
 
     const STATUS_BADGE = {
         placed: "bg-green-50 text-green-700",
         processing: "bg-yellow-50 text-yellow-700",
         shipped: "bg-blue-50 text-blue-700",
+        out_for_delivery: "bg-indigo-50 text-indigo-700",
         delivered: "bg-emerald-50 text-emerald-700",
         cancelled: "bg-red-50 text-red-700",
+        payment_failed: "bg-red-50 text-red-700",
     };
 
     // ── WhatsApp click-to-chat ────────────────────────────────────
@@ -128,6 +143,8 @@ export default function AdminOrders({ onOrdersChange }) {
             `Hello ${name}!\n\nGreat news! Your order *#${id}* is now being *carefully processed*.\n\nWe're preparing your wellness essentials with care and will notify you as soon as it's shipped.\n\n*Check your order status:*\nhttps://${SITE_URL}/orders\n\nThank you for your patience - quality takes a little time!\n\nBest regards,\n*Team Core Atoms*`,
         shipped: (name, id) =>
             `Hello ${name}!\n\nExciting update! Your order *#${id}* has been *shipped* and is on its way to you!\n\nYou should receive your package soon. We hope you'll love every bit of it!\n\n*Track your delivery:*\nhttps://${SITE_URL}/orders\n\nNeed help? Just reply here - we're one message away.\n\nHappy shopping!\n*Team Core Atoms*`,
+        out_for_delivery: (name, id) =>
+            `Hello ${name}!\n\nAlmost there! Your order *#${id}* is *out for delivery* and will reach you shortly!\n\nPlease keep your phone handy in case the delivery partner needs to reach you.\n\n*Track your delivery:*\nhttps://${SITE_URL}/orders\n\nExcited for you!\n*Team Core Atoms*`,
         delivered: (name, id) =>
             `Hello ${name}!\n\nYour order *#${id}* has been *successfully delivered*!\n\nWe hope you're enjoying your Core Atoms products. Your wellness journey just got an upgrade!\n\n*View your order details:*\nhttps://${SITE_URL}/orders\n\n*We'd love your feedback!* If you have a moment, a quick review would mean the world to us.\n\nThank you for choosing Core Atoms - we're always here if you need anything!\n\nWarmly,\n*Team Core Atoms*`,
         cancelled: (name, id) =>
@@ -378,6 +395,17 @@ export default function AdminOrders({ onOrdersChange }) {
 
     useEffect(() => { load(); }, []); // eslint-disable-line
 
+    // Load warehouse address from admin settings
+    useEffect(() => {
+        supabase.from("app_settings").select("value")
+            .eq("key", "warehouse_address").maybeSingle()
+            .then(({ data }) => {
+                if (data?.value && typeof data.value === "object") {
+                    setWarehouse(data.value);
+                }
+            });
+    }, []);
+
     const filteredOrders = useMemo(() => {
         let list = orders || [];
 
@@ -521,18 +549,22 @@ export default function AdminOrders({ onOrdersChange }) {
                         total_amount: order.computed_total_inr || 0,
                         payment_method: order.payment_method || "cod",
                         weight: 500,
+                        warehouse: warehouse || undefined,
                     },
                 }
             );
 
             if (fnErr) {
                 let detail = fnErr.message || "Shipping failed";
-                if (fnErr.context && typeof fnErr.context.json === "function") {
-                    try {
+                // Try to extract structured error from response body
+                try {
+                    if (fnErr.context && typeof fnErr.context.json === "function") {
                         const errBody = await fnErr.context.json();
                         detail = errBody?.error || errBody?.message || detail;
-                    } catch (_) { }
-                }
+                    } else if (typeof fnErr === "object" && fnErr.message) {
+                        detail = fnErr.message;
+                    }
+                } catch (_) { }
                 throw new Error(detail);
             }
 
@@ -584,6 +616,7 @@ export default function AdminOrders({ onOrdersChange }) {
                                 <option value="placed">Placed</option>
                                 <option value="processing">Processing</option>
                                 <option value="shipped">Shipped</option>
+                                <option value="out_for_delivery">Out for Delivery</option>
                                 <option value="delivered">Delivered</option>
                                 <option value="cancelled">Cancelled</option>
                             </select>
@@ -684,6 +717,19 @@ export default function AdminOrders({ onOrdersChange }) {
                             >
                                 Clear filters
                             </button>
+
+                            {/* Test Mode Toggle */}
+                            <div className="flex items-center gap-2 rounded-xl border border-amber-200 bg-amber-50 px-3 py-1.5">
+                                <span className="text-xs font-semibold text-amber-700">Test Mode</span>
+                                <button
+                                    type="button"
+                                    onClick={toggleTestMode}
+                                    className={`relative inline-flex h-5 w-9 items-center rounded-full transition-colors duration-200 ${testMode ? "bg-amber-500" : "bg-stone-200"}`}
+                                >
+                                    <span className={`inline-block h-3.5 w-3.5 rounded-full bg-white shadow-sm transition-transform duration-200 ${testMode ? "translate-x-[18px]" : "translate-x-[3px]"}`} />
+                                </button>
+                                {testMode && <span className="text-[10px] text-amber-600">Status dropdown enabled</span>}
+                            </div>
                         </div>
                     </div>
 
@@ -758,13 +804,14 @@ export default function AdminOrders({ onOrdersChange }) {
                                                 <select
                                                     value={st}
                                                     onChange={(e) => updateOrderStatus(o.id, e.target.value)}
-                                                    disabled={!!o.delhivery_waybill || st === "shipped" || st === "delivered"}
-                                                    className={`w-full rounded-xl border border-[#E8E4DE] bg-white px-3 py-2 text-xs ${o.delhivery_waybill || st === "shipped" || st === "delivered" ? "opacity-50 cursor-not-allowed" : ""}`}
-                                                    title={o.delhivery_waybill ? "Status locked — shipped via Delhivery" : ""}
+                                                    disabled={!testMode || !!o.delhivery_waybill || st === "shipped" || st === "delivered"}
+                                                    className={`w-full rounded-xl border border-[#E8E4DE] bg-white px-3 py-2 text-xs ${!testMode || o.delhivery_waybill || st === "shipped" || st === "delivered" ? "opacity-50 cursor-not-allowed" : ""}`}
+                                                    title={!testMode ? "Enable Test Mode to change status" : o.delhivery_waybill ? "Status locked — shipped via Delhivery" : ""}
                                                 >
                                                     <option value="placed">Placed</option>
                                                     <option value="processing">Processing</option>
                                                     <option value="shipped">Shipped</option>
+                                                    <option value="out_for_delivery">Out for Delivery</option>
                                                     <option value="delivered">Delivered</option>
                                                     <option value="cancelled">Cancelled</option>
                                                 </select>
@@ -876,6 +923,8 @@ export default function AdminOrders({ onOrdersChange }) {
                                                                                 Track on Delhivery ↗
                                                                             </a>
                                                                         )}
+                                                                        {/* Live Tracking */}
+                                                                        <ShipmentTracker waybill={o.delhivery_waybill} trackingUrl={o.tracking_url} orderId={o.id} onStatusSync={(newStatus) => setOrders(prev => prev.map(ord => ord.id === o.id ? { ...ord, status: newStatus } : ord))} />
                                                                     </div>
                                                                 ) : (st === "placed" || st === "processing") ? (
                                                                     <button
@@ -1036,13 +1085,14 @@ export default function AdminOrders({ onOrdersChange }) {
                                                                 <select
                                                                     value={st}
                                                                     onChange={(e) => updateOrderStatus(o.id, e.target.value)}
-                                                                    disabled={!!o.delhivery_waybill || st === "shipped" || st === "delivered"}
-                                                                    className={`w-full rounded-lg border border-[#E8E4DE] bg-white px-2 py-1.5 text-xs ${o.delhivery_waybill || st === "shipped" || st === "delivered" ? "opacity-50 cursor-not-allowed" : ""}`}
-                                                                    title={o.delhivery_waybill ? "Status locked — shipped via Delhivery" : ""}
+                                                                    disabled={!testMode || !!o.delhivery_waybill || st === "shipped" || st === "delivered"}
+                                                                    className={`w-full rounded-lg border border-[#E8E4DE] bg-white px-2 py-1.5 text-xs ${!testMode || o.delhivery_waybill || st === "shipped" || st === "delivered" ? "opacity-50 cursor-not-allowed" : ""}`}
+                                                                    title={!testMode ? "Enable Test Mode to change status" : o.delhivery_waybill ? "Status locked — shipped via Delhivery" : ""}
                                                                 >
                                                                     <option value="placed">Placed</option>
                                                                     <option value="processing">Processing</option>
                                                                     <option value="shipped">Shipped</option>
+                                                                    <option value="out_for_delivery">Out for Delivery</option>
                                                                     <option value="delivered">Delivered</option>
                                                                     <option value="cancelled">Cancelled</option>
                                                                 </select>
@@ -1241,6 +1291,8 @@ export default function AdminOrders({ onOrdersChange }) {
                                                                                             Track on Delhivery ↗
                                                                                         </a>
                                                                                     )}
+                                                                                    {/* Live Tracking */}
+                                                                                    <ShipmentTracker waybill={o.delhivery_waybill} trackingUrl={o.tracking_url} orderId={o.id} onStatusSync={(newStatus) => setOrders(prev => prev.map(ord => ord.id === o.id ? { ...ord, status: newStatus } : ord))} />
                                                                                 </div>
                                                                             ) : (st === "placed" || st === "processing") ? (
                                                                                 <button

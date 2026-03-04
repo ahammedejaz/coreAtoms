@@ -86,18 +86,7 @@ export default function Navbar() {
     logoUrl ? (
       <img src={logoUrl} alt="Core Atoms" className="h-8 w-auto max-w-[140px] object-contain" />
     ) : (
-      <>
-        <div className="h-9 w-9 rounded-xl border border-neutral-200 bg-gradient-to-br from-white to-neutral-100 grid place-items-center shadow-sm shrink-0">
-          <span className="text-xs font-semibold text-neutral-900">CA</span>
-        </div>
-        <div className="leading-tight hidden sm:block">
-          <div className="text-sm font-semibold tracking-tight text-neutral-950">Core Atoms</div>
-          <div className="text-[11px] text-neutral-500">Nutraceuticals</div>
-        </div>
-        <div className="leading-tight sm:hidden">
-          <div className="text-sm font-semibold tracking-tight text-neutral-950">Core Atoms</div>
-        </div>
-      </>
+      <img src="/logo.png" alt="Core Atoms" className="h-8 w-auto max-w-[140px] object-contain" />
     )
   );
 

@@ -12,12 +12,22 @@
 // Response: { tracking data from Delhivery }
 
 import { getCorsHeaders, handleCorsPreflightRequest } from "../_shared/cors.ts";
+import { checkRateLimit, getClientIp } from "../_shared/rate-limit.ts";
 
 Deno.serve(async (req) => {
     if (req.method === "OPTIONS") {
         return handleCorsPreflightRequest(req);
     }
     const corsHeaders = getCorsHeaders(req);
+
+    // Rate limit: 15 requests per 60 seconds per IP
+    const limited = await checkRateLimit(req, corsHeaders, {
+        endpoint: "delhivery-track",
+        maxRequests: 15,
+        windowSeconds: 60,
+        identifier: getClientIp(req),
+    });
+    if (limited) return limited;
 
     try {
         const DELHIVERY_TOKEN = Deno.env.get("DELHIVERY_API_TOKEN");

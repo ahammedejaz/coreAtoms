@@ -34,12 +34,22 @@
 
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 import { getCorsHeaders, handleCorsPreflightRequest } from "../_shared/cors.ts";
+import { checkRateLimit, getClientIp } from "../_shared/rate-limit.ts";
 
 Deno.serve(async (req) => {
     if (req.method === "OPTIONS") {
         return handleCorsPreflightRequest(req);
     }
     const corsHeaders = getCorsHeaders(req);
+
+    // Rate limit: 10 requests per 60 seconds per IP
+    const limited = await checkRateLimit(req, corsHeaders, {
+        endpoint: "delhivery-create-shipment",
+        maxRequests: 10,
+        windowSeconds: 60,
+        identifier: getClientIp(req),
+    });
+    if (limited) return limited;
 
     try {
         // ── Admin auth check ──

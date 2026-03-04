@@ -32,12 +32,22 @@
  */
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 import { getCorsHeaders, handleCorsPreflightRequest } from "../_shared/cors.ts";
+import { checkRateLimit, getClientIp } from "../_shared/rate-limit.ts";
 
 Deno.serve(async (req) => {
     if (req.method === "OPTIONS") {
         return handleCorsPreflightRequest(req);
     }
     const corsHeaders = getCorsHeaders(req);
+
+    // Rate limit: 5 requests per 60 seconds per IP
+    const limited = await checkRateLimit(req, corsHeaders, {
+        endpoint: "verify-razorpay-payment",
+        maxRequests: 5,
+        windowSeconds: 60,
+        identifier: getClientIp(req),
+    });
+    if (limited) return limited;
 
     try {
         const RAZORPAY_KEY_SECRET = Deno.env.get("RAZORPAY_KEY_SECRET");

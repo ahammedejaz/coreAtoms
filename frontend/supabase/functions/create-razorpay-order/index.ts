@@ -11,6 +11,7 @@
 // Response:     { id: string, amount: number, currency: string }
 
 import { getCorsHeaders, handleCorsPreflightRequest } from "../_shared/cors.ts";
+import { checkRateLimit, getClientIp } from "../_shared/rate-limit.ts";
 
 Deno.serve(async (req) => {
     // Handle CORS preflight
@@ -18,6 +19,15 @@ Deno.serve(async (req) => {
         return handleCorsPreflightRequest(req);
     }
     const corsHeaders = getCorsHeaders(req);
+
+    // Rate limit: 5 requests per 60 seconds per IP
+    const limited = await checkRateLimit(req, corsHeaders, {
+        endpoint: "create-razorpay-order",
+        maxRequests: 5,
+        windowSeconds: 60,
+        identifier: getClientIp(req),
+    });
+    if (limited) return limited;
 
     try {
         const RAZORPAY_KEY_ID = Deno.env.get("RAZORPAY_KEY_ID");

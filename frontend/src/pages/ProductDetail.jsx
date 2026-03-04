@@ -127,12 +127,12 @@ export default function ProductDetail() {
   }
 
   return (
-    <div className="pb-16">
+    <div className="pb-16 overflow-x-hidden">
       <SEO title={pageTitle} description={pageDescription} ogImage={product.image} />
-      <div className="mx-auto max-w-6xl px-4 py-10">
+      <div className="mx-auto max-w-6xl px-4 py-6 sm:py-10">
 
         {/* ── Breadcrumb ── */}
-        <div className="mb-7 flex items-center gap-2 text-sm text-stone-400">
+        <div className="mb-5 sm:mb-7 flex items-center gap-2 text-xs sm:text-sm text-stone-400">
           <Link to="/shop" className="hover:text-stone-700 transition-colors">Shop</Link>
           <span className="text-stone-300">/</span>
           {product.category && (
@@ -150,14 +150,13 @@ export default function ProductDetail() {
         </div>
 
         {/* ── Two-column layout — items-start so columns don't stretch each other ── */}
-        <div className="grid gap-8 lg:grid-cols-2 items-start">
+        <div className="grid gap-5 sm:gap-8 lg:grid-cols-2 items-start overflow-hidden">
 
           {/* ══ LEFT — Image Gallery ══ */}
-          <div className="space-y-3 lg:sticky lg:top-24 lg:self-start">
+          <div className="space-y-3 lg:sticky lg:top-24 lg:self-start min-w-0">
             {/* Main image with hover zoom */}
             <div
-              className="rounded-2xl border border-[#E8E4DE] bg-white overflow-hidden cursor-zoom-in"
-              style={{ height: 440 }}
+              className="rounded-2xl border border-[#E8E4DE] bg-white overflow-hidden cursor-zoom-in aspect-[4/3] sm:aspect-auto sm:h-[440px]"
               onMouseMove={(e) => {
                 const img = e.currentTarget.querySelector("img");
                 if (!img) return;
@@ -204,7 +203,7 @@ export default function ProductDetail() {
           </div>
 
           {/* ══ RIGHT — Product Info Card ══ */}
-          <div className="rounded-2xl border border-[#E8E4DE] bg-white p-7 flex flex-col gap-5">
+          <div className="rounded-2xl border border-[#E8E4DE] bg-white p-4 sm:p-7 flex flex-col gap-4 sm:gap-5 min-w-0">
 
             {/* Header */}
             <div>
@@ -278,7 +277,7 @@ export default function ProductDetail() {
             )}
 
             {/* ── Price box ── */}
-            <div className="rounded-xl border border-[#E8E4DE] bg-stone-50 px-5 py-4 flex items-center justify-between">
+            <div className="rounded-xl border border-[#E8E4DE] bg-stone-50 px-4 sm:px-5 py-3 sm:py-4 flex flex-wrap items-center justify-between gap-3">
               <div>
                 <p className="text-xs text-stone-400 mb-1">
                   {hasVariants && selectedVariant ? `Price · ${selectedVariant.label}` : "Price"}
@@ -326,12 +325,12 @@ export default function ProductDetail() {
                 type="button"
                 onClick={handlePlus}
                 disabled={!canAdd}
-                className="btn-primary flex-1 sm:flex-none py-3 px-6 disabled:opacity-40 disabled:cursor-not-allowed disabled:hover:translate-y-0 disabled:hover:shadow-none"
+                className="btn-primary py-3 px-6 disabled:opacity-40 disabled:cursor-not-allowed disabled:hover:translate-y-0 disabled:hover:shadow-none"
               >
                 <svg className="h-4 w-4 shrink-0" viewBox="0 0 20 20" fill="currentColor">
                   <path d="M3 3a1 1 0 000 2h1.22l.305 1.222a.997.997 0 00.01.042l1.358 5.43-.893.892C3.74 13.846 4.632 15 6.414 15H15a1 1 0 000-2H6.414l1-1H14a1 1 0 00.894-.553l3-6A1 1 0 0017 5H6.28l-.31-1.243A1 1 0 005 3H3zM16 16.5a1.5 1.5 0 11-3 0 1.5 1.5 0 013 0zM6.5 18a1.5 1.5 0 100-3 1.5 1.5 0 000 3z" />
                 </svg>
-                {cartQty > 0 ? "Add more to cart" : "Add to cart"}
+                <span className="hidden sm:inline">{cartQty > 0 ? "Add more to cart" : "Add to cart"}</span>
               </button>
 
               {/* View cart shortcut */}
@@ -401,7 +400,7 @@ export default function ProductDetail() {
       {/* ── About section ── */}
       {(product.aboutText || product.bestFor || product.pairsWellWith || product.recommendedStack) && (
         <div className="mx-auto max-w-6xl px-4 mt-6">
-          <div className="rounded-2xl border border-[#E8E4DE] bg-white p-7">
+          <div className="rounded-2xl border border-[#E8E4DE] bg-white p-4 sm:p-7">
             <h2 className="text-base font-semibold text-stone-900 mb-1">About this product</h2>
             {product.aboutText && (
               <p className="text-sm text-stone-500 leading-relaxed mt-2 mb-5">{product.aboutText}</p>
@@ -435,7 +434,7 @@ export default function ProductDetail() {
       {/* ── Reviews ── */}
       {product.reviews?.length > 0 && (
         <div className="mx-auto max-w-6xl px-4 mt-6">
-          <div className="rounded-2xl border border-[#E8E4DE] bg-white p-7">
+          <div className="rounded-2xl border border-[#E8E4DE] bg-white p-4 sm:p-7">
 
             {/* Reviews header */}
             <div className="flex items-center justify-between mb-6">
@@ -494,7 +493,7 @@ export default function ProductDetail() {
                   </div>
                   {/* Review body */}
                   {(r.title || r.body) && (
-                    <div className="mt-3 ml-12">
+                    <div className="mt-3 ml-0 sm:ml-12">
                       {r.title && (
                         <p className="text-sm font-semibold text-stone-800 mb-1">{r.title}</p>
                       )}

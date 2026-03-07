@@ -105,7 +105,7 @@ Customer orders. Created by `place_order_cod` (COD) or `place_order_prepaid` (Ra
 |----------------------|-------------|----------|----------|------------------------------------------|
 | `id`                 | `UUID`      | NO       | `gen_random_uuid()` | Primary key                     |
 | `user_id`            | `UUID`      | NO       | (FK → profiles) | Customer who placed the order       |
-| `status`             | `TEXT`      | NO       | `'placed'` | `placed` → `processing` → `shipped` → `delivered` / `cancelled` |
+| `status`             | `TEXT`      | NO       | `'placed'` | `placed` → `processing` → `shipped` → `out_for_delivery` → `delivered` / `cancelled` |
 | `shipping_address`   | `JSONB`     | YES      |          | Full address object (see below)          |
 | `total_inr`          | `NUMERIC`   | YES      |          | Order total in ₹                         |
 | `total_items`        | `INT`       | YES      |          | Number of line items                     |
@@ -326,6 +326,28 @@ Shared CORS utility imported by all Edge Functions. Exports:
 
 **Secrets used:** `RAZORPAY_KEY_SECRET`, `SUPABASE_URL`, `SUPABASE_SERVICE_ROLE_KEY`
 
+### `delhivery-pincode-check`
+
+**Path:** `supabase/functions/delhivery-pincode-check/index.ts`  
+**Purpose:** Checks pincode serviceability and calculates shipping charges for both prepaid and COD.
+
+| Request Body   | Type     | Description                          |
+|---------------|----------|--------------------------------------|
+| `pincode`     | `string` | 6-digit Indian pincode               |
+| `weight_grams`| `number` | Package weight (optional, default 500) |
+
+| Response                  | Type      | Description                                |
+|--------------------------|-----------|--------------------------------------------|
+| `serviceable`            | `boolean` | Whether pincode is deliverable             |
+| `cod`                    | `boolean` | COD available for this pincode             |
+| `prepaid`                | `boolean` | Prepaid available for this pincode         |
+| `shipping_charge`        | `number`  | Prepaid rate (backward compat)             |
+| `shipping_charge_prepaid`| `number`  | Express prepaid rate (`md=E`)              |
+| `shipping_charge_cod`    | `number`  | Express + COD surcharge (`md=E&pt=COD`)    |
+| `estimated_days`         | `string`  | e.g. `"3–5"`                               |
+
+**Secrets used:** `DELHIVERY_TOKEN`, `DELHIVERY_BASE_URL`, `DELHIVERY_WAREHOUSE_PIN`
+
 ### `delhivery-create-shipment`
 
 **Path:** `supabase/functions/delhivery-create-shipment/index.ts`  
@@ -438,6 +460,9 @@ All tables have RLS enabled. Key policies:
 |--------------------------|----------|----------------------------------------------|
 | `RAZORPAY_KEY_ID`        | For payments | Razorpay API Key ID                      |
 | `RAZORPAY_KEY_SECRET`    | For payments | Razorpay API Key Secret (**never expose**)|
+| `DELHIVERY_TOKEN`        | For shipping | Delhivery API token                      |
+| `DELHIVERY_BASE_URL`     | For shipping | `https://track.delhivery.com` (production)|
+| `DELHIVERY_WAREHOUSE_PIN`| For shipping | Origin warehouse pincode (optional)      |
 | `SUPABASE_URL`           | Auto-set | Project URL (auto-available in Edge Functions)|
 | `SUPABASE_SERVICE_ROLE_KEY`| Auto-set | Service role key (auto-available)          |
 

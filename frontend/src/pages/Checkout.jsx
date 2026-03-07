@@ -1,5 +1,5 @@
 /**
- * Checkout.jsx — Full checkout flow: address → pricing → payment → receipt.
+ * Checkout.jsx — Full checkout flow: address → payment method → pricing → payment → receipt.
  *
  * On mount, fetches in parallel from `app_settings`:
  *   shipping_amount, free_shipping_min, gst_percentage,
@@ -7,8 +7,14 @@
  *   corecoins_enabled, corecoins_config
  * Also loads user's saved addresses + CoreCoins wallet balance.
  *
+ * Shipping rates:
+ *   When admin flat rate = 0, calls `delhivery-pincode-check` Edge Function
+ *   which returns separate rates for prepaid (shipping_charge_prepaid) and
+ *   COD (shipping_charge_cod, includes COD surcharge via Delhivery `pt=COD`).
+ *   User selects payment method first; billing updates reactively.
+ *
  * Pricing formula (computed on the client, verified server-side by RPCs):
- *   shipping    = 0 (free) | pincodeRate (Delhivery API) | flatRate (admin)
+ *   shipping    = 0 (free) | pincodeRate (COD or prepaid) | flatRate (admin)
  *   gstAmount   = Math.round(subtotal * gstPercent / 100)     (0 if gst = 0)
  *   coinDiscount = coinsUsed * coin_value_inr
  *   total       = subtotal + shipping + gstAmount - coinDiscount

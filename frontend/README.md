@@ -26,6 +26,8 @@
 - Checkout with:
   - Saved addresses (CRUD)
   - Pincode-based OR flat-rate shipping (from admin settings)
+  - Separate COD and prepaid shipping rates (from Delhivery API)
+  - Payment method selector (COD vs Online) — billing updates reactively
   - GST calculation (configurable %)
   - Coupon code discounts
   - COD and Razorpay online payment

@@ -1,7 +1,9 @@
 /**
  * OrderTimeline.jsx — Visual step indicator for order status.
  *
- * Renders a horizontal timeline: Placed → Processing → Shipped → Delivered.
+ * Renders a horizontal 4-step timeline: Placed → Shipped → Out for Delivery → Delivered.
+ * Each step is a column (icon stacked above label) with connector lines between them.
+ * Orders with "processing" status are mapped to the "Placed" step.
  * Supports cancelled orders with distinct red styling.
  *
  * @param {{ status: string }} props

@@ -1,7 +1,7 @@
 // supabase/functions/delhivery-pincode-check/index.ts
 //
 // Checks if a pincode is serviceable by Delhivery, returns estimated
-// delivery days, and calculates the shipping charge for that route.
+// delivery days, and calculates shipping charges for prepaid and COD.
 //
 // Secrets required (set via Supabase Dashboard → Edge Functions → Secrets):
 //   DELHIVERY_API_TOKEN        — Your Delhivery API token
@@ -14,7 +14,11 @@
 //
 // Request body: { pincode: "560034", weight_grams?: 500 }
 // Response:     { serviceable, cod, prepaid, city, state_code,
-//                 estimated_days, is_metro, is_oda, shipping_charge }
+//                 estimated_days, is_metro, is_oda,
+//                 shipping_charge, shipping_charge_prepaid, shipping_charge_cod }
+//
+// shipping_charge_prepaid: Express rate (md=E)
+// shipping_charge_cod:     Express + COD surcharge (md=E, pt=COD)
 
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 import { getCorsHeaders, handleCorsPreflightRequest } from "../_shared/cors.ts";

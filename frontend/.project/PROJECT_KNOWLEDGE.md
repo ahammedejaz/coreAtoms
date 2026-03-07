@@ -197,10 +197,10 @@ All functions live in `supabase/functions/`. They use the service role key and a
 - Returns: `{success: true, order_id}`
 
 ### `delhivery-pincode-check`
-- Accepts: `{pincode}`
-- Calls Delhivery's availability API
-- Returns: `{serviceable, shipping_charge}`
-- Used in `Checkout.jsx` when admin flat rate = 0
+- Accepts: `{pincode, weight_grams?}`
+- Calls Delhivery's availability API + freight charge API (two parallel calls: `md=E` for prepaid, `md=E&pt=COD` for COD)
+- Returns: `{serviceable, shipping_charge, shipping_charge_prepaid, shipping_charge_cod}`
+- Used in `Checkout.jsx` when admin flat rate = 0; the selected payment method determines which rate is applied
 
 ### `delhivery-create-shipment`
 - **Admin auth required:** Verifies JWT and checks `profiles.role = 'admin'` before proceeding
@@ -258,11 +258,13 @@ Checkout.jsx fetches: shipping_amount, free_shipping_min, gst_percentage,
                       corecoins_enabled + config, user's coin balance
        ↓
 If shippingBase = 0 AND pincode entered:
-  → delhivery-pincode-check Edge Function → sets per-pincode shipping rate
+  → delhivery-pincode-check Edge Function → returns shipping_charge_prepaid + shipping_charge_cod
+       ↓
+User selects payment method (COD or Prepaid) → billing updates reactively
        ↓
 Pricing computed client-side:
   sub         = cart item total
-  shipping    = 0 (free) OR pincodeShipping OR shippingBase
+  shipping    = 0 (free) OR pincodeShippingCod/pincodeShippingPrepaid OR shippingBase
   gstAmount   = Math.round(sub * gstPercent / 100)   [0 if gstPercent = 0]
   coinDiscount= coinsUsed * coin_value_inr
   total       = sub + shipping + gstAmount - coinDiscount
@@ -362,9 +364,12 @@ This is fetched in `Shop.jsx` (alongside products), `Home.jsx` (alongside hero s
 | `placed` | Placed | Move to Processing / Cancel |
 | `processing` | Processing | Ship via Delhivery |
 | `shipped` | Shipped | — (auto-updates via Delhivery webhook or manual) |
+| `out_for_delivery` | Out for Delivery | — (auto-synced from Delhivery tracking) |
 | `delivered` | Delivered | — |
 | `cancelled` | Cancelled | — |
 | `payment_failed` | Payment Failed | No action needed — customer retries |
+
+> **Note:** The customer-facing `OrderTimeline` shows 4 steps: Placed → Shipped → Out for Delivery → Delivered. Orders with `processing` status map to the "Placed" step visually.
 
 ---
 

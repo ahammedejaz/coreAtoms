@@ -5,7 +5,7 @@
  * from Supabase ordered newest-first. Features:
  *
  *  - Itemised bill breakdown per order (items → shipping → GST → CoreCoins → total)
- *  - Order status timeline (placed → processing → shipped → delivered)
+ *  - Order status timeline (placed → shipped → out for delivery → delivered)
  *  - Live Delhivery tracking via ShipmentTracker component
  *  - Order cancellation (placed / processing only)
  *  - Inline product review form for delivered orders
@@ -13,7 +13,7 @@
  *  - 'Payment Failed' banner with retry + support CTA for failed Razorpay orders
  *  - CoreCoins: pending-coin processing via `process_pending_corecoins` RPC
  *
- * STATUS values: placed | processing | shipped | delivered | cancelled | payment_failed
+ * STATUS values: placed | processing | shipped | out_for_delivery | delivered | cancelled | payment_failed
  *
  * @module pages/MyOrders
  */

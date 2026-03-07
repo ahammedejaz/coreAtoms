@@ -147,32 +147,57 @@ Deno.serve(async (req) => {
             }
         }
 
-        let shippingCharge: number | null = null;
+        let shippingChargePrepaid: number | null = null;
+        let shippingChargeCod: number | null = null;
 
         if (originPin && /^\d{6}$/.test(originPin)) {
             try {
-                const chargeUrl =
+                const baseChargeUrl =
                     `${DELHIVERY_BASE}/api/kinko/v1/invoice/charges/.json` +
-                    `?md=E&cgm=${weightGrams}&o_pin=${originPin}&d_pin=${pincode}&ss=Delivered`;
+                    `?cgm=${weightGrams}&o_pin=${originPin}&d_pin=${pincode}&ss=Delivered`;
 
-                const chargeRes = await fetch(chargeUrl, {
-                    headers: {
-                        Authorization: `Token ${DELHIVERY_TOKEN}`,
-                        Accept: "application/json",
-                    },
-                });
+                // Fetch prepaid and COD rates in parallel
+                // md=E = Express mode, pt=COD = payment type Cash on Delivery (adds COD surcharge)
+                const [prepaidRes, codRes] = await Promise.all([
+                    fetch(`${baseChargeUrl}&md=E`, {
+                        headers: {
+                            Authorization: `Token ${DELHIVERY_TOKEN}`,
+                            Accept: "application/json",
+                        },
+                    }),
+                    fetch(`${baseChargeUrl}&md=E&pt=COD`, {
+                        headers: {
+                            Authorization: `Token ${DELHIVERY_TOKEN}`,
+                            Accept: "application/json",
+                        },
+                    }),
+                ]);
 
-                if (chargeRes.ok) {
-                    const chargeData = await chargeRes.json();
-                    const total = chargeData?.[0]?.total_amount;
+                if (prepaidRes.ok) {
+                    const prepaidData = await prepaidRes.json();
+                    const total = prepaidData?.[0]?.total_amount;
                     if (total !== undefined && total !== null) {
-                        shippingCharge = Math.ceil(Number(total));
+                        shippingChargePrepaid = Math.ceil(Number(total));
                     }
                 } else {
                     console.warn(
-                        "Delhivery freight API returned",
-                        chargeRes.status,
-                        await chargeRes.text()
+                        "Delhivery prepaid freight API returned",
+                        prepaidRes.status,
+                        await prepaidRes.text()
+                    );
+                }
+
+                if (codRes.ok) {
+                    const codData = await codRes.json();
+                    const total = codData?.[0]?.total_amount;
+                    if (total !== undefined && total !== null) {
+                        shippingChargeCod = Math.ceil(Number(total));
+                    }
+                } else {
+                    console.warn(
+                        "Delhivery COD freight API returned",
+                        codRes.status,
+                        await codRes.text()
                     );
                 }
             } catch (e) {
@@ -191,7 +216,9 @@ Deno.serve(async (req) => {
             estimated_days: estimatedDays,
             is_metro: isMetro,
             is_oda: isODA,
-            shipping_charge: shippingCharge, // null if could not calculate
+            shipping_charge: shippingChargePrepaid, // backward compat: prepaid rate
+            shipping_charge_prepaid: shippingChargePrepaid,
+            shipping_charge_cod: shippingChargeCod,
         };
 
         return new Response(JSON.stringify(result), {

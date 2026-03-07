@@ -1,5 +1,5 @@
 /**
- * Checkout.jsx — Full checkout flow: address → pricing → payment → receipt.
+ * Checkout.jsx — Full checkout flow: address → payment method → pricing → payment → receipt.
  *
  * On mount, fetches in parallel from `app_settings`:
  *   shipping_amount, free_shipping_min, gst_percentage,
@@ -7,8 +7,14 @@
  *   corecoins_enabled, corecoins_config
  * Also loads user's saved addresses + CoreCoins wallet balance.
  *
+ * Shipping rates:
+ *   When admin flat rate = 0, calls `delhivery-pincode-check` Edge Function
+ *   which returns separate rates for prepaid (shipping_charge_prepaid) and
+ *   COD (shipping_charge_cod, includes COD surcharge via Delhivery `pt=COD`).
+ *   User selects payment method first; billing updates reactively.
+ *
  * Pricing formula (computed on the client, verified server-side by RPCs):
- *   shipping    = 0 (free) | pincodeRate (Delhivery API) | flatRate (admin)
+ *   shipping    = 0 (free) | pincodeRate (COD or prepaid) | flatRate (admin)
  *   gstAmount   = Math.round(subtotal * gstPercent / 100)     (0 if gst = 0)
  *   coinDiscount = coinsUsed * coin_value_inr
  *   total       = subtotal + shipping + gstAmount - coinDiscount
@@ -88,10 +94,14 @@ export default function Checkout() {
   const [freeShippingMin, setFreeShippingMin] = useState(0);
   const [gstPercent, setGstPercent] = useState(0);
   const [warehouseState, setWarehouseState] = useState("Andhra Pradesh");
-  const [pincodeShipping, setPincodeShipping] = useState(null); // from Delhivery API
+  const [pincodeShippingPrepaid, setPincodeShippingPrepaid] = useState(null); // prepaid rate from Delhivery
+  const [pincodeShippingCod, setPincodeShippingCod] = useState(null); // COD rate from Delhivery
   const [shippingLoading, setShippingLoading] = useState(false);
   const [shippingPinLabel, setShippingPinLabel] = useState(""); // pincode the rate was calculated for
   const shippingAbort = useRef(null);
+
+  // Payment method selection (affects shipping cost when using pincode-based pricing)
+  const [selectedPaymentMethod, setSelectedPaymentMethod] = useState("cod");
 
   // Razorpay toggle (read from app_settings)
   const [razorpayAvailable, setRazorpayAvailable] = useState(false);
@@ -211,7 +221,8 @@ export default function Checkout() {
   useEffect(() => {
     // If admin set a flat rate > 0, use that instead — skip Delhivery
     if (shippingBase > 0) {
-      setPincodeShipping(null);
+      setPincodeShippingPrepaid(null);
+      setPincodeShippingCod(null);
       setShippingPinLabel("");
       setShippingLoading(false); // clear any in-flight loading state
       return;
@@ -219,7 +230,8 @@ export default function Checkout() {
 
     const pin = (form.pincode || "").trim();
     if (!/^\d{6}$/.test(pin)) {
-      setPincodeShipping(null);
+      setPincodeShippingPrepaid(null);
+      setPincodeShippingCod(null);
       setShippingPinLabel("");
       setShippingLoading(false);
       return;
@@ -233,18 +245,22 @@ export default function Checkout() {
     supabase.functions.invoke("delhivery-pincode-check", { body: { pincode: pin } })
       .then(({ data, error }) => {
         if (controller.signal.aborted) return;
-        const charge = data?.shipping_charge;
-        if (!error && charge !== null && charge !== undefined && Number.isFinite(Number(charge))) {
-          setPincodeShipping(Math.ceil(Number(charge)));
+        const prepaidCharge = data?.shipping_charge_prepaid ?? data?.shipping_charge;
+        const codCharge = data?.shipping_charge_cod;
+        if (!error && prepaidCharge !== null && prepaidCharge !== undefined && Number.isFinite(Number(prepaidCharge))) {
+          setPincodeShippingPrepaid(Math.ceil(Number(prepaidCharge)));
+          setPincodeShippingCod(codCharge !== null && codCharge !== undefined && Number.isFinite(Number(codCharge)) ? Math.ceil(Number(codCharge)) : Math.ceil(Number(prepaidCharge)));
           setShippingPinLabel(pin);
         } else {
-          setPincodeShipping(null);
+          setPincodeShippingPrepaid(null);
+          setPincodeShippingCod(null);
           setShippingPinLabel("");
         }
       })
       .catch(() => {
         if (!controller.signal.aborted) {
-          setPincodeShipping(null);
+          setPincodeShippingPrepaid(null);
+          setPincodeShippingCod(null);
           setShippingPinLabel("");
         }
       })
@@ -259,6 +275,7 @@ export default function Checkout() {
   const sub = Number(subtotal || 0);
   // shippingResolved: true when we have a definitive shipping amount
   // In pincode-mode (shippingBase=0), must wait for Delhivery to return a valid rate
+  const pincodeShipping = selectedPaymentMethod === "cod" ? pincodeShippingCod : pincodeShippingPrepaid;
   const shippingResolved = shippingBase > 0 || (freeShippingMin > 0 && sub >= freeShippingMin) || pincodeShipping !== null;
   const effectiveBase = pincodeShipping !== null ? pincodeShipping : shippingBase;
   const qualifiesFreeShipping = freeShippingMin > 0 && sub >= freeShippingMin;
@@ -1012,6 +1029,34 @@ export default function Checkout() {
               )}
             </div>
 
+            {/* Payment method selector — always visible */}
+            {(codAvailable || razorpayAvailable) && (
+              <div className="mb-5">
+                <p className="text-xs font-semibold text-stone-500 uppercase tracking-wider mb-2">Payment Method</p>
+                <div className="flex gap-2">
+                  {codAvailable && (
+                    <button type="button" onClick={() => setSelectedPaymentMethod("cod")}
+                      className={`flex-1 rounded-xl border px-4 py-3 text-sm font-semibold transition-all duration-200 ${selectedPaymentMethod === "cod"
+                        ? "border-[#1e3a5f] bg-[#1e3a5f]/5 text-[#1e3a5f] ring-2 ring-[#1e3a5f]/10"
+                        : "border-[#E8E4DE] bg-white text-stone-500 hover:border-stone-300"
+                        }`}>
+                      💵 Cash on Delivery
+                    </button>
+                  )}
+                  {razorpayAvailable && (
+                    <button type="button" onClick={() => setSelectedPaymentMethod("prepaid")}
+                      className={`flex-1 rounded-xl border px-4 py-3 text-sm font-semibold transition-all duration-200 ${selectedPaymentMethod === "prepaid"
+                        ? "border-[#2563EB] bg-[#2563EB]/5 text-[#2563EB] ring-2 ring-[#2563EB]/10"
+                        : "border-[#E8E4DE] bg-white text-stone-500 hover:border-stone-300"
+                        }`}>
+                      💳 Pay Online
+                    </button>
+                  )}
+                </div>
+
+              </div>
+            )}
+
             <div className="space-y-2 text-sm mb-5">
               <div className="flex justify-between text-stone-600">
                 <span>Subtotal</span>
@@ -1131,14 +1176,15 @@ export default function Checkout() {
             )}
 
             <div className="space-y-3">
-              {codAvailable && (
+              {/* Single action button based on selected payment method */}
+              {selectedPaymentMethod === "cod" && codAvailable && (
                 <button onClick={onPlaceOrder} disabled={!canPlace || loading || payingOnline}
                   className="btn-primary w-full py-3 text-[14px] disabled:opacity-40 disabled:cursor-not-allowed disabled:hover:translate-y-0">
-                  {loading ? "Placing order…" : "Place order · COD"}
+                  {loading ? "Placing order…" : "Place Order · Cash on Delivery"}
                 </button>
               )}
 
-              {razorpayAvailable && (
+              {selectedPaymentMethod === "prepaid" && razorpayAvailable && (
                 <button onClick={onPayOnline} disabled={!canPlace || loading || payingOnline}
                   className="w-full rounded-xl bg-[#2563EB] px-4 py-3 text-[14px] font-semibold text-white shadow-md hover:bg-[#1d4ed8] active:scale-[0.98] transition-all duration-150 disabled:opacity-40 disabled:cursor-not-allowed flex items-center justify-center gap-2">
                   {payingOnline ? (
@@ -1149,7 +1195,7 @@ export default function Checkout() {
                   ) : (
                     <>
                       <svg className="h-4 w-4" viewBox="0 0 20 20" fill="currentColor"><path fillRule="evenodd" d="M4 4a2 2 0 00-2 2v4a2 2 0 002 2V6h10a2 2 0 00-2-2H4zm2 6a2 2 0 012-2h8a2 2 0 012 2v4a2 2 0 01-2 2H8a2 2 0 01-2-2v-4zm6 4a2 2 0 100-4 2 2 0 000 4z" clipRule="evenodd" /></svg>
-                      Pay now · Online
+                      Pay Now · Online
                     </>
                   )}
                 </button>
@@ -1162,8 +1208,8 @@ export default function Checkout() {
                 </div>
               )}
 
-              {razorpayAvailable && (
-                <div className="text-center text-[11px] text-stone-400">Choose COD or pay securely online via Razorpay</div>
+              {codAvailable && razorpayAvailable && (
+                <div className="text-center text-[11px] text-stone-400">Select your preferred payment method above</div>
               )}
             </div>
 

@@ -75,6 +75,13 @@ migration record, so do not delete it.
 
 Key tables: `products`, `product_variants`, `product_images`, `product_reviews`, `orders`, `order_items`, `user_addresses`, `app_settings`, `corecoins_wallet`, `replacements`, `push_tokens`
 
+**Product content**: `products.details` (JSONB) holds the PDP's structured sections —
+`{ benefits: [{icon,title,text}], ingredients: [{name,amount,purpose}], howToUse: [string], faqs: [{q,a}], safetyInfo: string }`.
+`normalizeProductDetails()` in `frontend/src/services/products.js` is the canonical shape guard; `components/RichText.jsx`
+renders `description`/`about_text` preserving pasted line breaks, bullets and monograph headings; the admin's structured
+editor plus the Auto-organise importer live in `frontend/src/pages/admin/ProductDetailsEditor.jsx`. PDP sections render
+only when their content exists.
+
 ### Frontend Architecture
 
 **Provider tree** (see `frontend/src/main.jsx`):

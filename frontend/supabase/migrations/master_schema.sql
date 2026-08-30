@@ -133,9 +133,13 @@ CREATE TABLE IF NOT EXISTS public.products (
     pairs_well_with     text,
     recommended_stack   text,
     highlights          jsonb,                       -- e.g. ["Clean label","Lab-tested"]
+    details             jsonb,                       -- Structured PDP content: benefits, ingredients, howToUse, faqs, safetyInfo
     created_at          timestamptz NOT NULL DEFAULT now(),
     updated_at          timestamptz NOT NULL DEFAULT now()
 );
+
+-- Idempotent add for databases created before the details column existed
+ALTER TABLE public.products ADD COLUMN IF NOT EXISTS details jsonb;
 
 ALTER TABLE public.products ENABLE ROW LEVEL SECURITY;
 

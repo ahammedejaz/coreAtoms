@@ -20,6 +20,8 @@ import { fetchProductById } from "../services/products";
 import { supabase } from "../services/supabase/client";
 import SEO from "../components/SEO";
 import PincodeChecker from "../components/PincodeChecker";
+import RichText from "../components/RichText";
+import BenefitIcon from "../components/BenefitIcon";
 import { SkeletonProductDetail } from "../components/Skeleton";
 
 import { money } from "../utils/format";
@@ -233,9 +235,10 @@ export default function ProductDetail() {
                 </div>
               )}
 
-              <p className="mt-3 text-[14px] text-stone-500 leading-relaxed">
-                {product.description || "Clean formula. Daily consistency. Built for performance and recovery."}
-              </p>
+              <RichText
+                text={product.description || "Clean formula. Daily consistency. Built for performance and recovery."}
+                className="mt-3"
+              />
             </div>
 
             {/* ── Divider ── */}
@@ -362,6 +365,16 @@ export default function ProductDetail() {
               </div>
             )}
 
+            {/* ── Trust strip ── */}
+            <div className="grid grid-cols-2 gap-2 rounded-xl border border-[#E8E4DE] bg-stone-50/70 p-3 sm:grid-cols-4">
+              {TRUST_POINTS.map((t) => (
+                <div key={t.label} className="flex flex-col items-center gap-1.5 px-1 py-1.5 text-center">
+                  <span className="text-[#1e3a5f]">{t.icon}</span>
+                  <span className="text-[11px] font-medium leading-tight text-stone-600">{t.label}</span>
+                </div>
+              ))}
+            </div>
+
             {/* ── Highlight pills ── */}
             {product.highlights?.length > 0 && (
               <div className="flex flex-wrap gap-2">
@@ -402,39 +415,8 @@ export default function ProductDetail() {
         {/* end grid */}
       </div>
 
-      {/* ── About section ── */}
-      {(product.aboutText || product.bestFor || product.pairsWellWith || product.recommendedStack) && (
-        <div className="mx-auto max-w-6xl px-4 mt-6">
-          <div className="rounded-2xl border border-[#E8E4DE] bg-white p-4 sm:p-7">
-            <h2 className="text-base font-semibold text-stone-900 mb-1">About this product</h2>
-            {product.aboutText && (
-              <p className="text-sm text-stone-500 leading-relaxed mt-2 mb-5">{product.aboutText}</p>
-            )}
-            {(product.bestFor || product.pairsWellWith || product.recommendedStack) && (
-              <div className="grid gap-4 sm:grid-cols-3 mt-4">
-                {product.bestFor && (
-                  <div className="rounded-xl border border-[#E8E4DE] bg-stone-50 p-4">
-                    <p className="text-[10px] font-semibold uppercase tracking-wide text-stone-400 mb-1.5">Best for</p>
-                    <p className="text-sm text-stone-700">{product.bestFor}</p>
-                  </div>
-                )}
-                {product.pairsWellWith && (
-                  <div className="rounded-xl border border-[#E8E4DE] bg-stone-50 p-4">
-                    <p className="text-[10px] font-semibold uppercase tracking-wide text-stone-400 mb-1.5">Pairs well with</p>
-                    <p className="text-sm text-stone-700">{product.pairsWellWith}</p>
-                  </div>
-                )}
-                {product.recommendedStack && (
-                  <div className="rounded-xl border border-[#E8E4DE] bg-stone-50 p-4">
-                    <p className="text-[10px] font-semibold uppercase tracking-wide text-stone-400 mb-1.5">Recommended stack</p>
-                    <p className="text-sm text-stone-700">{product.recommendedStack}</p>
-                  </div>
-                )}
-              </div>
-            )}
-          </div>
-        </div>
-      )}
+      {/* ── Rich detail sections — benefits, story, ingredients, usage, FAQs ── */}
+      <ProductStory product={product} />
 
       {/* ── Reviews ── */}
       {product.reviews?.length > 0 && (
@@ -516,5 +498,285 @@ export default function ProductDetail() {
       )}
 
     </div>
+  );
+}
+
+/* ══════════════════════════════════════════════════════════════════════════
+   Below-the-fold detail sections. Each renders only when the admin has
+   filled the matching content, so sparse products stay clean while rich
+   ones read like a Centrum / 1mg product page.
+   ══════════════════════════════════════════════════════════════════════ */
+
+const TRUST_POINTS = [
+  {
+    label: "100% authentic",
+    icon: (
+      <svg viewBox="0 0 24 24" className="h-[18px] w-[18px]" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+        <path d="M12 2.8 4.8 5.6v5.2c0 4.6 3 8.9 7.2 10.4 4.2-1.5 7.2-5.8 7.2-10.4V5.6L12 2.8Z" />
+        <path d="m9 11.8 2.2 2.2 4.2-4.4" />
+      </svg>
+    ),
+  },
+  {
+    label: "Lab tested",
+    icon: (
+      <svg viewBox="0 0 24 24" className="h-[18px] w-[18px]" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+        <path d="M9.5 3h5M10.5 3v5.2L5.6 16.9A2.4 2.4 0 0 0 7.7 20.5h8.6a2.4 2.4 0 0 0 2.1-3.6L13.5 8.2V3" />
+        <path d="M8.2 14.5h7.6" />
+      </svg>
+    ),
+  },
+  {
+    label: "Secure payments",
+    icon: (
+      <svg viewBox="0 0 24 24" className="h-[18px] w-[18px]" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+        <rect x="4.5" y="10.5" width="15" height="10" rx="2" />
+        <path d="M8 10.5V7.6a4 4 0 0 1 8 0v2.9" />
+        <circle cx="12" cy="15.5" r="1.3" fill="currentColor" stroke="none" />
+      </svg>
+    ),
+  },
+  {
+    label: "Easy replacement",
+    icon: (
+      <svg viewBox="0 0 24 24" className="h-[18px] w-[18px]" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+        <path d="M4.6 9.5a7.7 7.7 0 0 1 14-2.1M19.4 14.5a7.7 7.7 0 0 1-14 2.1M19.4 3.6v3.8h-3.8M4.6 20.4v-3.8h3.8" />
+      </svg>
+    ),
+  },
+];
+
+function SectionCard({ label, title, children }) {
+  return (
+    <div className="mx-auto max-w-6xl px-4 mt-6">
+      <div className="rounded-2xl border border-[#E8E4DE] bg-white p-5 sm:p-8">
+        <p className="section-label">{label}</p>
+        <h2 className="mt-1 text-lg font-semibold tracking-tight text-stone-900">{title}</h2>
+        <div className="mt-4">{children}</div>
+      </div>
+    </div>
+  );
+}
+
+function BenefitsSection({ benefits }) {
+  return (
+    <SectionCard label="Key benefits" title="What it does for you">
+      <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
+        {benefits.map((b, i) => (
+          <div
+            key={i}
+            className="rounded-xl border border-[#E8E4DE] bg-stone-50/60 p-4 transition-colors duration-200 hover:border-[#1e3a5f]/25 hover:bg-[#EFF6FF]/60"
+          >
+            <div className="flex h-9 w-9 items-center justify-center rounded-lg bg-[#1e3a5f]/[0.07] text-[#1e3a5f]">
+              <BenefitIcon name={b.icon} className="h-[18px] w-[18px]" />
+            </div>
+            <p className="mt-3 text-sm font-semibold text-stone-900">{b.title}</p>
+            {b.text && <p className="mt-1 text-[13px] leading-relaxed text-stone-500">{b.text}</p>}
+          </div>
+        ))}
+      </div>
+    </SectionCard>
+  );
+}
+
+function AboutSection({ text }) {
+  const [expanded, setExpanded] = useState(false);
+  const isLong = text.length > 900;
+  return (
+    <SectionCard label="The full story" title="About this product">
+      <div className={!expanded && isLong ? "relative max-h-80 overflow-hidden" : undefined}>
+        <RichText text={text} />
+        {!expanded && isLong && (
+          <div className="pointer-events-none absolute inset-x-0 bottom-0 h-24 bg-gradient-to-t from-white to-transparent" />
+        )}
+      </div>
+      {isLong && (
+        <button
+          type="button"
+          onClick={() => setExpanded((v) => !v)}
+          className="mt-3 inline-flex items-center gap-1.5 text-sm font-semibold text-[#1e3a5f] hover:underline"
+        >
+          {expanded ? "Show less" : "Read the full details"}
+          <svg
+            viewBox="0 0 20 20"
+            fill="currentColor"
+            className={`h-3.5 w-3.5 transition-transform duration-200 ease-out ${expanded ? "rotate-180" : ""}`}
+            aria-hidden="true"
+          >
+            <path fillRule="evenodd" d="M5.293 7.293a1 1 0 0 1 1.414 0L10 10.586l3.293-3.293a1 1 0 1 1 1.414 1.414l-4 4a1 1 0 0 1-1.414 0l-4-4a1 1 0 0 1 0-1.414Z" clipRule="evenodd" />
+          </svg>
+        </button>
+      )}
+    </SectionCard>
+  );
+}
+
+function IngredientsSection({ ingredients }) {
+  const hasAmounts = ingredients.some((r) => r.amount);
+  return (
+    <SectionCard label="What's inside" title="Key ingredients">
+      {/* Desktop table */}
+      <div className="hidden overflow-hidden rounded-xl border border-[#E8E4DE] sm:block">
+        <table className="w-full text-sm">
+          <thead>
+            <tr className="border-b border-[#E8E4DE] bg-stone-50 text-left">
+              <th className="px-4 py-3 text-[11px] font-semibold uppercase tracking-wide text-stone-400">Ingredient</th>
+              {hasAmounts && (
+                <th className="px-4 py-3 text-[11px] font-semibold uppercase tracking-wide text-stone-400">Amount</th>
+              )}
+              <th className="px-4 py-3 text-[11px] font-semibold uppercase tracking-wide text-stone-400">What it does</th>
+            </tr>
+          </thead>
+          <tbody className="divide-y divide-[#E8E4DE] bg-white">
+            {ingredients.map((r, i) => (
+              <tr key={i}>
+                <td className="px-4 py-3 align-top font-semibold text-stone-800">{r.name}</td>
+                {hasAmounts && (
+                  <td className="px-4 py-3 align-top whitespace-nowrap text-stone-600 tabular-nums">{r.amount || "—"}</td>
+                )}
+                <td className="px-4 py-3 align-top leading-relaxed text-stone-500">{r.purpose}</td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+      {/* Mobile stacked rows */}
+      <div className="divide-y divide-[#E8E4DE] overflow-hidden rounded-xl border border-[#E8E4DE] bg-white sm:hidden">
+        {ingredients.map((r, i) => (
+          <div key={i} className="px-4 py-3">
+            <div className="flex items-baseline justify-between gap-3">
+              <p className="text-sm font-semibold text-stone-800">{r.name}</p>
+              {r.amount && <p className="shrink-0 text-xs text-stone-500 tabular-nums">{r.amount}</p>}
+            </div>
+            {r.purpose && <p className="mt-1 text-[13px] leading-relaxed text-stone-500">{r.purpose}</p>}
+          </div>
+        ))}
+      </div>
+    </SectionCard>
+  );
+}
+
+function HowToUseSection({ steps }) {
+  return (
+    <SectionCard label="Daily ritual" title="How to use">
+      <ol className="space-y-3.5">
+        {steps.map((step, i) => (
+          <li key={i} className="flex gap-3.5">
+            <span className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-[#1e3a5f] text-[12px] font-bold text-white">
+              {i + 1}
+            </span>
+            <p className="pt-1 text-sm leading-relaxed text-stone-600">{step}</p>
+          </li>
+        ))}
+      </ol>
+    </SectionCard>
+  );
+}
+
+function RoutineSection({ product }) {
+  return (
+    <SectionCard label="Fits your routine" title="Build your stack">
+      <div className="grid gap-4 sm:grid-cols-3">
+        {product.bestFor && (
+          <div className="rounded-xl border border-[#E8E4DE] bg-stone-50 p-4">
+            <p className="mb-1.5 text-[10px] font-semibold uppercase tracking-wide text-stone-400">Best for</p>
+            <p className="text-sm text-stone-700">{product.bestFor}</p>
+          </div>
+        )}
+        {product.pairsWellWith && (
+          <div className="rounded-xl border border-[#E8E4DE] bg-stone-50 p-4">
+            <p className="mb-1.5 text-[10px] font-semibold uppercase tracking-wide text-stone-400">Pairs well with</p>
+            <p className="text-sm text-stone-700">{product.pairsWellWith}</p>
+          </div>
+        )}
+        {product.recommendedStack && (
+          <div className="rounded-xl border border-[#E8E4DE] bg-stone-50 p-4">
+            <p className="mb-1.5 text-[10px] font-semibold uppercase tracking-wide text-stone-400">Recommended stack</p>
+            <p className="text-sm text-stone-700">{product.recommendedStack}</p>
+          </div>
+        )}
+      </div>
+    </SectionCard>
+  );
+}
+
+function FaqSection({ faqs }) {
+  const [open, setOpen] = useState(null);
+  return (
+    <SectionCard label="Good to know" title="Frequently asked questions">
+      <div className="divide-y divide-[#E8E4DE] overflow-hidden rounded-xl border border-[#E8E4DE] bg-white">
+        {faqs.map((f, i) => {
+          const isOpen = open === i;
+          return (
+            <div key={i}>
+              <button
+                type="button"
+                onClick={() => setOpen(isOpen ? null : i)}
+                aria-expanded={isOpen}
+                className="flex w-full items-center justify-between gap-4 px-4 py-3.5 text-left transition-colors hover:bg-stone-50 sm:px-5"
+              >
+                <span className="text-sm font-medium text-stone-800">{f.q}</span>
+                <svg
+                  viewBox="0 0 20 20"
+                  fill="currentColor"
+                  className={`h-4 w-4 shrink-0 text-stone-400 transition-transform duration-200 ease-out ${isOpen ? "rotate-45" : ""}`}
+                  aria-hidden="true"
+                >
+                  <path d="M10.75 4.75a.75.75 0 0 0-1.5 0v4.5h-4.5a.75.75 0 0 0 0 1.5h4.5v4.5a.75.75 0 0 0 1.5 0v-4.5h4.5a.75.75 0 0 0 0-1.5h-4.5v-4.5Z" />
+                </svg>
+              </button>
+              <div className={`grid transition-[grid-template-rows] duration-200 ease-out ${isOpen ? "grid-rows-[1fr]" : "grid-rows-[0fr]"}`}>
+                <div className="overflow-hidden">
+                  <p className="px-4 pb-4 text-sm leading-relaxed text-stone-500 sm:px-5">{f.a}</p>
+                </div>
+              </div>
+            </div>
+          );
+        })}
+      </div>
+    </SectionCard>
+  );
+}
+
+function SafetySection({ text }) {
+  return (
+    <div className="mx-auto max-w-6xl px-4 mt-6">
+      <div className="rounded-2xl border border-[#E8E4DE] bg-stone-50 p-5 sm:p-6">
+        <div className="flex gap-3">
+          <svg viewBox="0 0 24 24" className="mt-0.5 h-5 w-5 shrink-0 text-stone-400" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+            <path d="M12 2.8 4.8 5.6v5.2c0 4.6 3 8.9 7.2 10.4 4.2-1.5 7.2-5.8 7.2-10.4V5.6L12 2.8Z" />
+            <path d="M12 8.2v4.4M12 15.8v.1" />
+          </svg>
+          <div className="min-w-0">
+            <p className="text-sm font-semibold text-stone-700">Safety information</p>
+            <RichText text={text} className="mt-2" />
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function ProductStory({ product }) {
+  const d = product.details || {};
+  const hasRoutine = product.bestFor || product.pairsWellWith || product.recommendedStack;
+  return (
+    <>
+      {d.benefits?.length > 0 && <BenefitsSection benefits={d.benefits} />}
+      {product.aboutText && <AboutSection text={product.aboutText} />}
+      {d.ingredients?.length > 0 && <IngredientsSection ingredients={d.ingredients} />}
+      {d.howToUse?.length > 0 && <HowToUseSection steps={d.howToUse} />}
+      {hasRoutine && <RoutineSection product={product} />}
+      {d.faqs?.length > 0 && <FaqSection faqs={d.faqs} />}
+      {d.safetyInfo && <SafetySection text={d.safetyInfo} />}
+      <div className="mx-auto max-w-6xl px-4 mt-8">
+        <p className="text-[11px] leading-relaxed text-stone-400">
+          Nutraceutical supplements are not a substitute for a varied, balanced diet or a healthy
+          lifestyle, and are not intended to diagnose, treat, cure or prevent any disease. Consult
+          your healthcare professional before use if you are pregnant, nursing, on medication or
+          have a medical condition.
+        </p>
+      </div>
+    </>
   );
 }

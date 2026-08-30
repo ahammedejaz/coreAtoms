@@ -15,6 +15,35 @@
  */
 import { supabase } from "./supabase/client";
 
+/**
+ * Normalizes the `details` JSONB column into a stable shape so the PDP can
+ * render sections without defensive checks. Unknown/missing keys become
+ * empty arrays / strings; malformed rows are dropped rather than crashing.
+ */
+export function normalizeProductDetails(raw) {
+  const src = raw && typeof raw === "object" && !Array.isArray(raw) ? raw : {};
+  const str = (v) => (typeof v === "string" ? v : "");
+  return {
+    benefits: Array.isArray(src.benefits)
+      ? src.benefits
+        .filter((b) => b && (b.title || b.text))
+        .map((b) => ({ icon: str(b.icon) || "general", title: str(b.title), text: str(b.text) }))
+      : [],
+    ingredients: Array.isArray(src.ingredients)
+      ? src.ingredients
+        .filter((r) => r && r.name)
+        .map((r) => ({ name: str(r.name), amount: str(r.amount), purpose: str(r.purpose) }))
+      : [],
+    howToUse: Array.isArray(src.howToUse)
+      ? src.howToUse.map(str).filter(Boolean)
+      : [],
+    faqs: Array.isArray(src.faqs)
+      ? src.faqs.filter((f) => f && f.q).map((f) => ({ q: str(f.q), a: str(f.a) }))
+      : [],
+    safetyInfo: str(src.safetyInfo),
+  };
+}
+
 export function mapDbProduct(p) {
   if (!p) return null;
 
@@ -80,6 +109,7 @@ export function mapDbProduct(p) {
     pairsWellWith: p.pairs_well_with ?? "",
     recommendedStack: p.recommended_stack ?? "",
     highlights: Array.isArray(p.highlights) ? p.highlights : [],
+    details: normalizeProductDetails(p.details),
     variants,
     reviewCount,
     avgRating,
@@ -87,7 +117,7 @@ export function mapDbProduct(p) {
 }
 
 const PRODUCT_FIELDS =
-  "id,name,sku,category,description,price_inr,stock_qty,image_url,image_position,is_active,created_at,updated_at,about_text,best_for,pairs_well_with,recommended_stack,highlights,product_images(id,image_url,sort_order),product_reviews(rating),product_variants(id,label,price_inr,stock_qty,sku,sort_order,is_active)";
+  "id,name,sku,category,description,price_inr,stock_qty,image_url,image_position,is_active,created_at,updated_at,about_text,best_for,pairs_well_with,recommended_stack,highlights,details,product_images(id,image_url,sort_order),product_reviews(rating),product_variants(id,label,price_inr,stock_qty,sku,sort_order,is_active)";
 
 export async function fetchProducts() {
   const { data, error } = await supabase
@@ -104,7 +134,7 @@ export async function fetchProductById(id) {
   const { data, error } = await supabase
     .from("products")
     .select(
-      "id,name,sku,category,description,price_inr,stock_qty,image_url,image_position,is_active,created_at,updated_at,about_text,best_for,pairs_well_with,recommended_stack,highlights,product_images(id,image_url,sort_order),product_reviews(id,rating,title,body,created_at,user_id,order_id,reviewer_name),product_variants(id,label,price_inr,stock_qty,sku,sort_order,is_active)"
+      "id,name,sku,category,description,price_inr,stock_qty,image_url,image_position,is_active,created_at,updated_at,about_text,best_for,pairs_well_with,recommended_stack,highlights,details,product_images(id,image_url,sort_order),product_reviews(id,rating,title,body,created_at,user_id,order_id,reviewer_name),product_variants(id,label,price_inr,stock_qty,sku,sort_order,is_active)"
     )
     .eq("id", id)
     .maybeSingle();

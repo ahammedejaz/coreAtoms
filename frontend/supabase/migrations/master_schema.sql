@@ -1,8 +1,8 @@
 -- ╔══════════════════════════════════════════════════════════════════════════╗
 -- ║              CORE ATOMS — MASTER DATABASE SCHEMA                        ║
 -- ║                                                                          ║
--- ║  This single file is the canonical source of truth for the entire       ║
--- ║  Core Atoms Supabase database schema. It is safe to run repeatedly      ║
+-- ║  Full schema for the Core Atoms Supabase database, safe to run          ║
+-- ║  repeatedly against a fresh project                                     ║
 -- ║  (all statements use IF NOT EXISTS / OR REPLACE / ON CONFLICT).         ║
 -- ║                                                                          ║
 -- ║  Pre-requisites (do in Supabase Dashboard before running this file):    ║
@@ -15,7 +15,13 @@
 -- ║                                                                          ║
 -- ║  How to run: Supabase Dashboard → SQL Editor → paste & run              ║
 -- ║                                                                          ║
--- ║  Last updated: 2026-03-04                                                ║
+-- ║  Last updated: 2026-08-30                                                ║
+-- ║                                                                          ║
+-- ║  NOTE: incremental changes are applied as timestamped migrations in the  ║
+-- ║  repo-root supabase/migrations/, which is the tree the Supabase CLI is   ║
+-- ║  linked to. This file is kept in sync with them by hand — when they      ║
+-- ║  diverge, the live database is the authority. `pg_net` must be enabled   ║
+-- ║  for the order-status push trigger.                                      ║
 -- ╚══════════════════════════════════════════════════════════════════════════╝
 
 
@@ -305,7 +311,8 @@ CREATE TABLE IF NOT EXISTS public.orders (
     user_id               uuid NOT NULL REFERENCES auth.users(id) ON DELETE CASCADE,
     address_id            uuid REFERENCES public.addresses(id),  -- legacy FK to addresses table
     status                text NOT NULL DEFAULT 'placed'
-                          CHECK (status IN ('placed','processing','shipped','delivered','cancelled','payment_failed')),
+                          CHECK (status IN ('placed','confirmed','processing','shipped',
+                                            'out_for_delivery','delivered','cancelled','payment_failed')),
     shipping_address      jsonb,                                 -- JSONB snapshot (used by checkout)
     payment_method        text NOT NULL DEFAULT 'cod',           -- 'cod' | 'prepaid'
     razorpay_payment_id   text,
@@ -412,11 +419,14 @@ CREATE TABLE IF NOT EXISTS public.app_settings (
 );
 
 ALTER TABLE public.app_settings ENABLE ROW LEVEL SECURITY;
--- Granular read policy: sensitive keys require authentication, everything else is public
+-- Granular read policy: sensitive keys require authentication, everything else is public.
+-- There must be exactly ONE permissive SELECT policy here — permissive policies OR
+-- together, so adding a second `USING (true)` silently defeats this filter.
 CREATE POLICY "Public can read non-sensitive app_settings" ON public.app_settings
     FOR SELECT USING (
-        key NOT IN ('discount_codes', 'warehouse_address')
-        OR auth.uid() IS NOT NULL
+        key <> ALL (ARRAY['discount_codes','warehouse_address',
+                          'delhivery_client_name','delhivery_pickup_name'])
+        OR (select auth.uid()) IS NOT NULL
     );
 CREATE POLICY "Only admins can write app_settings" ON public.app_settings FOR ALL USING (public.is_admin());
 
@@ -1169,6 +1179,135 @@ RETURNS void LANGUAGE sql SECURITY DEFINER AS $$
     DELETE FROM public.rate_limits WHERE created_at < now() - interval '1 hour';
 $$;
 
+
+
+-- ══════════════════════════════════════════════════════════════════════════
+--  Push notifications  (was only in the repo-root supabase/migrations tree)
+-- ══════════════════════════════════════════════════════════════════════════
+CREATE TABLE IF NOT EXISTS public.push_tokens (
+    id              uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+    user_id         uuid NOT NULL REFERENCES auth.users(id) ON DELETE CASCADE,
+    expo_push_token text NOT NULL,
+    device_name     text,
+    platform        text CHECK (platform IN ('ios', 'android')),
+    created_at      timestamptz DEFAULT now(),
+    updated_at      timestamptz DEFAULT now(),
+    UNIQUE (user_id, expo_push_token)
+);
+
+ALTER TABLE public.push_tokens ENABLE ROW LEVEL SECURITY;
+
+DROP POLICY IF EXISTS "Users manage own push tokens" ON public.push_tokens;
+DROP POLICY IF EXISTS "Service role reads all tokens" ON public.push_tokens;
+
+CREATE POLICY "Users manage own push tokens" ON public.push_tokens
+    FOR ALL USING (auth.uid() = user_id) WITH CHECK (auth.uid() = user_id);
+CREATE POLICY "Service role reads all tokens" ON public.push_tokens
+    FOR SELECT USING (auth.role() = 'service_role');
+
+CREATE INDEX IF NOT EXISTS idx_push_tokens_user_id ON public.push_tokens (user_id);
+
+CREATE OR REPLACE FUNCTION public.update_push_token_timestamp()
+RETURNS TRIGGER LANGUAGE plpgsql
+SET search_path = public, pg_temp AS $$
+BEGIN
+    NEW.updated_at = now();
+    RETURN NEW;
+END;
+$$;
+
+DROP TRIGGER IF EXISTS trg_push_tokens_updated_at ON public.push_tokens;
+CREATE TRIGGER trg_push_tokens_updated_at
+    BEFORE UPDATE ON public.push_tokens
+    FOR EACH ROW EXECUTE FUNCTION public.update_push_token_timestamp();
+
+-- Fires the send-order-notification Edge Function whenever orders.status changes.
+CREATE OR REPLACE FUNCTION public.notify_order_status_change()
+RETURNS TRIGGER LANGUAGE plpgsql SECURITY DEFINER
+SET search_path = public, pg_temp AS $$
+BEGIN
+    IF OLD.status IS DISTINCT FROM NEW.status THEN
+        PERFORM net.http_post(
+            url := 'https://yghqsrcmqvcwazksrxlk.supabase.co/functions/v1/send-order-notification',
+            headers := jsonb_build_object(
+                'Content-Type', 'application/json',
+                'Authorization', 'Bearer ' || current_setting('supabase.service_role_key', true)
+            ),
+            body := jsonb_build_object(
+                'type', 'UPDATE', 'table', 'orders', 'schema', 'public',
+                'record', row_to_json(NEW)::jsonb,
+                'old_record', row_to_json(OLD)::jsonb
+            )
+        );
+    END IF;
+    RETURN NEW;
+END;
+$$;
+
+DROP TRIGGER IF EXISTS trg_order_status_push_notification ON public.orders;
+CREATE TRIGGER trg_order_status_push_notification
+    AFTER UPDATE ON public.orders
+    FOR EACH ROW EXECUTE FUNCTION public.notify_order_status_change();
+
+
+-- ══════════════════════════════════════════════════════════════════════════
+--  Realtime replication — without this, postgres_changes never fires
+-- ══════════════════════════════════════════════════════════════════════════
+DO $$
+BEGIN
+    ALTER PUBLICATION supabase_realtime ADD TABLE public.products;
+EXCEPTION WHEN duplicate_object THEN NULL;
+END $$;
+
+DO $$
+BEGIN
+    ALTER PUBLICATION supabase_realtime ADD TABLE public.orders;
+EXCEPTION WHEN duplicate_object THEN NULL;
+END $$;
+
+
+-- ══════════════════════════════════════════════════════════════════════════
+--  Least-privilege EXECUTE grants
+--
+--  The order RPCs are SECURITY DEFINER and take p_user_id as an argument.
+--  Their guard compares it against auth.uid(), which is NULL for an anonymous
+--  caller — so granting these to `anon` lets anyone holding the public anon key
+--  place orders as any user. Do not re-grant them.
+--
+--  is_admin() deliberately keeps its grants: RLS policies across the schema
+--  call it, and policy expressions run with the querying role's privileges.
+-- ══════════════════════════════════════════════════════════════════════════
+REVOKE EXECUTE ON FUNCTION public.place_order_cod(
+    uuid, jsonb, jsonb, integer, numeric, numeric, numeric, text) FROM PUBLIC, anon;
+GRANT  EXECUTE ON FUNCTION public.place_order_cod(
+    uuid, jsonb, jsonb, integer, numeric, numeric, numeric, text) TO authenticated, service_role;
+
+REVOKE EXECUTE ON FUNCTION public.cancel_order(uuid, uuid) FROM PUBLIC, anon;
+GRANT  EXECUTE ON FUNCTION public.cancel_order(uuid, uuid) TO authenticated, service_role;
+
+REVOKE EXECUTE ON FUNCTION public.process_pending_corecoins(uuid) FROM PUBLIC, anon;
+GRANT  EXECUTE ON FUNCTION public.process_pending_corecoins(uuid) TO authenticated, service_role;
+
+REVOKE EXECUTE ON FUNCTION public.log_failed_order(
+    uuid, jsonb, jsonb, text, numeric, numeric) FROM PUBLIC, anon;
+GRANT  EXECUTE ON FUNCTION public.log_failed_order(
+    uuid, jsonb, jsonb, text, numeric, numeric) TO authenticated, service_role;
+
+-- Prepaid orders are created only by the verify-razorpay-payment Edge Function.
+REVOKE EXECUTE ON FUNCTION public.place_order_prepaid(
+    uuid, jsonb, jsonb, text, text, text, integer, numeric, numeric, numeric, text)
+    FROM PUBLIC, anon, authenticated;
+GRANT EXECUTE ON FUNCTION public.place_order_prepaid(
+    uuid, jsonb, jsonb, text, text, text, integer, numeric, numeric, numeric, text)
+    TO service_role;
+
+REVOKE EXECUTE ON FUNCTION public.credit_corecoins()            FROM PUBLIC, anon, authenticated;
+REVOKE EXECUTE ON FUNCTION public.handle_new_user()             FROM PUBLIC, anon, authenticated;
+REVOKE EXECUTE ON FUNCTION public.notify_order_status_change()  FROM PUBLIC, anon, authenticated;
+REVOKE EXECUTE ON FUNCTION public.set_updated_at()              FROM PUBLIC, anon, authenticated;
+REVOKE EXECUTE ON FUNCTION public.update_push_token_timestamp() FROM PUBLIC, anon, authenticated;
+REVOKE EXECUTE ON FUNCTION public.cleanup_rate_limits()         FROM PUBLIC, anon, authenticated;
+GRANT  EXECUTE ON FUNCTION public.cleanup_rate_limits()         TO service_role;
 
 -- ══════════════════════════════════════════════════════════════════════════
 --  Reload PostgREST schema cache

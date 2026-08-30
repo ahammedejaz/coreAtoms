@@ -64,20 +64,45 @@ Deno.serve(async (req) => {
       return new Response(JSON.stringify({ message: 'Status unchanged' }), { status: 200 });
     }
 
-    const newStatus = record.status;
-    const userId = record.user_id;
-    const orderId = String(record.id).slice(0, 8).toUpperCase();
-
     // Check if we have a message for this status
-    const msgConfig = STATUS_MESSAGES[newStatus];
+    const msgConfig = STATUS_MESSAGES[record.status];
     if (!msgConfig) {
-      return new Response(JSON.stringify({ message: `No notification for status: ${newStatus}` }), { status: 200 });
+      return new Response(JSON.stringify({ message: `No notification for status: ${record.status}` }), { status: 200 });
     }
 
     // Init Supabase admin client
     const supabaseUrl = Deno.env.get('SUPABASE_URL')!;
     const supabaseServiceKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!;
     const supabase = createClient(supabaseUrl, supabaseServiceKey);
+
+    // The function runs with verify_jwt disabled so the database webhook can
+    // reach it, which means the request body is not trustworthy on its own.
+    // Re-read the order and use the stored owner and status instead of the
+    // ones in the payload — a forged body can then only ask us to re-send a
+    // notification that already matches reality, addressed to the real owner.
+    const { data: order, error: orderErr } = await supabase
+      .from('orders')
+      .select('id,user_id,status')
+      .eq('id', record.id)
+      .maybeSingle();
+
+    if (orderErr || !order) {
+      return new Response(
+        JSON.stringify({ message: 'Order not found', error: orderErr?.message }),
+        { status: 200 }
+      );
+    }
+
+    if (order.status !== record.status) {
+      return new Response(
+        JSON.stringify({ message: 'Payload status does not match stored order status' }),
+        { status: 200 }
+      );
+    }
+
+    const newStatus = order.status;
+    const userId = order.user_id;
+    const orderId = String(order.id).slice(0, 8).toUpperCase();
 
     // Fetch user's push tokens
     const { data: tokens, error: tokenErr } = await supabase
@@ -100,7 +125,7 @@ Deno.serve(async (req) => {
       body: `${msgConfig.body} (Order #${orderId})`,
       data: {
         screen: 'OrdersTab',
-        orderId: record.id,
+        orderId: order.id,
         status: newStatus,
       },
       channelId: 'orders', // Android channel
@@ -125,7 +150,7 @@ Deno.serve(async (req) => {
   } catch (err) {
     console.error('Push notification error:', err);
     return new Response(
-      JSON.stringify({ error: err.message }),
+      JSON.stringify({ error: err instanceof Error ? err.message : String(err) }),
       { status: 500, headers: { 'Content-Type': 'application/json' } }
     );
   }

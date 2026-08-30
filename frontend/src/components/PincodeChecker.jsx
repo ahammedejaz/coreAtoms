@@ -22,15 +22,6 @@ export default function PincodeChecker() {
     const [result, setResult] = useState(null);
     const [error, setError] = useState("");
 
-    // Load saved pincode on mount
-    useEffect(() => {
-        const saved = localStorage.getItem(LS_KEY);
-        if (saved && /^\d{6}$/.test(saved)) {
-            setPincode(saved);
-            checkPincode(saved);
-        }
-    }, []);
-
     const checkPincode = async (code) => {
         const pin = code || pincode;
         if (!/^\d{6}$/.test(pin)) {
@@ -67,6 +58,17 @@ export default function PincodeChecker() {
             setLoading(false);
         }
     };
+
+    // Load a previously checked pincode on mount. Declared after checkPincode
+    // so the effect does not reference it before it is initialised.
+    useEffect(() => {
+        const saved = localStorage.getItem(LS_KEY);
+        if (saved && /^\d{6}$/.test(saved)) {
+            setPincode(saved);
+            checkPincode(saved);
+        }
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, []);
 
     const handleKeyDown = (e) => {
         if (e.key === "Enter") checkPincode();

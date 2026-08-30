@@ -8,11 +8,12 @@
 
 | Layer | Technology |
 |---|---|
-| Frontend | React 18, Vite, Tailwind CSS |
+| Frontend | React 19, Vite 8, Tailwind CSS v4 |
 | Backend | Supabase (PostgreSQL + RLS + Auth + Storage) |
 | Edge Functions | Supabase Edge Functions (Deno / TypeScript) |
 | Payments | Razorpay (COD + online prepaid) |
 | Logistics | Delhivery API (pincode check, shipment creation, tracking) |
+| Mobile | Expo SDK 54 / React Native — see `../mobile` |
 | Deployment | Vercel (frontend), Supabase Cloud (backend) |
 
 ---

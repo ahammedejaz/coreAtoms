@@ -7,11 +7,12 @@
 
 **Core Atoms** is a premium Indian nutraceutical brand (supplements). This repository is a **full-stack web application** consisting of:
 
-- A **React 18 + Vite** single-page frontend deployed on **Vercel**
+- A **React 19 + Vite 8** single-page frontend deployed on **Vercel**
 - A **Supabase** backend (PostgreSQL + Row Level Security + Auth + Storage + Edge Functions)
 - **Delhivery** integration for logistics (pincode checks, shipment creation, tracking)
 - **Razorpay** integration for online payments
 - A **CoreCoins** loyalty programme (earn coins on delivery, redeem at checkout)
+- An **Expo SDK 54 / React Native** customer app in `../../mobile` sharing the same backend
 
 There is **no separate Node/Express server**. All backend logic lives in:
 1. Supabase PostgreSQL RPCs (stored procedures)
@@ -44,14 +45,22 @@ frontend/
 │   │   ├── delhivery-create-shipment/
 │   │   └── delhivery-track/
 │   └── migrations/
-│       └── master_schema.sql   ← SINGLE SOURCE OF TRUTH — run this
+│       └── master_schema.sql   ← bulk of the schema, but see the note below
 ├── public/                 # Static assets (hero images, product images)
 ├── .env.local              # Local secrets (never commit)
 ├── .env.local.example      # Template for env vars
 ├── vite.config.js
-├── tailwind.config.js
 └── vercel.json
 ```
+
+> **Schema lives in two trees.** `frontend/supabase/migrations/master_schema.sql` covers most of the schema, but
+> the newer objects — `push_tokens`, the order-status push trigger, the realtime publication and the RPC grant
+> hardening — are timestamped migrations in the **repo-root** `supabase/migrations/`, which is the tree the
+> Supabase CLI is linked to and what `npx supabase db push` applies. Check the live database before trusting
+> either file. `supabase/migrations/20260304_existing.sql` is intentionally empty: it is the baseline marker
+> matching the remote migration record.
+
+> There is no `tailwind.config.js`. Tailwind v4 is CSS-first and all customisation lives in `src/index.css`.
 
 ---
 
@@ -95,6 +104,11 @@ All tables are in the `public` schema. RLS is enabled on every table.
 | `app_settings` | Admin-controlled key-value config store |
 | `corecoins_wallet` | Loyalty coin balance per user |
 | `replacements` | Damage/replacement requests per delivered order |
+| `push_tokens` | Expo push tokens per user per device (mobile app) |
+| `rate_limits` | Per-IP counters used by the Edge Functions |
+| `wa_notifications` | WhatsApp notification log (admin-only) |
+| `store_settings` | Store-level config, separate from `app_settings` |
+| `addresses` | Legacy address table — `user_addresses` is the one checkout uses |
 
 ### 4.1 Orders table — key columns
 
@@ -206,6 +220,13 @@ All functions live in `supabase/functions/`. They use the service role key and a
 - **Admin auth required:** Verifies JWT and checks `profiles.role = 'admin'` before proceeding
 - Called from `AdminOrders.jsx` when admin ships an order
 - Creates a Delhivery waybill and updates the `orders` row with waybill + tracking URL
+
+### `send-order-notification`
+
+Lives in the **repo-root** `supabase/functions/`, not this tree. Invoked by the `notify_order_status_change`
+trigger over `pg_net` whenever `orders.status` changes. Runs with `verify_jwt` disabled so the trigger can reach
+it, and therefore re-reads the order with the service-role key and uses the stored `user_id` and `status` instead
+of the request body. Looks up the user's `push_tokens` and posts to the Expo Push API.
 
 ### `delhivery-track`
 - Accepts: `{waybill}`
@@ -369,7 +390,14 @@ This is fetched in `Shop.jsx` (alongside products), `Home.jsx` (alongside hero s
 | `cancelled` | Cancelled | — |
 | `payment_failed` | Payment Failed | No action needed — customer retries |
 
-> **Note:** The customer-facing `OrderTimeline` shows 4 steps: Placed → Shipped → Out for Delivery → Delivered. Orders with `processing` status map to the "Placed" step visually.
+> **Note:** The customer-facing `OrderTimeline` shows 4 steps: Placed → Shipped → Out for Delivery → Delivered.
+> Orders with `processing` or `confirmed` status map to the "Placed" step visually, and `payment_failed` renders
+> with the cancelled layout.
+
+> **The live `orders` table has no CHECK constraint on `status`.** `master_schema.sql` still declares one listing
+> six values — it omits `out_for_delivery` and `confirmed`, both of which the app writes — but that constraint
+> does not exist in production, so any string can currently be stored. Confirm the intended list before adding a
+> constraint back.
 
 ---
 
@@ -442,11 +470,61 @@ This is fetched in `Shop.jsx` (alongside products), `Home.jsx` (alongside hero s
 5. **Product name and price are snapshotted into `order_items`** at order time. Never read them back from `products` for order display.
 6. **CoreCoins are credited after delivery, not after payment.** They are deferred further when replacements are enabled.
 7. **Admin role is set by updating `profiles.role = 'admin'`** — do this via Supabase Dashboard or SQL for the first admin. Subsequent admins can be promoted via admin UI if implemented.
-8. **The `master_schema.sql` in `supabase/migrations/` is the only SQL file that matters.** All other migration files are superseded by it and kept for historical reference only.
+8. **`master_schema.sql` is no longer the only SQL that matters.** It has drifted from production; the newer objects live as timestamped migrations in the repo-root `supabase/migrations/`, which is what the CLI applies. See section 2.
 9. **Razorpay uses the `.env.local` key for UI rendering and the Edge Function secret for server-side verification.** Both are needed.
 10. **All monetary values are stored in INR as `numeric(10,2)`.** The frontend `money()` utility formats them with `₹` prefix using `en-IN` locale.
 11. **Coupon discounts are validated server-side.** The `p_discount` parameter in order RPCs is IGNORED — the RPC looks up the coupon code in `app_settings.discount_codes` and computes the discount itself.
 12. **CORS is restricted.** Edge Functions only accept requests from `coreatoms.in`, `www.coreatoms.in`, `core-atoms.vercel.app`, Vercel previews, and localhost. Update `_shared/cors.ts` if domains change.
-13. **`app_settings` has granular RLS.** Sensitive keys (`discount_codes`, `warehouse_address`) require authentication to read. All other keys are publicly readable.
+13. **`app_settings` has granular RLS — via exactly one SELECT policy.** `discount_codes`, `warehouse_address`, `delhivery_client_name` and `delhivery_pickup_name` require a signed-in user; every other key is publicly readable. Do not add a second permissive `USING (true)` read policy: permissive policies OR together, so a broad one silently defeats this filter — which is exactly how every coupon code was publicly readable until 30 Aug 2026.
 14. **`delhivery-create-shipment` requires admin auth.** The Edge Function verifies the caller's JWT and checks `profiles.role = 'admin'` before creating shipments.
 15. **`fetchProductById` reads `reviewer_name` from `product_reviews` directly** — it does NOT query the `profiles` table. This prevents cross-user data leakage.
+16. **Never grant `EXECUTE` on the order RPCs to `anon`.** They are `SECURITY DEFINER` and take `p_user_id` as an
+    argument; the guard compares it against `auth.uid()`, which is NULL for an anonymous caller, so an `anon` grant
+    means anyone holding the public anon key can place orders as any user. Current grants: `place_order_cod`,
+    `cancel_order`, `process_pending_corecoins`, `log_failed_order` → `authenticated`; `place_order_prepaid` →
+    `service_role` only; `anon` → nothing except `is_admin()`, which the RLS policies need.
+17. **Realtime only fires for tables in the `supabase_realtime` publication.** `orders` and `products` are in it.
+    Adding a `postgres_changes` subscription for another table needs a matching `ALTER PUBLICATION`.
+18. **`send-order-notification` runs with `verify_jwt` disabled** so the database trigger can reach it. It therefore
+    re-reads the order from the database and uses the stored owner and status rather than trusting the request body.
+
+---
+
+## 20. Realtime & Push Notifications
+
+Added March 2026. Two independent mechanisms keep customers current on order state.
+
+**Realtime (app in the foreground).** `Home.jsx` and `Shop.jsx` open a `postgres_changes` subscription on
+`products`; `MyOrders.jsx` opens one on `orders` filtered by `user_id=eq.<uid>`. Each handler debounces 500ms and
+re-runs the page's `useCallback` loader, so an admin edit shows up without a manual refresh. Channel names must be
+unique per page (`products-realtime-home`, `products-realtime-web`, `orders-realtime-web`), and every channel is
+removed on unmount. None of this works unless the table is in the `supabase_realtime` publication.
+
+**Push (app closed).** `orders.status` UPDATE → `notify_order_status_change` trigger → `pg_net` POST →
+`send-order-notification` → Expo Push API. The mobile app registers a token in `mobile/src/services/notifications.js`
+(physical devices only; Android uses the `orders` channel) and deletes its tokens on sign-out. Tapping a
+notification routes to the Orders tab. Adding a status that should notify means adding an entry to
+`STATUS_MESSAGES` in the Edge Function.
+
+---
+
+## 21. Mobile App
+
+`mobile/` is an Expo SDK 54 / React Native customer app — Android and iOS, no admin surface. It talks to the same
+Supabase project and mirrors `frontend/src/services/` so both clients share the same queries and the
+`mapDbProduct()` shape; **a change to a data model has to be made in both**.
+
+| Web | Mobile |
+|---|---|
+| `localStorage` | `AsyncStorage` (same keys: `coreatoms_cart`, `coreatoms_profile`) |
+| `react-router-dom` | `@react-navigation/native` — bottom tabs, Login as a modal |
+| DOM visibility events | `AppState` for the 1-hour inactivity signout |
+| Razorpay web SDK | `react-native-razorpay` (needs `npx expo prebuild`; COD works in Expo Go) |
+| Tailwind classes | `StyleSheet` + tokens in `src/constants/theme.js` |
+
+The Supabase client uses a 30s fetch timeout for slow networks but hands the realtime socket the native `fetch`
+so the long-lived WebSocket is not aborted.
+
+> **Pending:** the mobile dependencies are behind — Expo SDK 54 → 57, React Navigation 6 → 7, React Native
+> 0.81 → 0.87. Expo requires upgrading one SDK major at a time. `mobile/src/services/notifications.js` also still
+> uses `shouldShowAlert`, deprecated since SDK 53 in favour of `shouldShowBanner` / `shouldShowList`.

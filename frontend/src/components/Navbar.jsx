@@ -28,7 +28,7 @@ const mobileNavLinkClass = ({ isActive }) =>
 
 export default function Navbar() {
   const { totalItems, lastAction, maxItems } = useCart();
-  const { isAuthenticated, user, isAdmin, signOut, profile } = useAuth();
+  const { isAuthenticated, user, isAdmin, signOut } = useAuth();
   const homePath = isAdmin ? "/admin" : "/";
   const location = useLocation();
 
@@ -82,14 +82,6 @@ export default function Navbar() {
     return () => { document.body.style.overflow = ""; };
   }, [menuOpen]);
 
-  const LogoMark = () => (
-    logoUrl ? (
-      <img src={logoUrl} alt="Core Atoms" className="h-8 w-auto max-w-[140px] object-contain" />
-    ) : (
-      <img src="/logo.png" alt="Core Atoms" className="h-8 w-auto max-w-[140px] object-contain" />
-    )
-  );
-
   return (
     <>
       <header className="sticky top-0 z-50 bg-white/70 backdrop-blur-xl backdrop-saturate-[180%] shadow-[0_1px_3px_rgba(0,0,0,0.05),0_8px_30px_-12px_rgba(30,58,95,0.15)]" style={{ borderBottom: '1px solid rgba(232,228,222,0.6)' }}>
@@ -99,7 +91,7 @@ export default function Navbar() {
 
           {/* Logo */}
           <Link to={homePath} className="flex items-center gap-2.5">
-            <LogoMark />
+            <img src={logoUrl || "/logo.png"} alt="Core Atoms" className="h-8 w-auto max-w-[140px] object-contain" />
           </Link>
 
           {/* Desktop nav */}

@@ -236,8 +236,8 @@ export default function AdminOrders({ onOrdersChange }) {
         setLoadingOrders(true);
         setOrderErr("");
 
-        let data = [];
-        let queryError = null;
+        let data;
+        let queryError;
 
         try {
             const res = await supabase
@@ -524,7 +524,6 @@ export default function AdminOrders({ onOrdersChange }) {
         setShippingOrderId(order.id);
 
         try {
-            const addr = order.shipping_address || {};
             const items = (order.order_items_detailed || []).map((it) => ({
                 name: it.product_name || "Product",
                 qty: it.qty_num || 1,
@@ -564,7 +563,7 @@ export default function AdminOrders({ onOrdersChange }) {
                     } else if (typeof fnErr === "object" && fnErr.message) {
                         detail = fnErr.message;
                     }
-                } catch (_) { }
+                } catch { /* ignore */ }
                 throw new Error(detail);
             }
 

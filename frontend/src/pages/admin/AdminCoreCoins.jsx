@@ -17,7 +17,7 @@ export default function AdminCoreCoins() {
     const { showToast } = useToast();
     const [loading, setLoading] = useState(true);
     const [wallets, setWallets] = useState([]);
-    const [pendingByUser, setPendingByUser] = useState({});
+    const [, setPendingByUser] = useState({});
     const [search, setSearch] = useState("");
     const [sortBy, setSortBy] = useState("balance"); // balance | pending | name
     const [config, setConfig] = useState({ earn_rate: 1, earn_per_rupees: 100, coin_value_inr: 1 });

@@ -54,7 +54,7 @@ export default function PincodeChecker() {
                     try {
                         const errBody = await fnErr.context.json();
                         detail = errBody?.error || errBody?.message || detail;
-                    } catch (_) { }
+                    } catch { /* ignore */ }
                 }
                 throw new Error(detail);
             }

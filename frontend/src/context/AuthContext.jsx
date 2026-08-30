@@ -61,7 +61,7 @@ export function AuthProvider({ children }) {
         // Never cache the role — always read it from the live DB to prevent stale admin access
         const { role: _omit, ...safeData } = data;
         localStorage.setItem(PROFILE_CACHE_KEY, JSON.stringify(safeData));
-      } catch { }
+      } catch { /* cache write is best-effort */ }
     } else {
       localStorage.removeItem(PROFILE_CACHE_KEY);
     }

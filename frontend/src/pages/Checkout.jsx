@@ -115,7 +115,7 @@ export default function Checkout() {
     try { const c = sessionStorage.getItem("coreatoms_coupon"); return c ? JSON.parse(c) : null; } catch { return null; }
   });
   const [couponError, setCouponError] = useState("");
-  const [discountCodes, setDiscountCodes] = useState([]);
+  const [, setDiscountCodes] = useState([]);
   const [validatingCoupon, setValidatingCoupon] = useState(false);
 
   // CoreCoins
@@ -591,7 +591,7 @@ export default function Checkout() {
           try {
             const errBody = await rzpErr.context.json();
             detail = errBody?.error || errBody?.message || detail;
-          } catch (_) { /* ignore parse errors */ }
+          } catch { /* ignore parse errors */ }
         }
         throw new Error(detail);
       }
@@ -611,7 +611,7 @@ export default function Checkout() {
         onSuccess: async (response) => {
           try {
             // 3. Verify payment + create order via Edge Function
-            const { data: verifyData, error: verifyErr } = await supabase.functions.invoke(
+            const { error: verifyErr } = await supabase.functions.invoke(
               "verify-razorpay-payment",
               {
                 body: {
@@ -635,7 +635,7 @@ export default function Checkout() {
                 try {
                   const errBody = await verifyErr.context.json();
                   detail = errBody?.error || errBody?.message || detail;
-                } catch (_) { /* ignore parse errors */ }
+                } catch { /* ignore parse errors */ }
               }
               // Log failed order so it appears in My Orders
               supabase.rpc("log_failed_order", {

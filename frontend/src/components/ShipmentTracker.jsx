@@ -87,7 +87,7 @@ export default function ShipmentTracker({ waybill, trackingUrl, orderId, onStatu
                     try {
                         const errBody = await fnErr.context.json();
                         detail = errBody?.error || errBody?.message || detail;
-                    } catch (_) { }
+                    } catch { /* ignore */ }
                 }
                 throw new Error(detail);
             }
@@ -129,14 +129,9 @@ export default function ShipmentTracker({ waybill, trackingUrl, orderId, onStatu
                             }
                             await supabase.from("orders").update(updateFields).eq("id", orderId);
                             if (onStatusSync) onStatusSync(newDbStatus);
-
-                        } else {
-
                         }
                     }
-                } catch (syncErr) {
-
-                }
+                } catch { /* status sync is best-effort */ }
             }
         } catch (err) {
 

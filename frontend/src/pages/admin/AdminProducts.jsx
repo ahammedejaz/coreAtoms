@@ -71,7 +71,7 @@ export default function AdminProducts({ onProductsChange }) {
     // -------------------- Extra images (product_images table) --------------------
     const [extraImages, setExtraImages] = useState([]); // [{ id, image_url, sort_order }]
     const [extraImageFiles, setExtraImageFiles] = useState([]); // pending uploads
-    const [uploadingExtra, setUploadingExtra] = useState(false);
+    const [, setUploadingExtra] = useState(false);
     const extraFileInputRef = useRef(null);
 
     // Inline stock edit

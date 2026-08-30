@@ -183,7 +183,7 @@ export default function Home() {
     return () => {
       clearTimeout(debounceTimer);
       if (channel) {
-        try { supabase.removeChannel(channel); } catch (_) { /* ignore cleanup errors */ }
+        try { supabase.removeChannel(channel); } catch { /* ignore cleanup errors */ }
       }
     };
   }, [loadData]);
@@ -276,7 +276,7 @@ export default function Home() {
                     className="absolute inset-0 h-full w-full object-cover"
                     style={{ objectPosition: slide.position || "50% 50%" }}
                     loading="eager"
-                    fetchpriority={i === 0 ? "high" : "auto"}
+                    fetchPriority={i === 0 ? "high" : "auto"}
                     sizes="(max-width: 1024px) 100vw, 50vw"
                     onLoad={i === 0 ? () => setHeroReady(true) : undefined}
                   />

@@ -283,7 +283,6 @@ const STATUS_LABELS = {
 
 export default function MyOrders() {
   const { user } = useAuth();
-  const { showToast } = useToast();
   const userId = user?.id;
 
   const [orders, setOrders] = useState([]);
@@ -362,7 +361,7 @@ export default function MyOrders() {
       if (ccConfig?.value) setCorecoinsConfig(ccConfig.value);
 
       // Credit any pending CoreCoins whose replacement window has now closed
-      const { data: creditResult, error: creditError } = await supabase.rpc("process_pending_corecoins", { p_user_id: userId });
+      const { error: creditError } = await supabase.rpc("process_pending_corecoins", { p_user_id: userId });
       if (creditError) console.error("process_pending_corecoins error:", creditError);
       // coins credited silently — no debug logging in production
       // Re-fetch balance in case coins were just credited
@@ -539,7 +538,6 @@ export default function MyOrders() {
         {paginated.map((o) => {
           const items = o.order_items || [];
           const totalAmount = Number(o.total_amount_inr || items.reduce((s, it) => s + Number(it.line_total_inr || 0), 0));
-          const totalCount = Number(o.total_items || items.reduce((s, it) => s + Number(it.qty || 0), 0));
           const status = (o.status || "placed").toLowerCase();
           const isDelivered = status === "delivered";
           const isPrepaid = o.payment_method === "prepaid";

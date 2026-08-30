@@ -2,7 +2,10 @@
  * SEO.jsx — Reusable SEO head tags component.
  *
  * Sets `<title>`, `<meta name="description">`, Open Graph,
- * and Twitter Card meta tags using `react-helmet-async`.
+ * and Twitter Card meta tags.
+ *
+ * React 19 hoists `<title>` and `<meta>` into `<head>` from anywhere in the
+ * tree, so these are plain elements — no Helmet provider is involved.
  *
  * @module components/SEO
  *
@@ -13,8 +16,6 @@
  *     ogImage="/og-shop.jpg"
  *   />
  */
-import { Helmet } from "react-helmet-async";
-
 const SITE_NAME = "Core Atoms";
 const DEFAULT_DESCRIPTION =
     "Premium nutraceuticals designed for daily consistency. Clean formulas, structured stacks, COD available across India.";
@@ -28,7 +29,7 @@ export default function SEO({
     const fullTitle = title.includes(SITE_NAME) ? title : `${title} | ${SITE_NAME}`;
 
     return (
-        <Helmet>
+        <>
             <title>{fullTitle}</title>
             <meta name="description" content={description} />
 
@@ -47,6 +48,6 @@ export default function SEO({
 
             {/* Indexing control */}
             {noIndex && <meta name="robots" content="noindex,nofollow" />}
-        </Helmet>
+        </>
     );
 }

@@ -33,6 +33,17 @@ import { supabase } from "../../services/supabase/client";
 import { useToast } from "../../context/ToastContext";
 import useKeyboardShortcut from "../../hooks/useKeyboardShortcut";
 
+/** Accordion chevron — rotates when its section is open. */
+function Chevron({ open }) {
+    return (
+        <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none"
+            stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"
+            className={`text-stone-400 shrink-0 transition-transform duration-200 ${open ? "rotate-180" : ""}`}>
+            <polyline points="6 9 12 15 18 9" />
+        </svg>
+    );
+}
+
 export default function AdminSettings() {
     const { showToast } = useToast();
     const [maxItems, setMaxItems] = useState(15);
@@ -48,14 +59,6 @@ export default function AdminSettings() {
         next.has(key) ? next.delete(key) : next.add(key);
         return next;
     });
-    const Chevron = ({ section }) => (
-        <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none"
-            stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"
-            className={`text-stone-400 shrink-0 transition-transform duration-200 ${openSections.has(section) ? "rotate-180" : ""}`}>
-            <polyline points="6 9 12 15 18 9" />
-        </svg>
-    );
-
     // Razorpay toggle
     const [razorpayEnabled, setRazorpayEnabled] = useState(false);
     const [razorpayLoading, setRazorpayLoading] = useState(true);
@@ -392,12 +395,6 @@ export default function AdminSettings() {
         setAddingCode(false);
     };
 
-    const toggleDiscountCode = async (code) => {
-        const updated = discountCodes.map(c => c.code === code ? { ...c, active: !c.active } : c);
-        const ok = await saveDiscountCodes(updated);
-        if (ok) showToast(`Code "${code}" ${updated.find(c => c.code === code).active ? "activated" : "deactivated"}`, "success");
-    };
-
     const deleteDiscountCode = async (code) => {
         const ok = await saveDiscountCodes(discountCodes.filter(c => c.code !== code));
         if (ok) showToast(`Code "${code}" deleted`, "info");
@@ -479,7 +476,7 @@ export default function AdminSettings() {
                         </div>
                         <div className="mt-0.5 text-xs text-stone-500">Show a promotional banner on the homepage for sales or events.</div>
                     </div>
-                    <Chevron section="banner" />
+                    <Chevron open={openSections.has("banner")} />
                 </button>
                 {openSections.has("banner") && (
                     <div className="px-5 pb-5 border-t border-[#E8E4DE] pt-4">
@@ -524,7 +521,7 @@ export default function AdminSettings() {
                         <div className="text-base font-semibold text-stone-900">Order Settings</div>
                         <div className="mt-0.5 text-xs text-stone-500">Max items, shipping, free shipping threshold, GST.</div>
                     </div>
-                    <Chevron section="orders" />
+                    <Chevron open={openSections.has("orders")} />
                 </button>
                 {openSections.has("orders") && (
                     <div className="px-5 pb-5 border-t border-[#E8E4DE] pt-4">
@@ -568,7 +565,7 @@ export default function AdminSettings() {
                         <div className="text-base font-semibold text-stone-900">Payment Methods</div>
                         <div className="mt-0.5 text-xs text-stone-500">Control which payment options are available at checkout.</div>
                     </div>
-                    <Chevron section="payments" />
+                    <Chevron open={openSections.has("payments")} />
                 </button>
                 {openSections.has("payments") && (
                     <div className="px-5 pb-5 border-t border-[#E8E4DE] pt-4">
@@ -650,7 +647,7 @@ export default function AdminSettings() {
                         </div>
                         <div className="mt-0.5 text-xs text-stone-500">Allow customers to request product replacements for damaged shipments.</div>
                     </div>
-                    <Chevron section="replacements" />
+                    <Chevron open={openSections.has("replacements")} />
                 </button>
                 {openSections.has("replacements") && (
                     <div className="px-5 pb-5 border-t border-[#E8E4DE] pt-4 space-y-4">
@@ -722,7 +719,7 @@ export default function AdminSettings() {
                         </div>
                         <div className="mt-0.5 text-xs text-stone-500">Reward customers with coins on purchases. Redeemable for discounts at checkout.</div>
                     </div>
-                    <Chevron section="corecoins" />
+                    <Chevron open={openSections.has("corecoins")} />
                 </button>
                 {openSections.has("corecoins") && (
                     <div className="px-5 pb-5 border-t border-[#E8E4DE] pt-4 space-y-5">
@@ -792,7 +789,7 @@ export default function AdminSettings() {
                         <div className="text-base font-semibold text-stone-900">Warehouse / Return Address</div>
                         <div className="mt-0.5 text-xs text-stone-500">Origin for Delhivery shipments, rate calculations, and return pickups.</div>
                     </div>
-                    <Chevron section="warehouse" />
+                    <Chevron open={openSections.has("warehouse")} />
                 </button>
                 {openSections.has("warehouse") && (
                     <div className="px-5 pb-5 border-t border-[#E8E4DE] pt-4">
@@ -850,7 +847,7 @@ export default function AdminSettings() {
                         <div className="text-base font-semibold text-stone-900">Discount Codes</div>
                         <div className="mt-0.5 text-xs text-stone-500">Create coupon codes with percentage discounts for checkout.</div>
                     </div>
-                    <Chevron section="discounts" />
+                    <Chevron open={openSections.has("discounts")} />
                 </button>
                 {openSections.has("discounts") && (
                     <div className="px-5 pb-5 border-t border-[#E8E4DE] pt-4">

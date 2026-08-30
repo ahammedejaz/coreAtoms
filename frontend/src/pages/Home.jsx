@@ -8,7 +8,7 @@
  *
  * All visible text, images, and links are admin-controlled via AdminHomepage.
  * The hero carousel auto-advances with a 5 s interval.
- * Featured products strip reuses the `ProductCard` component from Shop.jsx.
+ * Featured products strip reuses the shared `ProductCard` component.
  *
  * @module pages/Home
  */
@@ -17,7 +17,7 @@ import { useCart } from "../context/CartContext";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { fetchProducts } from "../services/products";
 import { supabase } from "../services/supabase/client";
-import { ProductCard } from "./Shop";
+import ProductCard from "../components/ProductCard";
 import SEO from "../components/SEO";
 import { SkeletonGrid } from "../components/Skeleton";
 import { useToast } from "../context/ToastContext";

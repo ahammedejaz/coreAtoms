@@ -47,9 +47,9 @@ const STEP_ICONS = {
 
 export default function OrderTimeline({ status }) {
     const s = (status || "placed").toLowerCase();
-    const isCancelled = s === "cancelled";
-    // Map "processing" to "placed" since we no longer show Processing as a separate step
-    const mappedStatus = s === "processing" ? "placed" : s;
+    const isCancelled = s === "cancelled" || s === "payment_failed";
+    // Map "processing" and "confirmed" to "placed" since we no longer show them as separate steps
+    const mappedStatus = (s === "processing" || s === "confirmed") ? "placed" : s;
     const currentIdx = STEPS.indexOf(mappedStatus);
 
     if (isCancelled) {

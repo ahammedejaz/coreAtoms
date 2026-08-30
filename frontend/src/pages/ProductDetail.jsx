@@ -41,6 +41,11 @@ export default function ProductDetail() {
   const [gstPercent, setGstPercent] = useState(0);
 
   useEffect(() => {
+    if (!id) {
+      setErr("Invalid product URL.");
+      setLoading(false);
+      return;
+    }
     let alive = true;
     (async () => {
       try {
@@ -87,7 +92,7 @@ export default function ProductDetail() {
   const canAdd = remainingInOrder > 0 && remainingStock > 0;
 
   const handlePlus = () => {
-    if (!product || !canAdd) return;
+    if (!id || !product || !canAdd) return;
     addItem({
       id: activeKey,
       name: selectedVariant ? `${product.name} — ${selectedVariant.label}` : product.name,

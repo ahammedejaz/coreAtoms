@@ -161,6 +161,33 @@ export default function Home() {
 
   useEffect(() => { loadData(); }, [loadData]);
 
+  // ─── Realtime: auto-refresh when admin updates products ───
+  useEffect(() => {
+    let debounceTimer = null;
+    let channel = null;
+    try {
+      channel = supabase
+        .channel("products-realtime-home")
+        .on(
+          "postgres_changes",
+          { event: "*", schema: "public", table: "products" },
+          () => {
+            clearTimeout(debounceTimer);
+            debounceTimer = setTimeout(() => loadData(), 500);
+          }
+        )
+        .subscribe();
+    } catch (e) {
+      console.error("Realtime subscription error:", e);
+    }
+    return () => {
+      clearTimeout(debounceTimer);
+      if (channel) {
+        try { supabase.removeChannel(channel); } catch (_) { /* ignore cleanup errors */ }
+      }
+    };
+  }, [loadData]);
+
   // Preload hero images into browser cache so carousel transitions are instant
   useEffect(() => {
     if (!heroImages.length) return;
@@ -177,7 +204,11 @@ export default function Home() {
     return () => clearInterval(t);
   }, [heroImages]);
 
-  useEffect(() => { setHeroIndex(0); }, [heroImages]);
+  // Reset carousel index when images change; clamp to valid range if images shrink
+  useEffect(() => {
+    if (heroImages.length === 0) return;
+    setHeroIndex((i) => (i >= heroImages.length ? 0 : i));
+  }, [heroImages]);
 
   /** Ref for button feedback timer (avoid polluting `window`). */
   const btnTimerRef = useRef(null);

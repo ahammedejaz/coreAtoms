@@ -17,7 +17,7 @@
  *
  * @module pages/MyOrders
  */
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { Link } from "react-router-dom";
 import { supabase } from "../services/supabase/client";
 import { useAuth } from "../context/AuthContext";
@@ -262,6 +262,7 @@ function InlineReplacementForm({ orderId, userId, onDone }) {
 const STATUS_STYLES = {
   placed: "bg-blue-50 text-blue-700 border border-blue-200",
   processing: "bg-amber-50 text-amber-700 border border-amber-200",
+  confirmed: "bg-purple-50 text-purple-700 border border-purple-200",
   shipped: "bg-violet-50 text-violet-700 border border-violet-200",
   out_for_delivery: "bg-indigo-50 text-indigo-700 border border-indigo-200",
   delivered: "bg-emerald-50 text-emerald-700 border border-emerald-200",
@@ -272,6 +273,7 @@ const STATUS_STYLES = {
 const STATUS_LABELS = {
   placed: "Placed",
   processing: "Processing",
+  confirmed: "Confirmed",
   shipped: "Shipped",
   out_for_delivery: "Out for Delivery",
   delivered: "Delivered",
@@ -306,7 +308,7 @@ export default function MyOrders() {
   const [corecoinsConfig, setCorecoinsConfig] = useState({ earn_rate: 1, earn_per_rupees: 100, coin_value_inr: 1 });
 
 
-  const load = async () => {
+  const load = useCallback(async () => {
     if (!userId) return;
     setLoading(true);
     const { data } = await supabase
@@ -371,10 +373,31 @@ export default function MyOrders() {
     }
 
     setLoading(false);
-  };
+  }, [userId]);
 
 
-  useEffect(() => { load(); }, [userId]);
+  useEffect(() => { load(); }, [load]);
+
+  // ─── Realtime: auto-refresh when admin changes order status ───
+  useEffect(() => {
+    if (!userId) return;
+    let debounceTimer = null;
+    const channel = supabase
+      .channel('orders-realtime-web')
+      .on(
+        'postgres_changes',
+        { event: '*', schema: 'public', table: 'orders', filter: `user_id=eq.${userId}` },
+        () => {
+          clearTimeout(debounceTimer);
+          debounceTimer = setTimeout(() => load(), 500);
+        }
+      )
+      .subscribe();
+    return () => {
+      clearTimeout(debounceTimer);
+      supabase.removeChannel(channel);
+    };
+  }, [userId, load]);
 
 
   const filtered = orders.filter((o) => {
@@ -829,8 +852,11 @@ export default function MyOrders() {
                               )}
                               {/* Pending coins preview */}
                               {corecoinsEnabled && !o.coins_credited && (() => {
-                                const netPaid = (o.total_amount_inr || 0) - ((o.coins_used || 0) * (corecoinsConfig.coin_value_inr || 1));
-                                const pending = Math.floor(netPaid * (corecoinsConfig.earn_rate || 1) / (corecoinsConfig.earn_per_rupees || 100));
+                                const coinVal = Number(corecoinsConfig?.coin_value_inr || 1);
+                                const earnRate = Number(corecoinsConfig?.earn_rate || 1);
+                                const earnPerRupees = Number(corecoinsConfig?.earn_per_rupees || 100);
+                                const netPaid = (o.total_amount_inr || 0) - ((o.coins_used || 0) * coinVal);
+                                const pending = Math.floor(netPaid * earnRate / earnPerRupees);
                                 if (pending <= 0) return null;
                                 return (
                                   <span className="inline-flex items-center gap-1 text-[11px] text-stone-500">

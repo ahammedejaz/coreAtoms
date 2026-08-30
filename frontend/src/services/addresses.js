@@ -51,6 +51,30 @@ export async function createAddress(userId, address) {
 }
 
 /**
+ * Updates an existing saved address.
+ * @param {string} addressId
+ * @param {string} userId
+ * @param {object} address - { fullName, phone, line1, line2, city, state, pincode }
+ */
+export async function updateAddress(addressId, userId, address) {
+    const { error } = await supabase
+        .from("user_addresses")
+        .update({
+            full_name: address.fullName?.trim(),
+            phone: address.phone?.trim(),
+            line1: address.line1?.trim(),
+            line2: address.line2?.trim(),
+            city: address.city?.trim(),
+            state: address.state?.trim(),
+            pincode: address.pincode?.trim(),
+        })
+        .eq("id", addressId)
+        .eq("user_id", userId);
+
+    if (error) throw error;
+}
+
+/**
  * Deletes a saved address. Includes user_id guard for RLS defense-in-depth.
  * @param {string} addressId
  * @param {string} userId

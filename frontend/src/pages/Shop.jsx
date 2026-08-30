@@ -12,7 +12,7 @@
  *
  * @module pages/Shop
  */
-import React, { useEffect, useMemo, useRef, useState } from "react";
+import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Link, useSearchParams } from "react-router-dom";
 import { fetchProducts } from "../services/products";
 import { useCart } from "../context/CartContext";
@@ -194,27 +194,43 @@ export default function Shop() {
   const [justAddedId, setJustAddedId] = useState(null);
   const [gstPercent, setGstPercent] = useState(0);
 
-  useEffect(() => {
-    let alive = true;
-    (async () => {
-      try {
-        setLoading(true);
-        const [list, settingsRes] = await Promise.all([
-          fetchProducts(),
-          supabase.from("app_settings").select("value").eq("key", "gst_percentage").maybeSingle(),
-        ]);
-        if (alive) {
-          setProducts(list);
-          setGstPercent(Number(settingsRes?.data?.value?.percentage ?? 0));
-        }
-      } catch (e) {
-        if (alive) setErr(e?.message || "Failed to load");
-      } finally {
-        if (alive) setLoading(false);
-      }
-    })();
-    return () => { alive = false; };
+  const loadProducts = useCallback(async () => {
+    try {
+      setLoading(true);
+      const [list, settingsRes] = await Promise.all([
+        fetchProducts(),
+        supabase.from("app_settings").select("value").eq("key", "gst_percentage").maybeSingle(),
+      ]);
+      setProducts(list);
+      setGstPercent(Number(settingsRes?.data?.value?.percentage ?? 0));
+    } catch (e) {
+      setErr(e?.message || "Failed to load");
+    } finally {
+      setLoading(false);
+    }
   }, []);
+
+  useEffect(() => { loadProducts(); }, [loadProducts]);
+
+  // ─── Realtime: auto-refresh when admin updates products ───
+  useEffect(() => {
+    let debounceTimer = null;
+    const channel = supabase
+      .channel("products-realtime-web")
+      .on(
+        "postgres_changes",
+        { event: "*", schema: "public", table: "products" },
+        () => {
+          clearTimeout(debounceTimer);
+          debounceTimer = setTimeout(() => loadProducts(), 500);
+        }
+      )
+      .subscribe();
+    return () => {
+      clearTimeout(debounceTimer);
+      supabase.removeChannel(channel);
+    };
+  }, [loadProducts]);
 
   const categories = useMemo(() => {
     const set = new Set();
@@ -226,7 +242,7 @@ export default function Shop() {
     let list = products.filter((p) => p.isActive !== false);
     if (category !== "All") list = list.filter((p) => p.category === category);
     const q = debouncedQuery.trim().toLowerCase();
-    if (q) list = list.filter((p) => p.name.toLowerCase().includes(q));
+    if (q) list = list.filter((p) => p.name.toLowerCase().includes(q) || p.category?.toLowerCase().includes(q));
     return list;
   }, [products, category, debouncedQuery]);
 

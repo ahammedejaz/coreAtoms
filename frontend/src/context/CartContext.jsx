@@ -90,15 +90,23 @@ export function CartProvider({ children }) {
     const { data: sub } = supabase.auth.onAuthStateChange((event) => {
       if (event === "SIGNED_IN") {
         const saved = readCart();
-        if (saved.length > 0) {
-          setItems((current) => {
-            // If the current in-memory cart is empty but localStorage has items,
-            // restore from localStorage (handles OAuth redirect re-mount).
-            // If both have items, keep whichever is larger (avoids duplicating).
-            if (current.length === 0) return saved;
-            return current;
-          });
-        }
+        setItems((current) => {
+          const currentNorm = normalizeCartItems(current);
+          // If nothing in memory, restore from localStorage (handles OAuth redirect re-mount)
+          if (currentNorm.length === 0) return saved;
+          // If localStorage is empty or same, keep current in-memory cart
+          if (saved.length === 0) return currentNorm;
+          // Both have items — merge by combining and deduplicating by id
+          // Items already in current take precedence (prefer in-memory quantities)
+          const merged = [...currentNorm];
+          for (const savedItem of saved) {
+            const existsInCurrent = currentNorm.some((x) => x.id === savedItem.id);
+            if (!existsInCurrent) {
+              merged.push(savedItem);
+            }
+          }
+          return normalizeCartItems(merged);
+        });
       }
     });
     return () => sub.subscription?.unsubscribe?.();

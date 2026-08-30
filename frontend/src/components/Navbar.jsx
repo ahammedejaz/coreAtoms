@@ -53,7 +53,7 @@ export default function Navbar() {
       .from("app_settings")
       .select("value")
       .eq("key", "site_logo")
-      .single()
+      .maybeSingle()
       .then(({ data }) => {
         if (data?.value && typeof data.value === "string" && data.value.startsWith("http")) {
           setLogoUrl(data.value);

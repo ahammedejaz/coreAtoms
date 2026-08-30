@@ -252,9 +252,13 @@ export default function Checkout() {
           setPincodeShippingCod(codCharge !== null && codCharge !== undefined && Number.isFinite(Number(codCharge)) ? Math.ceil(Number(codCharge)) : Math.ceil(Number(prepaidCharge)));
           setShippingPinLabel(pin);
         } else {
+          // Edge function returned an error or unserviceable pincode — fall back to flat rate
           setPincodeShippingPrepaid(null);
           setPincodeShippingCod(null);
           setShippingPinLabel("");
+          if (error) {
+            showToast("Could not fetch shipping rate for this pincode. A standard rate will apply.", "warning", 4000);
+          }
         }
       })
       .catch(() => {
@@ -262,6 +266,7 @@ export default function Checkout() {
           setPincodeShippingPrepaid(null);
           setPincodeShippingCod(null);
           setShippingPinLabel("");
+          showToast("Shipping rate lookup failed. A standard rate will apply.", "warning", 4000);
         }
       })
       .finally(() => { if (!controller.signal.aborted) setShippingLoading(false); });
@@ -883,8 +888,8 @@ export default function Checkout() {
             </div>
           )}
 
-          {/* Address form — shown for new address OR when editing */}
-          {(selectedAddressId === null || savedAddresses.length === 0 || editingAddressId) && (
+          {/* Address form — shown for new address OR when editing (hidden while addresses are loading) */}
+          {!loadingAddresses && (selectedAddressId === null || savedAddresses.length === 0 || editingAddressId) && (
             <div className="card p-6 space-y-4">
               <div className="flex items-center justify-between">
                 <p className="text-xs font-semibold text-stone-500 uppercase tracking-wide">

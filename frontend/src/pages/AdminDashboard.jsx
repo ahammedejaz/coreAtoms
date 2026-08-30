@@ -167,8 +167,8 @@ export default function AdminDashboard() {
     const panel = (id) => ({ className: activeTab === id ? "" : "hidden" });
 
     return (
-        <div className="mx-auto max-w-6xl px-4 py-10">
-            <div className="card p-6">
+        <div className="mx-auto max-w-7xl px-3 sm:px-4 py-6 sm:py-10">
+            <div className="card p-4 sm:p-6">
 
                 {/* ── Header ── */}
                 <div className="flex flex-col sm:flex-row sm:items-start sm:justify-between gap-4">
@@ -244,7 +244,7 @@ export default function AdminDashboard() {
                 </div>
 
                 {/* ── Tab Bar ── */}
-                <div className="mt-8 -mx-4 px-4 flex items-center gap-2 overflow-x-auto whitespace-nowrap pb-1">
+                <div className="mt-6 sm:mt-8 -mx-4 px-4 flex items-center gap-2 overflow-x-auto whitespace-nowrap pb-1 no-scrollbar">
                     {tab("products", "Products", ICONS.products)}
                     {tab("orders", "Orders", ICONS.orders, stats.pendingOrders)}
                     {tab("settings", "Settings", ICONS.settings)}

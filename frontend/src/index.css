@@ -300,6 +300,16 @@
     box-shadow: inset 0 1px 2px rgba(0, 0, 0, 0.02), 0 0 0 3px rgba(30, 58, 95, 0.08);
   }
 
+  /* Hide the scrollbar on horizontal tab strips while keeping them scrollable */
+  .no-scrollbar {
+    scrollbar-width: none;
+    -ms-overflow-style: none;
+  }
+
+  .no-scrollbar::-webkit-scrollbar {
+    display: none;
+  }
+
   /* Section label — small caps above headings */
   .section-label {
     @apply text-xs font-semibold tracking-[0.12em] uppercase text-stone-400;

@@ -21,6 +21,9 @@ import { supabase } from "../../services/supabase/client";
 import ImagePositionAdjuster from "../../components/ImagePositionAdjuster";
 import { SkeletonAdminTable } from "../../components/Skeleton";
 import ConfirmDialog from "../../components/ConfirmDialog";
+import RichText from "../../components/RichText";
+import ProductDetailsEditor, { organiseAboutText } from "./ProductDetailsEditor";
+import { normalizeProductDetails } from "../../services/products";
 import { useToast } from "../../context/ToastContext";
 import useKeyboardShortcut from "../../hooks/useKeyboardShortcut";
 
@@ -61,6 +64,8 @@ export default function AdminProducts({ onProductsChange }) {
     const [pRecommendedStack, setPRecommendedStack] = useState("");
     const [pHighlights, setPHighlights] = useState([]); // e.g. ["Clean label", "Lab-tested"]
     const [pHighlightInput, setPHighlightInput] = useState("");
+    const [pDetails, setPDetails] = useState(() => normalizeProductDetails(null));
+    const [showAboutPreview, setShowAboutPreview] = useState(false);
     const [pImagePreview, setPImagePreview] = useState(""); // live preview URL
     const [pImagePosition, setPImagePosition] = useState("50% 50%"); // focal point + zoom
     const [showImageAdjuster, setShowImageAdjuster] = useState(false);
@@ -113,6 +118,7 @@ export default function AdminProducts({ onProductsChange }) {
         pairs_well_with,
         recommended_stack,
         highlights,
+        details,
         product_variants(id,label,stock_qty,is_active)
       `
             )
@@ -173,6 +179,8 @@ export default function AdminProducts({ onProductsChange }) {
         setPRecommendedStack("");
         setPHighlights([]);
         setPHighlightInput("");
+        setPDetails(normalizeProductDetails(null));
+        setShowAboutPreview(false);
         setVariants([]);
         setVariantErr("");
         if (fileInputRef.current) fileInputRef.current.value = "";
@@ -188,6 +196,7 @@ export default function AdminProducts({ onProductsChange }) {
             name: "", sku: "", category: "", price: "", stock: "", desc: "",
             active: true, imagePosition: "50% 50%", aboutText: "", bestFor: "",
             pairsWellWith: "", recommendedStack: "", highlights: [],
+            detailsJson: JSON.stringify(normalizeProductDetails(null)),
         };
         initialVariants.current = [];
     };
@@ -221,6 +230,8 @@ export default function AdminProducts({ onProductsChange }) {
         setPRecommendedStack(p.recommended_stack || "");
         setPHighlights(Array.isArray(p.highlights) ? p.highlights : []);
         setPHighlightInput("");
+        setPDetails(normalizeProductDetails(p.details));
+        setShowAboutPreview(false);
         initialFormState.current = {
             name: p.name || "",
             sku: p.sku || "",
@@ -235,6 +246,7 @@ export default function AdminProducts({ onProductsChange }) {
             pairsWellWith: p.pairs_well_with || "",
             recommendedStack: p.recommended_stack || "",
             highlights: Array.isArray(p.highlights) ? [...p.highlights] : [],
+            detailsJson: JSON.stringify(normalizeProductDetails(p.details)),
         };
         initialVariants.current = [];
         // Load variants
@@ -389,6 +401,28 @@ export default function AdminProducts({ onProductsChange }) {
             const uploadedUrl = await uploadProductImageIfAny();
             if (uploadedUrl) image_url = uploadedUrl;
 
+            // Strip blank rows before persisting; an all-empty details object
+            // stores NULL so the PDP renders nothing for it.
+            const detailsClean = {
+                benefits: pDetails.benefits
+                    .filter((b) => b.title.trim() || b.text.trim())
+                    .map((b) => ({ icon: b.icon, title: b.title.trim(), text: b.text.trim() })),
+                ingredients: pDetails.ingredients
+                    .filter((r) => r.name.trim())
+                    .map((r) => ({ name: r.name.trim(), amount: r.amount.trim(), purpose: r.purpose.trim() })),
+                howToUse: pDetails.howToUse.map((x) => x.trim()).filter(Boolean),
+                faqs: pDetails.faqs
+                    .filter((f) => f.q.trim())
+                    .map((f) => ({ q: f.q.trim(), a: f.a.trim() })),
+                safetyInfo: pDetails.safetyInfo.trim(),
+            };
+            const detailsEmpty =
+                detailsClean.benefits.length === 0 &&
+                detailsClean.ingredients.length === 0 &&
+                detailsClean.howToUse.length === 0 &&
+                detailsClean.faqs.length === 0 &&
+                !detailsClean.safetyInfo;
+
             const payload = {
                 name,
                 sku: String(pSku || "").trim() || null,
@@ -404,6 +438,7 @@ export default function AdminProducts({ onProductsChange }) {
                 pairs_well_with: String(pPairsWellWith || "").trim() || null,
                 recommended_stack: String(pRecommendedStack || "").trim() || null,
                 highlights: pHighlights.length > 0 ? pHighlights : null,
+                details: detailsEmpty ? null : detailsClean,
                 updated_at: new Date().toISOString(),
             };
 
@@ -443,7 +478,9 @@ export default function AdminProducts({ onProductsChange }) {
                 pairsWellWith: String(pPairsWellWith || "").trim(),
                 recommendedStack: String(pRecommendedStack || "").trim(),
                 highlights: [...pHighlights],
+                detailsJson: JSON.stringify(normalizeProductDetails(detailsEmpty ? null : detailsClean)),
             };
+            setPDetails(normalizeProductDetails(detailsEmpty ? null : detailsClean));
             initialVariants.current = variants.map((v) => ({ ...v }));
 
             await loadProducts();
@@ -520,6 +557,7 @@ export default function AdminProducts({ onProductsChange }) {
         if (pBestFor !== init.bestFor) return true;
         if (pPairsWellWith !== init.pairsWellWith) return true;
         if (pRecommendedStack !== init.recommendedStack) return true;
+        if (JSON.stringify(normalizeProductDetails(pDetails)) !== init.detailsJson) return true;
         if (pFile !== null) return true;
         if (extraImageFiles.length > 0) return true;
         if (pHighlights.length !== init.highlights.length) return true;
@@ -537,7 +575,52 @@ export default function AdminProducts({ onProductsChange }) {
             if ((v.is_active !== false) !== (iv.is_active !== false)) return true;
         }
         return false;
-    }, [editingId, pName, pSku, pCategory, pPrice, pStock, pDesc, pActive, pImagePosition, pAboutText, pBestFor, pPairsWellWith, pRecommendedStack, pHighlights, pFile, extraImageFiles, variants]);
+    }, [editingId, pName, pSku, pCategory, pPrice, pStock, pDesc, pActive, pImagePosition, pAboutText, pBestFor, pPairsWellWith, pRecommendedStack, pHighlights, pDetails, pFile, extraImageFiles, variants]);
+
+    // One save entry point so the header button and the sticky bar share the
+    // same confirmation flow.
+    const requestSave = () => {
+        setConfirmDlg({
+            title: editingId ? "Save changes?" : "Create product?",
+            message: editingId
+                ? `Save changes to "${pName}"?`
+                : `Create new product "${pName}"?`,
+            confirmLabel: editingId ? "Save changes" : "Create product",
+            variant: "info",
+            onConfirm: async () => {
+                setConfirmDlg(null);
+                await saveProduct();
+            },
+        });
+    };
+
+    // Detect monograph headings in the About text and lift them into the
+    // structured sections. Nothing persists until the admin presses Save.
+    const handleAutoOrganise = () => {
+        const result = organiseAboutText(pAboutText);
+        if (result.found.length === 0) {
+            showToast("No sections recognised — use headings like \u201CKey Benefits\u201D or \u201CDirections for Use\u201D in the About text", "info", 5000);
+            return;
+        }
+        setConfirmDlg({
+            title: "Organise About text into sections?",
+            message: `Detected ${result.found.join(", ")}. They will move into the structured fields below and the About text will keep only the story. Nothing is saved until you press Save.`,
+            confirmLabel: "Organise",
+            variant: "info",
+            onConfirm: () => {
+                setConfirmDlg(null);
+                setPDetails((prev) => ({
+                    benefits: result.details.benefits.length ? result.details.benefits : prev.benefits,
+                    ingredients: result.details.ingredients.length ? result.details.ingredients : prev.ingredients,
+                    howToUse: result.details.howToUse.length ? result.details.howToUse : prev.howToUse,
+                    faqs: result.details.faqs.length ? result.details.faqs : prev.faqs,
+                    safetyInfo: result.details.safetyInfo || prev.safetyInfo,
+                }));
+                setPAboutText(result.about);
+                showToast("Organised — review the sections below, then Save", "success");
+            },
+        });
+    };
 
     const saveInlineStock = async (productId) => {
         const qty = Number(inlineStockValue);
@@ -667,19 +750,55 @@ export default function AdminProducts({ onProductsChange }) {
                                 </div>
 
                                 {/* Rich detail fields */}
-                                <div className="rounded-xl border border-[#E8E4DE] bg-stone-50 p-4 space-y-3">
-                                    <div className="text-xs font-semibold text-stone-600">Product Detail Page — Rich Info</div>
-                                    <div className="text-xs text-stone-400">These appear in the "About this product" section on the product page.</div>
+                                <div className="rounded-xl border border-[#E8E4DE] bg-stone-50 p-3 sm:p-4 space-y-4">
+                                    <div className="flex flex-wrap items-start justify-between gap-2">
+                                        <div>
+                                            <div className="text-xs font-semibold text-stone-600">Product Detail Page — Rich Info</div>
+                                            <div className="text-xs text-stone-400 mt-0.5">
+                                                Builds the product page story. Paste freely — line breaks, bullets (•, -) and numbered lists are kept exactly as typed.
+                                            </div>
+                                        </div>
+                                        <button
+                                            type="button"
+                                            onClick={handleAutoOrganise}
+                                            disabled={!pAboutText.trim()}
+                                            className="inline-flex items-center gap-1.5 rounded-lg border border-[#1e3a5f]/25 bg-white px-2.5 py-1.5 text-[11px] font-semibold text-[#1e3a5f] hover:bg-[#EFF6FF] disabled:opacity-40 transition"
+                                            title="Detects headings like Key Benefits / Directions / Caution in the About text and moves them into the sections below"
+                                        >
+                                            <svg className="h-3 w-3" viewBox="0 0 20 20" fill="currentColor"><path d="M10 2 8.6 6.6 4 8l4.6 1.4L10 14l1.4-4.6L16 8l-4.6-1.4L10 2ZM4 13l-.8 2.2L1 16l2.2.8L4 19l.8-2.2L7 16l-2.2-.8L4 13ZM16 12l-.6 1.9L13.5 15l1.9.6L16 17.5l.6-1.9 1.9-.6-1.9-.6L16 12Z" /></svg>
+                                            Auto-organise pasted text
+                                        </button>
+                                    </div>
 
                                     <div>
-                                        <div className="text-xs text-stone-400">About text</div>
-                                        <textarea
-                                            value={pAboutText}
-                                            onChange={(e) => setPAboutText(e.target.value)}
-                                            rows={3}
-                                            placeholder="Detailed product description shown on the product page…"
-                                            className="mt-1 w-full rounded-xl border border-[#E8E4DE] bg-white px-3 py-2 text-sm text-stone-900 focus:ring-2 focus:ring-[#1e3a5f]/20 outline-none"
-                                        />
+                                        <div className="flex items-center justify-between">
+                                            <div className="text-xs text-stone-400">About text</div>
+                                            <button
+                                                type="button"
+                                                onClick={() => setShowAboutPreview((v) => !v)}
+                                                className="text-[11px] font-semibold text-[#1e3a5f] hover:underline"
+                                            >
+                                                {showAboutPreview ? "✎ Edit" : "👁 Preview as customer"}
+                                            </button>
+                                        </div>
+                                        {showAboutPreview ? (
+                                            <div className="mt-1 max-h-96 overflow-y-auto rounded-xl border border-[#E8E4DE] bg-white px-4 py-3">
+                                                {pAboutText.trim()
+                                                    ? <RichText text={pAboutText} />
+                                                    : <p className="text-xs text-stone-400">Nothing to preview yet.</p>}
+                                            </div>
+                                        ) : (
+                                            <textarea
+                                                value={pAboutText}
+                                                onChange={(e) => setPAboutText(e.target.value)}
+                                                rows={6}
+                                                placeholder={"Paste the full product story here…\n\nBlank lines make paragraphs, lines starting with • or - become bullets, and 1. 2. 3. become numbered lists."}
+                                                className="mt-1 w-full rounded-xl border border-[#E8E4DE] bg-white px-3 py-2 text-sm text-stone-900 focus:ring-2 focus:ring-[#1e3a5f]/20 outline-none"
+                                            />
+                                        )}
+                                        <div className="mt-1 text-[10px] text-stone-400">
+                                            Shown as “About this product”. Headings like “Key Benefits” or “Caution” are styled automatically — or use Auto-organise to move them into the structured sections below.
+                                        </div>
                                     </div>
 
                                     <div className="grid gap-3 md:grid-cols-3">
@@ -714,6 +833,9 @@ export default function AdminProducts({ onProductsChange }) {
                                             />
                                         </div>
                                     </div>
+
+                                    {/* Structured PDP sections — benefits / ingredients / usage / FAQs / safety */}
+                                    <ProductDetailsEditor value={pDetails} onChange={setPDetails} />
                                 </div>
 
                                 {/* Product Card Highlights */}
@@ -826,7 +948,7 @@ export default function AdminProducts({ onProductsChange }) {
                                                         value={v.label || ""}
                                                         onChange={(e) => setVariants(prev => prev.map((x, j) => j === i ? { ...x, label: e.target.value } : x))}
                                                         placeholder="e.g. 60 Capsules"
-                                                        className="w-full rounded-lg border border-[#E8E4DE] bg-stone-50 px-2.5 py-1.5 text-sm text-stone-900 focus:ring-1 focus:ring-[#1e3a5f]/20 focus:border-[#1e3a5f] outline-none"
+                                                        className="col-span-2 sm:col-span-1 w-full rounded-lg border border-[#E8E4DE] bg-stone-50 px-2.5 py-1.5 text-sm text-stone-900 focus:ring-1 focus:ring-[#1e3a5f]/20 focus:border-[#1e3a5f] outline-none"
                                                     />
                                                     {/* Price */}
                                                     <input
@@ -1030,20 +1152,7 @@ export default function AdminProducts({ onProductsChange }) {
                                     <div className="flex items-end gap-2">
                                         <button
                                             type="button"
-                                            onClick={() => {
-                                                setConfirmDlg({
-                                                    title: editingId ? "Save changes?" : "Create product?",
-                                                    message: editingId
-                                                        ? `Save changes to "${pName}"?`
-                                                        : `Create new product "${pName}"?`,
-                                                    confirmLabel: editingId ? "Save changes" : "Create product",
-                                                    variant: "info",
-                                                    onConfirm: async () => {
-                                                        setConfirmDlg(null);
-                                                        await saveProduct();
-                                                    },
-                                                });
-                                            }}
+                                            onClick={requestSave}
                                             disabled={savingProduct || !isDirty}
                                             className="btn-primary w-full disabled:opacity-40 disabled:cursor-not-allowed"
                                         >
@@ -1176,6 +1285,36 @@ export default function AdminProducts({ onProductsChange }) {
                                     )}
                                 </div>
                             </div>
+
+                            {/* Sticky save bar — long form, so keep Save in reach */}
+                            {isDirty && (
+                                <div className="sticky bottom-3 z-20 mt-4">
+                                    <div className="flex items-center justify-between gap-3 rounded-2xl border border-[#1e3a5f]/20 bg-white/95 px-4 py-3 shadow-lg shadow-[#1e3a5f]/10 backdrop-blur">
+                                        <div className="flex items-center gap-2 text-xs font-medium text-stone-600">
+                                            <span className="h-2 w-2 rounded-full bg-amber-400 animate-pulse" />
+                                            <span className="hidden sm:inline">Unsaved changes</span>
+                                            <span className="sm:hidden">Unsaved</span>
+                                        </div>
+                                        <div className="flex items-center gap-2">
+                                            <button
+                                                type="button"
+                                                onClick={() => { resetProductForm(); setShowProductForm(false); }}
+                                                className="rounded-xl border border-[#E8E4DE] bg-white px-3 py-2 text-xs font-semibold text-stone-600 hover:bg-stone-50 transition"
+                                            >
+                                                Discard
+                                            </button>
+                                            <button
+                                                type="button"
+                                                onClick={requestSave}
+                                                disabled={savingProduct}
+                                                className="btn-primary px-4 py-2 text-xs disabled:opacity-40"
+                                            >
+                                                {savingProduct ? "Saving…" : editingId ? "Save changes" : "Create product"}
+                                            </button>
+                                        </div>
+                                    </div>
+                                </div>
+                            )}
                         </div>
                     )}
 

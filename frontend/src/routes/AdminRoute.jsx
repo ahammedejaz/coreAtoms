@@ -8,14 +8,16 @@
  */
 import { Navigate } from "react-router-dom";
 import { useAuth } from "../context/AuthContext";
+import RouteFallback from "./RouteFallback";
 
 export default function AdminRoute({ children }) {
-  const { loading, isAuthenticated, isAdmin, user, profile } = useAuth();
+  const { loading, isAuthenticated, isAdmin, roleResolved } = useAuth();
 
-  // Wait for auth + profile to fully resolve
-  if (loading) return <div className="text-neutral-300">Loading...</div>;
-  if (user && !profile) return <div className="text-neutral-300">Loading...</div>;
+  if (loading) return <RouteFallback label="Checking access…" />;
   if (!isAuthenticated) return <Navigate to="/login" replace />;
+  // The cached profile deliberately carries no `role`, so gating on `profile`
+  // alone bounced admins to `/` on every refresh. Wait for the live role.
+  if (!roleResolved) return <RouteFallback label="Checking access…" />;
   if (!isAdmin) return <Navigate to="/" replace />;
 
   return children;

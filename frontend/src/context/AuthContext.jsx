@@ -13,7 +13,11 @@
  * | `profile`         | `object?`  | Row from `profiles` table (id, email, full_name, role) |
  * | `isAuthenticated` | `boolean`  | `true` if a user session exists |
  * | `isAdmin`         | `boolean`  | `true` if `profile.role === "admin"` |
+ * | `roleResolved`    | `boolean`  | `true` once the live `role` has been read from the DB |
  * | `signOut`         | `Function` | Signs the user out and clears profile |
+ *
+ * `role` is never cached, so `isAdmin` is meaningless until `roleResolved` is
+ * `true` — route guards must wait for it instead of guessing from `profile`.
  *
  * @module context/AuthContext
  */
@@ -31,10 +35,20 @@ const AuthContext = createContext(null);
 
 const PROFILE_CACHE_KEY = "coreatoms_profile";
 
+const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+
+/**
+ * Reads the cached profile. `JSON.parse` happily returns arrays, numbers and
+ * `null`, so anything that isn't a plain object with a real `id` is rejected.
+ */
 function getCachedProfile() {
   try {
     const raw = localStorage.getItem(PROFILE_CACHE_KEY);
-    return raw ? JSON.parse(raw) : null;
+    if (!raw) return null;
+    const parsed = JSON.parse(raw);
+    if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) return null;
+    if (typeof parsed.id !== "string" || !parsed.id) return null;
+    return parsed;
   } catch { return null; }
 }
 
@@ -43,32 +57,58 @@ export function AuthProvider({ children }) {
   const cachedRef = useRef(getCachedProfile());
   const [loading, setLoading] = useState(true);
   const [session, setSession] = useState(null);
-  /** Prevents multiple session-expiry toasts from firing */
+  /** Prevents multiple session-expiry toasts for the same sign-in */
   const expiredToastShown = useRef(false);
   const [profile, setProfile] = useState(cachedRef.current);
+  /** `true` once the authoritative `role` has been read from (or ruled out by) the DB */
+  const [roleResolved, setRoleResolved] = useState(false);
+  /**
+   * Bumped on every auth identity change. An in-flight profile fetch captures
+   * the value and bails if it changed, so a slow retry loop can never
+   * repopulate state (or the cache) for a user who has since signed out.
+   */
+  const generationRef = useRef(0);
+  /** The user id the provider is currently tracking — drives identity-change checks. */
+  const currentUserIdRef = useRef(null);
+  const mountedRef = useRef(true);
 
   const user = session?.user ?? null;
+  const userId = user?.id ?? null;
   const isAuthenticated = !!user;
   const isAdmin = profile?.role === "admin";
 
-  const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+  useEffect(() => {
+    mountedRef.current = true;
+    return () => { mountedRef.current = false; };
+  }, []);
 
   // Update profile + persist to cache (role is intentionally excluded from cache)
   const updateProfile = useCallback((data) => {
     setProfile(data);
-    if (data) {
-      try {
+    try {
+      if (data) {
         // Never cache the role — always read it from the live DB to prevent stale admin access
         const { role: _omit, ...safeData } = data;
         localStorage.setItem(PROFILE_CACHE_KEY, JSON.stringify(safeData));
-      } catch { /* cache write is best-effort */ }
-    } else {
-      localStorage.removeItem(PROFILE_CACHE_KEY);
-    }
+      } else {
+        localStorage.removeItem(PROFILE_CACHE_KEY);
+      }
+    } catch { /* cache write is best-effort */ }
   }, []);
 
-  const fetchProfileWithRetry = useCallback(async (uid, attempts = 3) => {
-    if (!uid) { updateProfile(null); return; }
+  /**
+   * Fetches the `profiles` row, retrying because the row is trigger-created and
+   * can lag a fresh sign-up. `generation` is the auth generation captured by the
+   * caller: if the identity changes while a retry sleeps, the late result is
+   * dropped instead of resurrecting a signed-out (or previous) user.
+   */
+  const fetchProfileWithRetry = useCallback(async (uid, generation, attempts = 3) => {
+    const isStale = () => !mountedRef.current || generationRef.current !== generation;
+
+    if (!uid) {
+      if (!isStale()) { updateProfile(null); setRoleResolved(true); }
+      return;
+    }
 
     for (let i = 0; i < attempts; i++) {
       const { data, error } = await supabase
@@ -77,65 +117,114 @@ export function AuthProvider({ children }) {
         .eq("id", uid)
         .maybeSingle();
 
-      if (!error && data) { updateProfile(data); return; }
+      if (isStale()) return;
+
+      if (!error && data) {
+        updateProfile(data);
+        setRoleResolved(true);
+        return;
+      }
 
       console.warn(`Profile fetch ${i + 1}/${attempts}:`, error?.message || "no row");
       await sleep(200 * (i + 1));
+      if (isStale()) return;
     }
 
+    // Give up — the role stays unknown-but-settled so guards fail closed
+    // instead of hanging on a spinner forever.
     updateProfile(null);
+    setRoleResolved(true);
   }, [updateProfile]);
 
   useEffect(() => {
-    let mounted = true;
+    let cancelled = false;
     let initialDone = false; // prevents INITIAL_SESSION from racing with getSession
 
-    // getSession() reads from local storage, NOT network — near-instant
-    supabase.auth.getSession().then(async ({ data }) => {
-      if (!mounted) return;
-      initialDone = true;
-      const s = data.session ?? null;
-      setSession(s);
+    const bootstrap = async () => {
+      try {
+        // getSession() reads from local storage, NOT network — near-instant
+        const { data } = await supabase.auth.getSession();
+        if (cancelled) return;
 
-      if (s?.user?.id) {
-        const cached = cachedRef.current;
-        if (cached && cached.id === s.user.id) {
-          // Cache hit — render immediately, verify in background
-          setLoading(false);
-          fetchProfileWithRetry(s.user.id);
+        const s = data?.session ?? null;
+        const generation = ++generationRef.current;
+        currentUserIdRef.current = s?.user?.id ?? null;
+        setSession(s);
+        // Arm the listener as soon as the session is known — if a real auth event
+        // lands while the profile fetch is still retrying, the generation guard
+        // below makes the newer event win rather than dropping it.
+        initialDone = true;
+
+        if (s?.user?.id) {
+          expiredToastShown.current = false;
+          const cached = cachedRef.current;
+          if (cached && cached.id === s.user.id) {
+            // Cache hit — render immediately, verify (and resolve the role) in the background
+            setLoading(false);
+          }
+          await fetchProfileWithRetry(s.user.id, generation);
         } else {
-          // No cache or different user — must wait for profile
-          await fetchProfileWithRetry(s.user.id);
-          if (mounted) setLoading(false);
+          // No session — there is no role to resolve
+          updateProfile(null);
+          setRoleResolved(true);
         }
-      } else {
-        // No session
-        updateProfile(null);
-        if (mounted) setLoading(false);
+      } catch (err) {
+        // A rejected getSession() (or profile fetch) must never leave the app
+        // stuck on "Loading…" with a listener that ignores every later event.
+        console.error("Auth bootstrap failed:", err);
+        if (!cancelled) setRoleResolved(true);
+      } finally {
+        initialDone = true;
+        if (!cancelled) setLoading(false);
       }
-    });
+    };
+
+    bootstrap();
 
     // Listen for subsequent auth changes (login, logout, token refresh)
-    // Skip INITIAL_SESSION since getSession handles it above
-    const { data: sub } = supabase.auth.onAuthStateChange((_event, newSession) => {
-      if (!initialDone) return; // skip INITIAL_SESSION race
+    // Skip INITIAL_SESSION since the bootstrap above handles it
+    const { data: sub } = supabase.auth.onAuthStateChange((event, newSession) => {
+      if (!initialDone || cancelled) return; // skip INITIAL_SESSION race
+      if (event === "INITIAL_SESSION") return;
+
+      const uid = newSession?.user?.id ?? null;
+      const identityChanged = uid !== currentUserIdRef.current;
+      currentUserIdRef.current = uid;
       setSession(newSession ?? null);
-      if (newSession?.user?.id) {
-        fetchProfileWithRetry(newSession.user.id);
-      } else {
-        updateProfile(null);
+
+      // TOKEN_REFRESHED / USER_UPDATED keep the same identity (Supabase refreshes
+      // roughly hourly) — the profile and its role are already loaded.
+      if (event === "TOKEN_REFRESHED" || event === "USER_UPDATED") return;
+      if (!identityChanged) return;
+
+      const generation = ++generationRef.current;
+      if (uid) {
+        expiredToastShown.current = false;
+        setRoleResolved(false);
       }
+
+      // Supabase holds its auth lock for the duration of this callback, so
+      // calling back into the client from inside it can deadlock. Defer.
+      setTimeout(() => {
+        if (cancelled || generationRef.current !== generation) return;
+        if (uid) {
+          fetchProfileWithRetry(uid, generation);
+        } else {
+          updateProfile(null);
+          setRoleResolved(true);
+        }
+      }, 0);
     });
 
     return () => {
-      mounted = false;
+      cancelled = true;
       sub.subscription?.unsubscribe?.();
     };
   }, [fetchProfileWithRetry, updateProfile]);
 
   // ─── Inactivity session timeout ────────────────────────────────────
   const timerRef = useRef(null);
-  const throttleRef = useRef(false);
+  const throttleTimerRef = useRef(null);
 
   const handleSignOut = useCallback(async ({ expired = false } = {}) => {
     if (expired && !expiredToastShown.current) {
@@ -144,36 +233,48 @@ export function AuthProvider({ children }) {
     }
     await supabase.auth.signOut();
     updateProfile(null);
-    localStorage.removeItem(ACTIVITY_STORAGE_KEY);
+    try { localStorage.removeItem(ACTIVITY_STORAGE_KEY); } catch { /* best-effort */ }
   }, [showToast, updateProfile]);
 
+  /**
+   * Latest `handleSignOut` behind a stable ref. The countdown effect reads it
+   * through the ref, so a new `showToast`/`updateProfile` identity can't restart
+   * a fresh 60-minute timer with zero user activity.
+   */
+  const signOutRef = useRef(handleSignOut);
+  useEffect(() => { signOutRef.current = handleSignOut; }, [handleSignOut]);
+
+  // Keyed on `userId` (a stable primitive) — keying on the `user` object restarted
+  // the countdown on every hourly TOKEN_REFRESHED, so it never actually fired.
   useEffect(() => {
-    if (!user) {
-      // Not logged in → clear any lingering timer/timestamp
+    if (!userId) {
+      // Not logged in → clear any lingering timers
       clearTimeout(timerRef.current);
+      clearTimeout(throttleTimerRef.current);
+      throttleTimerRef.current = null;
       return;
     }
 
     // Check if session already expired from a previous visit
-    const lastActivity = Number(localStorage.getItem(ACTIVITY_STORAGE_KEY) || 0);
+    let lastActivity = 0;
+    try { lastActivity = Number(localStorage.getItem(ACTIVITY_STORAGE_KEY) || 0); } catch { /* best-effort */ }
     if (lastActivity && Date.now() - lastActivity > INACTIVITY_TIMEOUT_MS) {
-      handleSignOut({ expired: true });
+      signOutRef.current({ expired: true });
       return;
     }
 
     /** Resets the inactivity countdown and persists the timestamp. */
     const resetTimer = () => {
-      localStorage.setItem(ACTIVITY_STORAGE_KEY, Date.now().toString());
+      try { localStorage.setItem(ACTIVITY_STORAGE_KEY, Date.now().toString()); } catch { /* best-effort */ }
       clearTimeout(timerRef.current);
-      timerRef.current = setTimeout(() => handleSignOut({ expired: true }), INACTIVITY_TIMEOUT_MS);
+      timerRef.current = setTimeout(() => signOutRef.current({ expired: true }), INACTIVITY_TIMEOUT_MS);
     };
 
     /** Throttled wrapper so we don't reset the timer on every pixel of mouse movement. */
     const onActivity = () => {
-      if (throttleRef.current) return;
-      throttleRef.current = true;
+      if (throttleTimerRef.current !== null) return;
       resetTimer();
-      setTimeout(() => { throttleRef.current = false; }, ACTIVITY_THROTTLE_MS);
+      throttleTimerRef.current = setTimeout(() => { throttleTimerRef.current = null; }, ACTIVITY_THROTTLE_MS);
     };
 
     // Kick off the first timer
@@ -184,9 +285,11 @@ export function AuthProvider({ children }) {
 
     return () => {
       clearTimeout(timerRef.current);
+      clearTimeout(throttleTimerRef.current);
+      throttleTimerRef.current = null;
       events.forEach((e) => window.removeEventListener(e, onActivity));
     };
-  }, [user, handleSignOut]);
+  }, [userId]);
 
   const value = useMemo(
     () => ({
@@ -196,9 +299,10 @@ export function AuthProvider({ children }) {
       profile,
       isAuthenticated,
       isAdmin,
+      roleResolved,
       signOut: handleSignOut,
     }),
-    [loading, session, user, profile, isAuthenticated, isAdmin, handleSignOut]
+    [loading, session, user, profile, isAuthenticated, isAdmin, roleResolved, handleSignOut]
   );
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;

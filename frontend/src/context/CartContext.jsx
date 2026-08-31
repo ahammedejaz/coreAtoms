@@ -7,23 +7,39 @@
  *
  * @module context/CartContext
  */
-import React, { createContext, useCallback, useContext, useEffect, useMemo, useState } from "react";
+import React, { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState } from "react";
 import { supabase } from "../services/supabase/client";
 
 const CartContext = createContext(null);
 
+const CART_STORAGE_KEY = "coreatoms_cart";
+const COUPON_STORAGE_KEY = "coreatoms_coupon";
+/** Fallback cap used until `max_items_per_order` arrives from `app_settings`. */
+const DEFAULT_MAX_ITEMS = 15;
+
+/** Coerces any max-items input into a usable positive integer. */
+function safeCap(max) {
+  const n = Math.floor(Number(max));
+  return Number.isFinite(n) && n > 0 ? n : DEFAULT_MAX_ITEMS;
+}
+
 /**
  * Normalizes a raw cart item array into a consistent shape.
- * Filters out items with qty <= 0 and sanitizes numeric fields.
+ * Filters out items with qty <= 0 and sanitizes numeric fields. Quantities are
+ * floored and capped so a hand-edited localStorage entry (`2.5`, `1e9`) can't
+ * slip past the limits `addItem` enforces.
  *
  * @param {Array} items - Raw cart items (may come from localStorage).
+ * @param {number} [maxQty] - Per-item ceiling (the max-items-per-order setting).
  * @returns {Array<{id:string, name:string, image:string, category:string, unitPrice:number, qty:number}>}
  */
-function normalizeCartItems(items) {
+function normalizeCartItems(items, maxQty = DEFAULT_MAX_ITEMS) {
   const list = Array.isArray(items) ? items : [];
+  const cap = safeCap(maxQty);
   return list
     .map((x) => {
-      const qty = Math.max(0, Number(x.qty) || 0);
+      const flooredQty = Math.floor(Number(x.qty));
+      const qty = Number.isFinite(flooredQty) ? Math.min(Math.max(0, flooredQty), cap) : 0;
       const unitPrice = Number(x.unitPrice ?? x.price ?? 0); // accept legacy "price"
       return {
         id: String(x.id),
@@ -37,11 +53,28 @@ function normalizeCartItems(items) {
     .filter((x) => x.qty > 0);
 }
 
+/**
+ * Trims a normalized cart so the *total* quantity never exceeds `max`.
+ * Earlier items keep their quantity; the overflow comes off the tail.
+ */
+function clampToLimit(items, max) {
+  const cap = safeCap(max);
+  let remaining = cap;
+  const out = [];
+  for (const item of items) {
+    if (remaining <= 0) break;
+    const qty = Math.min(item.qty, remaining);
+    out.push(qty === item.qty ? item : { ...item, qty });
+    remaining -= qty;
+  }
+  return out;
+}
+
 /** Reads the persisted cart from localStorage (returns [] on any error). */
-function readCart() {
+function readCart(maxQty) {
   try {
-    const raw = localStorage.getItem("coreatoms_cart");
-    return normalizeCartItems(raw ? JSON.parse(raw) : []);
+    const raw = localStorage.getItem(CART_STORAGE_KEY);
+    return normalizeCartItems(raw ? JSON.parse(raw) : [], maxQty);
   } catch {
     return [];
   }
@@ -66,51 +99,82 @@ function readCart() {
  */
 export function CartProvider({ children }) {
   const [items, setItems] = useState(() => readCart());
-  const [maxItems, setMaxItems] = useState(15);
+  const [maxItems, setMaxItems] = useState(DEFAULT_MAX_ITEMS);
 
   /**
    * Tracks the most recent cart action for toast notifications.
    * Shape: `{ type: "add", name: string, qty: number }` or
    *        `{ type: "limit", message: string }` or `null`.
+   * A fresh object is produced every time, so repeated identical warnings
+   * still register with consumers.
    */
   const [lastAction, setLastAction] = useState(null);
 
-  // Persist cart
+  /** Latest limit behind a ref, so the auth listener never has to resubscribe. */
+  const maxItemsRef = useRef(maxItems);
+  useEffect(() => { maxItemsRef.current = maxItems; }, [maxItems]);
+
+  /**
+   * Same-tick mirror of `items`. The mutators read it instead of closing over
+   * `items`, which keeps their identity stable — `Shop`/`Home` memoise their
+   * add-to-cart handler on `addItem` so `ProductCard`'s `React.memo` holds.
+   */
+  const itemsRef = useRef(items);
+  useEffect(() => { itemsRef.current = items; }, [items]);
+
+  /** Sets the cart and keeps the mirror in step within the same tick. */
+  const commitItems = useCallback((next) => {
+    itemsRef.current = next;
+    setItems(next);
+  }, []);
+
+  // Persist cart. localStorage throws in Safari private mode and on quota
+  // overflow — and this provider sits above the router's ErrorBoundary, so an
+  // unguarded throw here is an unrecoverable white screen.
   useEffect(() => {
-    localStorage.setItem("coreatoms_cart", JSON.stringify(items));
+    try {
+      localStorage.setItem(CART_STORAGE_KEY, JSON.stringify(items));
+    } catch { /* persistence is best-effort */ }
   }, [items]);
 
   /**
-   * Preserve guest cart across auth state changes.
-   * When the user signs in (especially via OAuth redirect which causes a
-   * full page reload), re-read the cart from localStorage so that items
-   * added before login are restored.
+   * Keep the cart in step with auth changes.
+   * - `SIGNED_IN`: re-read localStorage and merge, so items added as a guest
+   *   survive an OAuth redirect (which reloads the whole app).
+   * - `SIGNED_OUT`: drop the cart and any applied coupon, so the next person on
+   *   a shared device doesn't inherit them.
    */
   useEffect(() => {
     const { data: sub } = supabase.auth.onAuthStateChange((event) => {
       if (event === "SIGNED_IN") {
-        const saved = readCart();
-        setItems((current) => {
-          const currentNorm = normalizeCartItems(current);
-          // If nothing in memory, restore from localStorage (handles OAuth redirect re-mount)
-          if (currentNorm.length === 0) return saved;
-          // If localStorage is empty or same, keep current in-memory cart
-          if (saved.length === 0) return currentNorm;
-          // Both have items — merge by combining and deduplicating by id
-          // Items already in current take precedence (prefer in-memory quantities)
-          const merged = [...currentNorm];
-          for (const savedItem of saved) {
-            const existsInCurrent = currentNorm.some((x) => x.id === savedItem.id);
-            if (!existsInCurrent) {
-              merged.push(savedItem);
-            }
+        const cap = maxItemsRef.current;
+        const saved = readCart(cap);
+        const currentNorm = normalizeCartItems(itemsRef.current, cap);
+
+        // If nothing in memory, restore from localStorage (handles OAuth redirect re-mount)
+        if (currentNorm.length === 0) { commitItems(clampToLimit(saved, cap)); return; }
+        // If localStorage is empty, keep the current in-memory cart
+        if (saved.length === 0) { commitItems(currentNorm); return; }
+
+        // Both have items — merge by combining and deduplicating by id.
+        // Items already in current take precedence (prefer in-memory quantities)
+        const merged = [...currentNorm];
+        for (const savedItem of saved) {
+          const existsInCurrent = currentNorm.some((x) => x.id === savedItem.id);
+          if (!existsInCurrent) {
+            merged.push(savedItem);
           }
-          return normalizeCartItems(merged);
-        });
+        }
+        // A merge can push the total past max_items_per_order — a state addItem
+        // would have refused — so clamp it back down.
+        commitItems(clampToLimit(normalizeCartItems(merged, cap), cap));
+      } else if (event === "SIGNED_OUT") {
+        commitItems([]);
+        try { sessionStorage.removeItem(COUPON_STORAGE_KEY); } catch { /* best-effort */ }
       }
     });
     return () => sub.subscription?.unsubscribe?.();
-  }, []);
+  }, [commitItems]);
 
   /**
    * Fetches the `max_items_per_order` setting from the `app_settings` table.
@@ -168,85 +232,91 @@ export function CartProvider({ children }) {
     const productId = String(product.id);
     const productName = product.name ?? "Product";
     const productPrice = Number(product.price ?? product.price_inr ?? product.unitPrice ?? 0);
-    const safeQty = Math.max(1, Number(qty) || 1);
+    const safeQty = Math.max(1, Math.floor(Number(qty)) || 1);
 
-    setItems((prev) => {
-      const prevNorm = normalizeCartItems(prev);
+    // The limit maths and the `lastAction` signal live outside the state update:
+    // React requires updaters to be pure, and StrictMode double-invokes them in
+    // dev, which double-fired the Navbar toast.
+    const cap = safeCap(maxItemsRef.current);
+    const currentNorm = normalizeCartItems(itemsRef.current, cap);
+    const currentCount = currentNorm.reduce((s, x) => s + x.qty, 0);
+    const remaining = Math.max(0, cap - currentCount);
 
-      // enforce max items per order across cart
-      const currentCount = prevNorm.reduce((s, x) => s + (Number(x.qty) || 0), 0);
-      const remaining = Math.max(0, Number(maxItems || 0) - currentCount);
-      if (remaining <= 0) {
-        setLastAction({ type: "limit", message: `Max ${maxItems} items per order` });
-        return prevNorm;
-      }
+    if (remaining <= 0) {
+      setLastAction({ type: "limit", message: `Max ${cap} items per order` });
+      return;
+    }
 
-      const allowedQty = Math.min(safeQty, remaining);
-      setLastAction({ type: "add", name: productName, qty: allowedQty });
+    const allowedQty = Math.min(safeQty, remaining);
+    setLastAction({ type: "add", name: productName, qty: allowedQty });
 
-      const existing = prevNorm.find((x) => String(x.id) === productId);
+    const existing = currentNorm.find((x) => x.id === productId);
 
-      if (existing) {
-        return prevNorm.map((x) =>
-          String(x.id) === productId
-            ? {
-              ...x,
-              // preserve price always (never become 0)
-              unitPrice: Number(x.unitPrice) || productPrice || 0,
-              qty: (Number(x.qty) || 0) + allowedQty,
-            }
-            : x
-        );
-      }
+    if (existing) {
+      commitItems(currentNorm.map((x) =>
+        x.id === productId
+          ? {
+            ...x,
+            // preserve price always (never become 0)
+            unitPrice: x.unitPrice || productPrice || 0,
+            qty: x.qty + allowedQty,
+          }
+          : x
+      ));
+      return;
+    }
 
-      return [
-        ...prevNorm,
-        {
-          id: productId,
-          name: productName,
-          image: product.image ?? product.image_url ?? "",
-          category: product.category ?? "",
-          unitPrice: productPrice || 0,
-          qty: allowedQty,
-        },
-      ];
-    });
-  }, [maxItems]);
+    commitItems([
+      ...currentNorm,
+      {
+        id: productId,
+        name: productName,
+        image: product.image ?? product.image_url ?? "",
+        category: product.category ?? "",
+        unitPrice: productPrice || 0,
+        qty: allowedQty,
+      },
+    ]);
+  }, [commitItems]);
 
   const updateQty = useCallback((id, nextQty) => {
     const targetId = String(id);
-    setItems((prev) => {
-      const prevNorm = normalizeCartItems(prev);
-      const qty = Math.max(0, Number(nextQty || 0));
+    const cap = safeCap(maxItemsRef.current);
+    const prevNorm = normalizeCartItems(itemsRef.current, cap);
+    const flooredQty = Math.floor(Number(nextQty));
+    const qty = Number.isFinite(flooredQty) ? Math.max(0, flooredQty) : 0;
 
-      // compute count excluding this item
-      const countWithout = prevNorm
-        .filter((x) => String(x.id) !== targetId)
-        .reduce((s, x) => s + (Number(x.qty) || 0), 0);
+    // compute count excluding this item
+    const countWithout = prevNorm
+      .filter((x) => x.id !== targetId)
+      .reduce((s, x) => s + x.qty, 0);
 
-      const allowed = Math.max(0, Number(maxItems || 0) - countWithout);
-      const finalQty = Math.min(qty, allowed);
+    const allowed = Math.max(0, cap - countWithout);
+    const finalQty = Math.min(qty, allowed);
 
-      if (finalQty <= 0) return prevNorm.filter((x) => String(x.id) !== targetId);
+    if (finalQty <= 0) {
+      commitItems(prevNorm.filter((x) => x.id !== targetId));
+      return;
+    }
 
-      return prevNorm.map((x) =>
-        String(x.id) === targetId
-          ? {
-            ...x,
-            qty: finalQty,
-            unitPrice: Number(x.unitPrice) || 0, // keep price stable
-          }
-          : x
-      );
-    });
-  }, [maxItems]);
+    commitItems(prevNorm.map((x) =>
+      x.id === targetId
+        ? {
+          ...x,
+          qty: finalQty,
+          unitPrice: Number(x.unitPrice) || 0, // keep price stable
+        }
+        : x
+    ));
+  }, [commitItems]);
 
   const removeItem = useCallback((id) => {
     const targetId = String(id);
-    setItems((prev) => normalizeCartItems(prev).filter((x) => String(x.id) !== targetId));
-  }, []);
+    const cap = safeCap(maxItemsRef.current);
+    commitItems(normalizeCartItems(itemsRef.current, cap).filter((x) => x.id !== targetId));
+  }, [commitItems]);
 
-  const clear = useCallback(() => setItems([]), []);
+  const clear = useCallback(() => commitItems([]), [commitItems]);
 
   /** Re-fetches maxItems from Supabase. Called by admin settings after saving. */
   const refreshMaxItems = fetchMaxItems;

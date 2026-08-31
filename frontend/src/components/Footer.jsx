@@ -1,9 +1,9 @@
 /**
  * Footer.jsx — Site-wide footer.
  *
- * Displays brand info, social links (Instagram, X, YouTube), shop links,
- * company links (to atomslifecare.com), and a bottom bar with copyright
- * and trust badges. All social icons use inline SVG for zero dependencies.
+ * Displays brand info, social links, shop links, company links (to
+ * atomslifecare.com), and a bottom bar with copyright and trust badges.
+ * All social icons use inline SVG for zero dependencies.
  *
  * @module components/Footer
  */
@@ -33,8 +33,6 @@ export default function Footer() {
             <div className="flex items-center gap-2.5">
               {[
                 { href: "https://www.instagram.com/core_atoms/", label: "Instagram", icon: <><rect x="3" y="3" width="18" height="18" rx="5" /><path d="M16 11.37a4 4 0 1 1-7.88 1.26A4 4 0 0 1 16 11.37Z" /><path d="M17.5 6.5h.01" /></> },
-                { href: "/", label: "X", icon: <><path d="M4 4l16 16" /><path d="M20 4L4 20" /></> },
-                { href: "/", label: "YouTube", icon: <><path d="M10 15l5-3-5-3v6Z" /><path d="M21.5 7.5a3.2 3.2 0 0 0-2.25-2.25C17.5 5 12 5 12 5s-5.5 0-7.25.25A3.2 3.2 0 0 0 2.5 7.5 33 33 0 0 0 2.25 12c0 1.5.08 3 .25 4.5a3.2 3.2 0 0 0 2.25 2.25C6.5 19 12 19 12 19s5.5 0 7.25-.25a3.2 3.2 0 0 0 2.25-2.25c.17-1.5.25-3 .25-4.5s-.08-3-.25-4.5Z" /></> },
               ].map((s) => (
                 <a key={s.label} href={s.href} target="_blank" rel="noopener noreferrer" aria-label={s.label}
                   className="inline-flex h-9 w-9 items-center justify-center rounded-xl border border-[#E8E4DE] bg-white text-stone-500 hover:text-[#1e3a5f] hover:border-[#1e3a5f]/30 transition">

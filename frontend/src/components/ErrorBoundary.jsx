@@ -68,13 +68,14 @@ export default class ErrorBoundary extends React.Component {
                         </a>
                     </div>
 
-                    {this.state.error && (
+                    {/* Error internals leak implementation details — dev builds only */}
+                    {import.meta.env.DEV && this.state.error && (
                         <details className="mt-8 text-left w-full max-w-md">
                             <summary className="text-xs text-stone-400 cursor-pointer hover:text-stone-600 transition">
                                 Technical details
                             </summary>
                             <pre className="mt-2 rounded-xl bg-stone-50 border border-stone-200 p-3 text-xs text-stone-600 overflow-auto max-h-40">
-                                {this.state.error.toString()}
+                                {this.state.error.stack || this.state.error.toString()}
                             </pre>
                         </details>
                     )}

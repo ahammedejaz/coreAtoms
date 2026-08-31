@@ -7,68 +7,107 @@
  *
  * @module pages/Login
  */
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { Link, useNavigate, useSearchParams } from "react-router-dom";
 import { supabase } from "../services/supabase/client";
 import { useAuth } from "../context/AuthContext";
 import SEO from "../components/SEO";
 
+/** Minimum password length — mirrors the rule enforced on ResetPassword. */
+const MIN_PASSWORD_LENGTH = 6;
+
+/**
+ * Sanitises the `?redirect=` parameter written by `ProtectedRoute`.
+ *
+ * Only same-origin, path-relative targets are allowed: `//evil.com` and
+ * `https://evil.com` are open redirects that would send a freshly
+ * authenticated user off-site, so anything but a single leading slash is
+ * discarded in favour of the default destination.
+ */
+function safeRedirect(raw) {
+  if (!raw) return null;
+  let value;
+  try { value = decodeURIComponent(raw); } catch { return null; }
+  if (typeof value !== "string" || !value.startsWith("/")) return null;
+  // `//host` and `/\host` are both protocol-relative in browsers
+  if (value.startsWith("//") || value.startsWith("/\\")) return null;
+  return value;
+}
+
 export default function Login() {
   const navigate = useNavigate();
   const [searchParams] = useSearchParams();
-  const redirectTo = searchParams.get("redirect") || null;
-  const { loading: authLoading, isAuthenticated, isAdmin, profile } = useAuth();
+  const redirectTo = useMemo(() => safeRedirect(searchParams.get("redirect")), [searchParams]);
+  const { loading: authLoading, isAuthenticated, isAdmin, roleResolved } = useAuth();
   const [isSignup, setIsSignup] = useState(false);
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
+  const [confirm, setConfirm] = useState("");
   const [loading, setLoading] = useState(false);
+  const [googleLoading, setGoogleLoading] = useState(false);
   const [message, setMessage] = useState({ text: "", type: "" });
 
-  // Redirect already-authenticated users (e.g. after Google OAuth callback)
+  // The single post-authentication redirect path — covers password sign-in, the
+  // Google OAuth callback and landing here while already signed in. It waits for
+  // the authoritative role so admins aren't sent to `/` and bounced.
   useEffect(() => {
-    if (authLoading || !isAuthenticated || !profile) return;
-    if (redirectTo) {
-      navigate(decodeURIComponent(redirectTo), { replace: true });
-    } else if (isAdmin) {
-      navigate("/admin", { replace: true });
-    } else {
-      navigate("/", { replace: true });
-    }
-  }, [authLoading, isAuthenticated, isAdmin, profile, redirectTo, navigate]);
-
-  const redirectAfterLogin = async (uid) => {
-    // If there's a redirect URL from ProtectedRoute, go there first
-    if (redirectTo) {
-      navigate(decodeURIComponent(redirectTo), { replace: true });
-      return;
-    }
-    const { data } = await supabase.from("profiles").select("role").eq("id", uid).maybeSingle();
-    if (data?.role === "admin") navigate("/admin", { replace: true });
-    else navigate("/", { replace: true });
-  };
+    if (authLoading || !isAuthenticated || !roleResolved) return;
+    navigate(redirectTo || (isAdmin ? "/admin" : "/"), { replace: true });
+  }, [authLoading, isAuthenticated, isAdmin, roleResolved, redirectTo, navigate]);
 
   const handleEmailAuth = async (e) => {
     e.preventDefault();
-    setLoading(true);
     setMessage({ text: "", type: "" });
+
+    if (isSignup) {
+      if (password.length < MIN_PASSWORD_LENGTH) {
+        setMessage({ text: `Password must be at least ${MIN_PASSWORD_LENGTH} characters.`, type: "error" });
+        return;
+      }
+      if (password !== confirm) {
+        setMessage({ text: "Passwords don't match.", type: "error" });
+        return;
+      }
+    }
+
+    setLoading(true);
     try {
       if (isSignup) {
         const { error } = await supabase.auth.signUp({ email, password });
         if (error) throw error;
         setMessage({ text: "Check your email to confirm your account.", type: "success" });
       } else {
-        const { data, error } = await supabase.auth.signInWithPassword({ email, password });
+        const { error } = await supabase.auth.signInWithPassword({ email, password });
         if (error) throw error;
-        await redirectAfterLogin(data.user.id);
+        // Navigation is handled by the redirect effect once the role resolves.
       }
     } catch (err) {
       setMessage({ text: err.message, type: "error" });
+    } finally {
+      setLoading(false);
     }
-    setLoading(false);
   };
 
   const handleGoogle = async () => {
-    await supabase.auth.signInWithOAuth({ provider: "google" });
+    setMessage({ text: "", type: "" });
+    setGoogleLoading(true);
+    try {
+      const { error } = await supabase.auth.signInWithOAuth({ provider: "google" });
+      if (error) throw error;
+      // On success the browser navigates to Google — leave the button disabled.
+    } catch (err) {
+      setMessage({
+        text: err.message || "Google sign-in is unavailable right now. Please use email instead.",
+        type: "error",
+      });
+      setGoogleLoading(false);
+    }
+  };
+
+  const toggleMode = () => {
+    setIsSignup((prev) => !prev);
+    setConfirm("");
+    setMessage({ text: "", type: "" });
   };
 
   return (
@@ -95,7 +134,8 @@ export default function Login() {
           {/* Google */}
           <button
             onClick={handleGoogle}
-            className="w-full inline-flex items-center justify-center gap-3 rounded-xl border border-[#E8E4DE] bg-white px-5 py-3 text-sm font-semibold text-stone-700 shadow-sm hover:bg-stone-50 hover:shadow transition-all duration-200"
+            disabled={googleLoading}
+            className="w-full inline-flex items-center justify-center gap-3 rounded-xl border border-[#E8E4DE] bg-white px-5 py-3 text-sm font-semibold text-stone-700 shadow-sm hover:bg-stone-50 hover:shadow transition-all duration-200 disabled:opacity-60 disabled:cursor-not-allowed"
           >
             <svg width="18" height="18" viewBox="0 0 48 48">
               <path fill="#EA4335" d="M24 9.5c3.4 0 6.4 1.2 8.7 3.2l6.5-6.5C35.2 2.3 29.9 0 24 0 14.7 0 6.7 5.4 2.7 13.3l7.6 5.9C12.1 13.3 17.6 9.5 24 9.5z" />
@@ -103,7 +143,7 @@ export default function Login() {
               <path fill="#FBBC05" d="M10.3 28.2c-.5-1.5-.8-3.1-.8-4.7s.3-3.2.8-4.7l-7.6-5.9C1 17.1 0 20.4 0 23.5s1 6.4 2.7 9.1l7.6-5.9z" />
               <path fill="#34A853" d="M24 47c6 0 11.1-2 14.8-5.4l-6.6-5.1c-2 1.3-4.6 2.1-8.2 2.1-6.4 0-11.9-3.8-13.8-9.7l-7.6 5.9C6.7 42.6 14.7 47 24 47z" />
             </svg>
-            Continue with Google
+            {googleLoading ? "Opening Google…" : "Continue with Google"}
           </button>
 
           <div className="flex items-center gap-3">
@@ -114,18 +154,38 @@ export default function Login() {
 
           <form onSubmit={handleEmailAuth} className="space-y-4">
             <div>
-              <label className="block text-xs font-semibold text-stone-600 mb-1.5">Email address</label>
-              <input type="email" value={email} onChange={(e) => setEmail(e.target.value)} required placeholder="you@example.com" className="input" />
+              <label htmlFor="login-email" className="block text-xs font-semibold text-stone-600 mb-1.5">Email address</label>
+              <input id="login-email" name="email" type="email" autoComplete="email" value={email} onChange={(e) => setEmail(e.target.value)} required placeholder="you@example.com" className="input" />
             </div>
             <div>
-              <label className="block text-xs font-semibold text-stone-600 mb-1.5">Password</label>
-              <input type="password" value={password} onChange={(e) => setPassword(e.target.value)} required placeholder="••••••••" className="input" />
-              {!isSignup && (
+              <label htmlFor="login-password" className="block text-xs font-semibold text-stone-600 mb-1.5">Password</label>
+              <input
+                id="login-password"
+                name="password"
+                type="password"
+                autoComplete={isSignup ? "new-password" : "current-password"}
+                minLength={isSignup ? MIN_PASSWORD_LENGTH : undefined}
+                value={password}
+                onChange={(e) => setPassword(e.target.value)}
+                required
+                placeholder="••••••••"
+                className="input"
+              />
+              {isSignup ? (
+                <p className="mt-1.5 text-xs text-stone-400">At least {MIN_PASSWORD_LENGTH} characters.</p>
+              ) : (
                 <div className="mt-1.5 text-right">
                   <Link to="/forgot-password" className="text-xs text-[#1e3a5f] hover:underline font-medium">Forgot password?</Link>
                 </div>
               )}
             </div>
+
+            {isSignup && (
+              <div>
+                <label htmlFor="login-confirm" className="block text-xs font-semibold text-stone-600 mb-1.5">Confirm password</label>
+                <input id="login-confirm" name="confirm-password" type="password" autoComplete="new-password" minLength={MIN_PASSWORD_LENGTH} value={confirm} onChange={(e) => setConfirm(e.target.value)} required placeholder="••••••••" className="input" />
+              </div>
+            )}
 
             {message.text && (
               <div className={`rounded-xl px-4 py-3 text-sm ${message.type === "success"
@@ -143,8 +203,7 @@ export default function Login() {
 
           <p className="text-center text-sm text-stone-500">
             {isSignup ? "Already have an account? " : "Don't have an account? "}
-            <button onClick={() => { setIsSignup(!isSignup); setMessage({ text: "", type: "" }); }}
-              className="font-semibold text-[#1e3a5f] hover:underline">
+            <button onClick={toggleMode} className="font-semibold text-[#1e3a5f] hover:underline">
               {isSignup ? "Sign in" : "Sign up"}
             </button>
           </p>

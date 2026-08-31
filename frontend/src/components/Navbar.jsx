@@ -61,20 +61,22 @@ export default function Navbar() {
       });
   }, []);
 
-  const toastText = useMemo(() => {
-    if (!lastAction) return null;
-    if (lastAction.type === "limit") return lastAction.message || `Max ${maxItems} items per order`;
-    return null;
+  // Wraps the message in a fresh object per cart event. Keying the effect on the
+  // message string alone swallowed a second identical limit warning, because the
+  // dependency never changed.
+  const toastSignal = useMemo(() => {
+    if (lastAction?.type !== "limit") return null;
+    return { source: lastAction, text: lastAction.message || `Max ${maxItems} items per order` };
   }, [lastAction, maxItems]);
 
   useEffect(() => {
-    if (!toastText) return;
+    if (!toastSignal) return;
     setBump(true);
-    setToast(toastText);
+    setToast(toastSignal.text);
     const t1 = setTimeout(() => setBump(false), 220);
     const t2 = setTimeout(() => setToast(null), 2200);
     return () => { clearTimeout(t1); clearTimeout(t2); };
-  }, [toastText]);
+  }, [toastSignal]);
 
   // Prevent body scroll when menu open
   useEffect(() => {
@@ -128,6 +130,7 @@ export default function Navbar() {
           <div className="flex md:hidden items-center gap-2">
             {!isAdmin && (
               <Link to="/cart"
+                aria-label={`Cart, ${totalItems} ${totalItems === 1 ? "item" : "items"}`}
                 className={`inline-flex items-center gap-1.5 rounded-full border border-neutral-200 bg-white px-3 py-1.5 text-xs text-neutral-900 shadow-sm transition ${bump ? "scale-[1.06]" : "scale-100"}`}>
                 <svg className="h-3.5 w-3.5" viewBox="0 0 20 20" fill="currentColor"><path d="M3 3a1 1 0 000 2h1.22l.305 1.222a.997.997 0 00.01.042l1.358 5.43-.893.892C3.74 13.846 4.632 15 6.414 15H15a1 1 0 000-2H6.414l1-1H14a1 1 0 00.894-.553l3-6A1 1 0 0017 5H6.28l-.31-1.243A1 1 0 005 3H3zM16 16.5a1.5 1.5 0 11-3 0 1.5 1.5 0 013 0zM6.5 18a1.5 1.5 0 100-3 1.5 1.5 0 000 3z" /></svg>
                 <span className="grid h-5 min-w-5 place-items-center rounded-full bg-neutral-900 text-white px-1 text-[10px]">{totalItems}</span>
@@ -141,6 +144,7 @@ export default function Navbar() {
               className="h-9 w-9 rounded-xl border border-neutral-200 bg-white flex items-center justify-center text-neutral-700 hover:bg-neutral-50 transition shadow-sm"
               aria-label={menuOpen ? "Close menu" : "Open menu"}
               aria-expanded={menuOpen}
+              aria-controls="mobile-menu"
             >
               {menuOpen ? (
                 <svg className="h-4 w-4" viewBox="0 0 20 20" fill="currentColor"><path fillRule="evenodd" d="M4.293 4.293a1 1 0 011.414 0L10 8.586l4.293-4.293a1 1 0 111.414 1.414L11.414 10l4.293 4.293a1 1 0 01-1.414 1.414L10 11.414l-4.293 4.293a1 1 0 01-1.414-1.414L8.586 10 4.293 5.707a1 1 0 010-1.414z" clipRule="evenodd" /></svg>
@@ -151,8 +155,13 @@ export default function Navbar() {
           </div>
         </div>
 
-        {/* Mobile drawer — slides down below the header */}
-        <div className={`md:hidden overflow-hidden transition-all duration-300 ease-in-out ${menuOpen ? "max-h-screen border-t border-neutral-100" : "max-h-0"}`}>
+        {/* Mobile drawer — slides down below the header. `inert` while collapsed so
+            keyboard users can't tab into links that are visually clipped away. */}
+        <div
+          id="mobile-menu"
+          inert={!menuOpen}
+          className={`md:hidden overflow-hidden transition-all duration-300 ease-in-out ${menuOpen ? "max-h-screen border-t border-neutral-100" : "max-h-0"}`}
+        >
           <nav className="px-4 py-3 space-y-1 bg-white">
             {!isAdmin && (
               <>
@@ -225,12 +234,12 @@ export default function Navbar() {
         </div>
       )}
 
-      {/* Mobile menu backdrop */}
+      {/* Mobile menu backdrop — full height, sitting behind the sticky header
+          (z-50) rather than guessing the header's pixel height. */}
       {menuOpen && (
         <div
           className="fixed inset-0 z-40 bg-black/20 md:hidden"
           onClick={() => setMenuOpen(false)}
-          style={{ top: "57px" }}
         />
       )}
     </>

@@ -14,23 +14,23 @@ export default function NotFound() {
   useDocumentTitle("Page Not Found | Core Atoms");
   return (
     <div className="min-h-[70vh] grid place-items-center px-4">
-      <div className="w-full max-w-xl rounded-2xl border border-neutral-200 bg-white p-8 shadow-sm text-center">
-        <div className="text-sm text-neutral-500">Core Atoms</div>
-        <h1 className="mt-2 text-3xl font-semibold text-neutral-950">404</h1>
-        <p className="mt-2 text-sm text-neutral-700">
+      <div className="w-full max-w-xl rounded-2xl border border-[#E8E4DE] bg-white p-8 shadow-sm text-center">
+        <div className="text-sm text-stone-500">Core Atoms</div>
+        <h1 className="mt-2 text-3xl font-semibold text-stone-900 tracking-tight">404</h1>
+        <p className="mt-2 text-sm text-stone-600">
           The page you’re looking for doesn’t exist.
         </p>
 
         <div className="mt-6 flex items-center justify-center gap-3">
           <Link
             to="/"
-            className="rounded-xl bg-gradient-to-r from-neutral-200 to-neutral-300 px-4 py-2 text-sm font-semibold text-neutral-950 shadow-sm hover:shadow hover:scale-[1.01] transition"
+            className="rounded-xl bg-[#1e3a5f] px-5 py-2.5 text-sm font-semibold text-white shadow-sm hover:bg-[#16304f] transition"
           >
             Home
           </Link>
           <Link
             to="/shop"
-            className="rounded-xl border border-neutral-200 bg-white px-4 py-2 text-sm text-neutral-900 hover:bg-neutral-50 transition"
+            className="rounded-xl border border-[#E8E4DE] bg-white px-5 py-2.5 text-sm font-semibold text-stone-700 hover:bg-stone-50 transition"
           >
             Shop
           </Link>

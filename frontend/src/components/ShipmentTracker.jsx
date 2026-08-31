@@ -11,8 +11,11 @@
  *
  * @module components/ShipmentTracker
  */
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { supabase } from "../services/supabase/client";
+
+/** A result younger than this is reused instead of re-hitting the edge function. */
+const REFRESH_AFTER_MS = 60_000;
 
 /** Canonical tracking stages in order */
 const STAGES = [
@@ -68,8 +71,27 @@ export default function ShipmentTracker({ waybill, trackingUrl, orderId, onStatu
     const [error, setError] = useState("");
     const [expanded, setExpanded] = useState(false);
 
-    const fetchTracking = async () => {
-        if (!waybill) return;
+    const mountedRef = useRef(true);
+    /** Guards against overlapping requests (mount fetch + an early expand). */
+    const inFlightRef = useRef(false);
+    /** `{ key, at }` of the last completed fetch, used for the freshness check. */
+    const lastFetchRef = useRef({ key: null, at: 0 });
+    /**
+     * `onStatusSync` is typically an inline arrow from the orders list, so it
+     * changes identity on every render. Held in a ref to keep `fetchTracking`
+     * stable — otherwise the effects below would refire constantly.
+     */
+    const onStatusSyncRef = useRef(onStatusSync);
+
+    useEffect(() => { onStatusSyncRef.current = onStatusSync; }, [onStatusSync]);
+    useEffect(() => {
+        mountedRef.current = true;
+        return () => { mountedRef.current = false; };
+    }, []);
+
+    const fetchTracking = useCallback(async () => {
+        if (!waybill || inFlightRef.current) return;
+        inFlightRef.current = true;
         setLoading(true);
         setError("");
 
@@ -96,6 +118,7 @@ export default function ShipmentTracker({ waybill, trackingUrl, orderId, onStatu
                 throw new Error("No tracking data returned");
             }
 
+            if (!mountedRef.current) return;
             setTracking(result);
 
             // Auto-sync order status if we have an orderId (separate try/catch so it doesn't break tracking display)
@@ -128,32 +151,32 @@ export default function ShipmentTracker({ waybill, trackingUrl, orderId, onStatu
                                 updateFields.delivered_at = new Date().toISOString();
                             }
                             await supabase.from("orders").update(updateFields).eq("id", orderId);
-                            if (onStatusSync) onStatusSync(newDbStatus);
+                            onStatusSyncRef.current?.(newDbStatus);
                         }
                     }
                 } catch { /* status sync is best-effort */ }
             }
         } catch (err) {
-
-            setError(err.message || "Failed to fetch tracking");
+            if (mountedRef.current) setError(err.message || "Failed to fetch tracking");
         } finally {
-            setLoading(false);
+            inFlightRef.current = false;
+            lastFetchRef.current = { key: waybill, at: Date.now() };
+            if (mountedRef.current) setLoading(false);
         }
-    };
+    }, [waybill, orderId]);
 
-    // Auto-fetch on mount to sync status silently (runs once on page load)
+    /**
+     * Single fetch driver: runs on mount to sync the DB status silently, and
+     * again on expand only when the cached result has gone stale. The two
+     * separate effects this replaces fired a duplicate edge-function call on the
+     * very first expand, and read stale closure state while doing it.
+     */
     useEffect(() => {
-        if (waybill && !tracking && !loading) {
-            fetchTracking();
-        }
-    }, [waybill]);
-
-    // Re-fetch when user manually expands (to get latest data)
-    useEffect(() => {
-        if (expanded && waybill) {
-            fetchTracking();
-        }
-    }, [expanded]);
+        if (!waybill) return;
+        const { key, at } = lastFetchRef.current;
+        if (key === waybill && Date.now() - at < REFRESH_AFTER_MS) return;
+        fetchTracking();
+    }, [waybill, expanded, fetchTracking]);
 
     const currentStage = tracking
         ? mapStatusToStage(tracking.status, tracking.status_code)
@@ -179,160 +202,163 @@ export default function ShipmentTracker({ waybill, trackingUrl, orderId, onStatu
                 </svg>
             </button>
 
-            {/* Tracking panel */}
-            <div className={`overflow-hidden transition-all duration-300 ease-in-out ${expanded ? "max-h-[800px] opacity-100 mt-4" : "max-h-0 opacity-0"}`}>
-                {loading && (
-                    <div className="flex items-center gap-2 py-4 text-sm text-stone-500">
-                        <div className="h-4 w-4 rounded-full border-2 border-stone-200 border-t-[#1e3a5f] animate-spin" />
-                        Fetching tracking info…
-                    </div>
-                )}
+            {/* Tracking panel — rendered rather than height-clipped, so a long
+                scan list isn't silently truncated at 800px. */}
+            {expanded && (
+                <div className="mt-4 animate-toast-in">
+                    {loading && (
+                        <div className="flex items-center gap-2 py-4 text-sm text-stone-500">
+                            <div className="h-4 w-4 rounded-full border-2 border-stone-200 border-t-[#1e3a5f] animate-spin" />
+                            Fetching tracking info…
+                        </div>
+                    )}
 
-                {error && (
-                    <div className="rounded-xl bg-red-50 border border-red-100 p-3 text-sm text-red-700">
-                        {error}
-                        <button onClick={fetchTracking} className="ml-2 underline">Retry</button>
-                    </div>
-                )}
+                    {error && (
+                        <div className="rounded-xl bg-red-50 border border-red-100 p-3 text-sm text-red-700">
+                            {error}
+                            <button onClick={fetchTracking} className="ml-2 underline">Retry</button>
+                        </div>
+                    )}
 
-                {tracking && !loading && (
-                    <div className="rounded-2xl border border-[#E8E4DE] bg-white p-5 space-y-5">
-                        {/* Header info */}
-                        <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
-                            <div>
-                                <p className="text-xs text-stone-400 uppercase tracking-wider font-semibold">Waybill</p>
-                                <p className="text-sm font-mono font-medium text-stone-900 break-all">{tracking.waybill}</p>
-                            </div>
-                            <div className="sm:text-right">
-                                <p className="text-xs text-stone-400 uppercase tracking-wider font-semibold">Courier</p>
-                                <p className="text-sm font-medium text-stone-900">{tracking.courier_name}</p>
-                            </div>
-                            {tracking.expected_delivery && (
+                    {tracking && !loading && (
+                        <div className="rounded-2xl border border-[#E8E4DE] bg-white p-5 space-y-5">
+                            {/* Header info */}
+                            <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+                                <div>
+                                    <p className="text-xs text-stone-400 uppercase tracking-wider font-semibold">Waybill</p>
+                                    <p className="text-sm font-mono font-medium text-stone-900 break-all">{tracking.waybill}</p>
+                                </div>
                                 <div className="sm:text-right">
-                                    <p className="text-xs text-stone-400 uppercase tracking-wider font-semibold">Expected Delivery</p>
-                                    <p className="text-sm font-medium text-stone-900">
-                                        {new Date(tracking.expected_delivery).toLocaleDateString("en-IN", { day: "numeric", month: "short", year: "numeric" })}
-                                    </p>
+                                    <p className="text-xs text-stone-400 uppercase tracking-wider font-semibold">Courier</p>
+                                    <p className="text-sm font-medium text-stone-900">{tracking.courier_name}</p>
                                 </div>
-                            )}
-                        </div>
-
-                        {/* Cancelled / RTO banner */}
-                        {isNegative && (
-                            <div className={`rounded-xl p-3 ${currentStage === "cancelled" ? "bg-red-50 border border-red-200" : "bg-orange-50 border border-orange-200"}`}>
-                                <p className={`text-sm font-semibold ${currentStage === "cancelled" ? "text-red-700" : "text-orange-700"}`}>
-                                    {NEGATIVE_STAGES[currentStage].icon} {NEGATIVE_STAGES[currentStage].label}
-                                </p>
-                                <p className={`text-xs mt-0.5 ${currentStage === "cancelled" ? "text-red-600" : "text-orange-600"}`}>
-                                    {tracking.status}
-                                </p>
-                                {tracking.status_datetime && (
-                                    <p className="text-xs text-stone-400 mt-0.5">
-                                        {new Date(tracking.status_datetime).toLocaleString("en-IN", { day: "numeric", month: "short", hour: "2-digit", minute: "2-digit" })}
-                                    </p>
+                                {tracking.expected_delivery && (
+                                    <div className="sm:text-right">
+                                        <p className="text-xs text-stone-400 uppercase tracking-wider font-semibold">Expected Delivery</p>
+                                        <p className="text-sm font-medium text-stone-900">
+                                            {new Date(tracking.expected_delivery).toLocaleDateString("en-IN", { day: "numeric", month: "short", year: "numeric" })}
+                                        </p>
+                                    </div>
                                 )}
                             </div>
-                        )}
 
-                        {/* Stage progress bar (only for normal flow) */}
-                        {!isNegative && (
-                            <div className="relative">
-                                <div className="flex items-center justify-between mb-2">
-                                    {STAGES.map((stage, i) => {
-                                        const isComplete = i <= currentStageIndex;
-                                        const isCurrent = i === currentStageIndex;
-                                        return (
-                                            <div key={stage.key} className="flex flex-col items-center flex-1 min-w-0">
-                                                <div className={`
-                                                    h-6 w-6 sm:h-8 sm:w-8 rounded-full flex items-center justify-center text-xs sm:text-sm shrink-0
-                                                    transition-all duration-300
-                                                    ${isCurrent
-                                                        ? "bg-[#1e3a5f] text-white ring-2 sm:ring-4 ring-[#1e3a5f]/15 scale-110"
-                                                        : isComplete
-                                                            ? "bg-emerald-500 text-white"
-                                                            : "bg-stone-100 text-stone-400"
-                                                    }
-                                                `}>
-                                                    {isComplete && !isCurrent ? "✓" : stage.icon}
+                            {/* Cancelled / RTO banner */}
+                            {isNegative && (
+                                <div className={`rounded-xl p-3 ${currentStage === "cancelled" ? "bg-red-50 border border-red-200" : "bg-orange-50 border border-orange-200"}`}>
+                                    <p className={`text-sm font-semibold ${currentStage === "cancelled" ? "text-red-700" : "text-orange-700"}`}>
+                                        {NEGATIVE_STAGES[currentStage].icon} {NEGATIVE_STAGES[currentStage].label}
+                                    </p>
+                                    <p className={`text-xs mt-0.5 ${currentStage === "cancelled" ? "text-red-600" : "text-orange-600"}`}>
+                                        {tracking.status}
+                                    </p>
+                                    {tracking.status_datetime && (
+                                        <p className="text-xs text-stone-400 mt-0.5">
+                                            {new Date(tracking.status_datetime).toLocaleString("en-IN", { day: "numeric", month: "short", hour: "2-digit", minute: "2-digit" })}
+                                        </p>
+                                    )}
+                                </div>
+                            )}
+
+                            {/* Stage progress bar (only for normal flow) */}
+                            {!isNegative && (
+                                <div className="relative">
+                                    <div className="flex items-center justify-between mb-2">
+                                        {STAGES.map((stage, i) => {
+                                            const isComplete = i <= currentStageIndex;
+                                            const isCurrent = i === currentStageIndex;
+                                            return (
+                                                <div key={stage.key} className="flex flex-col items-center flex-1 min-w-0">
+                                                    <div className={`
+                                                        h-6 w-6 sm:h-8 sm:w-8 rounded-full flex items-center justify-center text-xs sm:text-sm shrink-0
+                                                        transition-all duration-300
+                                                        ${isCurrent
+                                                            ? "bg-[#1e3a5f] text-white ring-2 sm:ring-4 ring-[#1e3a5f]/15 scale-110"
+                                                            : isComplete
+                                                                ? "bg-emerald-500 text-white"
+                                                                : "bg-stone-100 text-stone-400"
+                                                        }
+                                                    `}>
+                                                        {isComplete && !isCurrent ? "✓" : stage.icon}
+                                                    </div>
+                                                    <span className={`mt-1 sm:mt-1.5 text-[8px] sm:text-[10px] font-medium text-center leading-tight max-w-[48px] sm:max-w-none ${isCurrent ? "text-[#1e3a5f] font-semibold" : isComplete ? "text-emerald-600" : "text-stone-400"}`}>
+                                                        {stage.label}
+                                                    </span>
                                                 </div>
-                                                <span className={`mt-1 sm:mt-1.5 text-[8px] sm:text-[10px] font-medium text-center leading-tight max-w-[48px] sm:max-w-none ${isCurrent ? "text-[#1e3a5f] font-semibold" : isComplete ? "text-emerald-600" : "text-stone-400"}`}>
-                                                    {stage.label}
-                                                </span>
-                                            </div>
-                                        );
-                                    })}
+                                            );
+                                        })}
+                                    </div>
+                                    {/* Progress line */}
+                                    <div className="absolute top-3 sm:top-4 left-[10%] right-[10%] h-0.5 bg-stone-100 -z-10">
+                                        <div
+                                            className="h-full bg-gradient-to-r from-emerald-400 to-[#1e3a5f] transition-all duration-500"
+                                            style={{ width: `${(currentStageIndex / (STAGES.length - 1)) * 100}%` }}
+                                        />
+                                    </div>
                                 </div>
-                                {/* Progress line */}
-                                <div className="absolute top-3 sm:top-4 left-[10%] right-[10%] h-0.5 bg-stone-100 -z-10">
-                                    <div
-                                        className="h-full bg-gradient-to-r from-emerald-400 to-[#1e3a5f] transition-all duration-500"
-                                        style={{ width: `${(currentStageIndex / (STAGES.length - 1)) * 100}%` }}
-                                    />
-                                </div>
-                            </div>
-                        )}
-
-                        {/* Current status (for non-negative) */}
-                        {!isNegative && (
-                            <div className="rounded-xl bg-[#1e3a5f]/5 p-3">
-                                <p className="text-sm font-semibold text-[#1e3a5f]">
-                                    {tracking.status}
-                                </p>
-                                {tracking.status_location && (
-                                    <p className="text-xs text-stone-500 mt-0.5">📍 {tracking.status_location}</p>
-                                )}
-                                {tracking.status_datetime && (
-                                    <p className="text-xs text-stone-400 mt-0.5">
-                                        {new Date(tracking.status_datetime).toLocaleString("en-IN", { day: "numeric", month: "short", hour: "2-digit", minute: "2-digit" })}
-                                    </p>
-                                )}
-                            </div>
-                        )}
-
-                        {/* Scan timeline */}
-                        {tracking.scans?.length > 0 && (
-                            <details className="group">
-                                <summary className="text-xs font-semibold text-stone-500 cursor-pointer hover:text-stone-700 transition-colors">
-                                    View detailed timeline ({tracking.scans.length} events)
-                                </summary>
-                                <div className="mt-3 space-y-0 border-l-2 border-stone-200 ml-3 pl-4">
-                                    {tracking.scans.map((scan, i) => (
-                                        <div key={i} className="relative pb-4 last:pb-0">
-                                            {/* Dot on the line */}
-                                            <div className={`absolute -left-[21px] top-1 h-2.5 w-2.5 rounded-full ${i === tracking.scans.length - 1 ? "bg-[#1e3a5f] ring-2 ring-[#1e3a5f]/20" : "bg-stone-300"}`} />
-                                            <p className="text-xs font-medium text-stone-800">{scan.status}</p>
-                                            {scan.location && <p className="text-[11px] text-stone-500">📍 {scan.location}</p>}
-                                            {scan.instructions && <p className="text-[11px] text-stone-400">{scan.instructions}</p>}
-                                            <p className="text-[10px] text-stone-400 mt-0.5">
-                                                {scan.timestamp ? new Date(scan.timestamp).toLocaleString("en-IN", { day: "numeric", month: "short", hour: "2-digit", minute: "2-digit" }) : ""}
-                                            </p>
-                                        </div>
-                                    ))}
-                                </div>
-                            </details>
-                        )}
-
-                        {/* Refresh + External tracking link */}
-                        <div className="flex items-center gap-4">
-                            <button onClick={fetchTracking} className="inline-flex items-center gap-1.5 text-xs font-medium text-stone-500 hover:text-[#1e3a5f] transition-colors">
-                                <svg className="h-3.5 w-3.5" viewBox="0 0 20 20" fill="currentColor"><path fillRule="evenodd" d="M4 2a1 1 0 011 1v2.101a7.002 7.002 0 0111.601 2.566 1 1 0 11-1.885.666A5.002 5.002 0 005.999 7H9a1 1 0 010 2H4a1 1 0 01-1-1V3a1 1 0 011-1zm.008 9.057a1 1 0 011.276.61A5.002 5.002 0 0014.001 13H11a1 1 0 110-2h5a1 1 0 011 1v5a1 1 0 11-2 0v-2.101a7.002 7.002 0 01-11.601-2.566 1 1 0 01.61-1.276z" clipRule="evenodd" /></svg>
-                                Refresh
-                            </button>
-                            {trackingUrl && (
-                                <a
-                                    href={trackingUrl}
-                                    target="_blank"
-                                    rel="noopener noreferrer"
-                                    className="inline-flex items-center gap-1.5 text-xs font-medium text-[#1e3a5f] hover:underline"
-                                >
-                                    Track on Delhivery website
-                                    <svg className="h-3 w-3" viewBox="0 0 20 20" fill="currentColor"><path d="M11 3a1 1 0 100 2h2.586l-6.293 6.293a1 1 0 101.414 1.414L15 6.414V9a1 1 0 102 0V4a1 1 0 00-1-1h-5z" /><path d="M5 5a2 2 0 00-2 2v8a2 2 0 002 2h8a2 2 0 002-2v-3a1 1 0 10-2 0v3H5V7h3a1 1 0 000-2H5z" /></svg>
-                                </a>
                             )}
+
+                            {/* Current status (for non-negative) */}
+                            {!isNegative && (
+                                <div className="rounded-xl bg-[#1e3a5f]/5 p-3">
+                                    <p className="text-sm font-semibold text-[#1e3a5f]">
+                                        {tracking.status}
+                                    </p>
+                                    {tracking.status_location && (
+                                        <p className="text-xs text-stone-500 mt-0.5">📍 {tracking.status_location}</p>
+                                    )}
+                                    {tracking.status_datetime && (
+                                        <p className="text-xs text-stone-400 mt-0.5">
+                                            {new Date(tracking.status_datetime).toLocaleString("en-IN", { day: "numeric", month: "short", hour: "2-digit", minute: "2-digit" })}
+                                        </p>
+                                    )}
+                                </div>
+                            )}
+
+                            {/* Scan timeline */}
+                            {tracking.scans?.length > 0 && (
+                                <details className="group">
+                                    <summary className="text-xs font-semibold text-stone-500 cursor-pointer hover:text-stone-700 transition-colors">
+                                        View detailed timeline ({tracking.scans.length} events)
+                                    </summary>
+                                    <div className="mt-3 space-y-0 border-l-2 border-stone-200 ml-3 pl-4">
+                                        {tracking.scans.map((scan, i) => (
+                                            <div key={i} className="relative pb-4 last:pb-0">
+                                                {/* Dot on the line */}
+                                                <div className={`absolute -left-[21px] top-1 h-2.5 w-2.5 rounded-full ${i === tracking.scans.length - 1 ? "bg-[#1e3a5f] ring-2 ring-[#1e3a5f]/20" : "bg-stone-300"}`} />
+                                                <p className="text-xs font-medium text-stone-800">{scan.status}</p>
+                                                {scan.location && <p className="text-[11px] text-stone-500">📍 {scan.location}</p>}
+                                                {scan.instructions && <p className="text-[11px] text-stone-400">{scan.instructions}</p>}
+                                                <p className="text-[10px] text-stone-400 mt-0.5">
+                                                    {scan.timestamp ? new Date(scan.timestamp).toLocaleString("en-IN", { day: "numeric", month: "short", hour: "2-digit", minute: "2-digit" }) : ""}
+                                                </p>
+                                            </div>
+                                        ))}
+                                    </div>
+                                </details>
+                            )}
+
+                            {/* Refresh + External tracking link */}
+                            <div className="flex items-center gap-4">
+                                <button onClick={fetchTracking} className="inline-flex items-center gap-1.5 text-xs font-medium text-stone-500 hover:text-[#1e3a5f] transition-colors">
+                                    <svg className="h-3.5 w-3.5" viewBox="0 0 20 20" fill="currentColor"><path fillRule="evenodd" d="M4 2a1 1 0 011 1v2.101a7.002 7.002 0 0111.601 2.566 1 1 0 11-1.885.666A5.002 5.002 0 005.999 7H9a1 1 0 010 2H4a1 1 0 01-1-1V3a1 1 0 011-1zm.008 9.057a1 1 0 011.276.61A5.002 5.002 0 0014.001 13H11a1 1 0 110-2h5a1 1 0 011 1v5a1 1 0 11-2 0v-2.101a7.002 7.002 0 01-11.601-2.566 1 1 0 01.61-1.276z" clipRule="evenodd" /></svg>
+                                    Refresh
+                                </button>
+                                {trackingUrl && (
+                                    <a
+                                        href={trackingUrl}
+                                        target="_blank"
+                                        rel="noopener noreferrer"
+                                        className="inline-flex items-center gap-1.5 text-xs font-medium text-[#1e3a5f] hover:underline"
+                                    >
+                                        Track on Delhivery website
+                                        <svg className="h-3 w-3" viewBox="0 0 20 20" fill="currentColor"><path d="M11 3a1 1 0 100 2h2.586l-6.293 6.293a1 1 0 101.414 1.414L15 6.414V9a1 1 0 102 0V4a1 1 0 00-1-1h-5z" /><path d="M5 5a2 2 0 00-2 2v8a2 2 0 002 2h8a2 2 0 002-2v-3a1 1 0 10-2 0v3H5V7h3a1 1 0 000-2H5z" /></svg>
+                                    </a>
+                                )}
+                            </div>
                         </div>
-                    </div>
-                )}
-            </div>
+                    )}
+                </div>
+            )}
         </div>
     );
 }

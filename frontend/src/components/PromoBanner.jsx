@@ -6,21 +6,32 @@
  * with the admin-uploaded banner image. Includes a "Shop Now" CTA and
  * smooth entrance/exit animations.
  *
+ * Behaves like a real dialog: Escape closes it, focus is trapped inside and
+ * restored on close, and the page behind it can't scroll.
+ *
  * @module components/PromoBanner
  */
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { Link } from "react-router-dom";
 import { supabase } from "../services/supabase/client";
 
 const DISMISS_KEY = "coreatoms_promo_dismissed";
+/** Must match the exit transition below. */
+const EXIT_ANIMATION_MS = 350;
+const FOCUSABLE = 'a[href], button:not([disabled]), input, select, textarea, [tabindex]:not([tabindex="-1"])';
 
 export default function PromoBanner() {
     const [banner, setBanner] = useState(null);
     const [dismissed, setDismissed] = useState(true);
     const [animateIn, setAnimateIn] = useState(false);
+    const dialogRef = useRef(null);
+    const closeRef = useRef(null);
+    const exitTimerRef = useRef(null);
 
     useEffect(() => {
-        if (sessionStorage.getItem(DISMISS_KEY) === "1") return;
+        try {
+            if (sessionStorage.getItem(DISMISS_KEY) === "1") return;
+        } catch { /* sessionStorage unavailable — show the banner */ }
 
         supabase
             .from("app_settings")
@@ -38,15 +49,56 @@ export default function PromoBanner() {
             });
     }, []);
 
-    const dismiss = () => {
+    const dismiss = useCallback(() => {
         setAnimateIn(false);
-        setTimeout(() => {
+        clearTimeout(exitTimerRef.current);
+        exitTimerRef.current = setTimeout(() => {
             setDismissed(true);
-            sessionStorage.setItem(DISMISS_KEY, "1");
-        }, 350);
-    };
+            try { sessionStorage.setItem(DISMISS_KEY, "1"); } catch { /* best-effort */ }
+        }, EXIT_ANIMATION_MS);
+    }, []);
 
-    if (dismissed || !banner) return null;
+    // Don't leave the exit timer running if the page navigates away mid-animation
+    useEffect(() => () => clearTimeout(exitTimerRef.current), []);
+
+    const open = !dismissed && !!banner;
+
+    // Modal behaviour: scroll lock, Escape, focus trap, focus restore
+    useEffect(() => {
+        if (!open) return;
+
+        const previousOverflow = document.body.style.overflow;
+        const previouslyFocused = document.activeElement;
+        document.body.style.overflow = "hidden";
+        closeRef.current?.focus();
+
+        const onKey = (e) => {
+            if (e.key === "Escape") { e.preventDefault(); dismiss(); return; }
+            if (e.key !== "Tab") return;
+
+            const focusables = dialogRef.current?.querySelectorAll(FOCUSABLE);
+            if (!focusables?.length) return;
+            const first = focusables[0];
+            const last = focusables[focusables.length - 1];
+
+            if (e.shiftKey && document.activeElement === first) {
+                e.preventDefault();
+                last.focus();
+            } else if (!e.shiftKey && document.activeElement === last) {
+                e.preventDefault();
+                first.focus();
+            }
+        };
+
+        document.addEventListener("keydown", onKey);
+        return () => {
+            document.removeEventListener("keydown", onKey);
+            document.body.style.overflow = previousOverflow;
+            if (previouslyFocused instanceof HTMLElement) previouslyFocused.focus();
+        };
+    }, [open, dismiss]);
+
+    if (!open) return null;
 
     return (
         <div
@@ -61,6 +113,10 @@ export default function PromoBanner() {
         >
             {/* Popup — large, nearly full viewport */}
             <div
+                ref={dialogRef}
+                role="dialog"
+                aria-modal="true"
+                aria-label="Special offer"
                 className="relative w-[94vw] max-w-5xl"
                 onClick={(e) => e.stopPropagation()}
                 style={{
@@ -71,6 +127,7 @@ export default function PromoBanner() {
             >
                 {/* Close button — floating outside top-right */}
                 <button
+                    ref={closeRef}
                     type="button"
                     onClick={dismiss}
                     className="absolute -top-4 -right-4 z-30 flex h-10 w-10 items-center justify-center rounded-full bg-white text-stone-600 shadow-xl hover:bg-stone-100 hover:text-stone-900 hover:scale-110 transition-all duration-200"
@@ -83,10 +140,15 @@ export default function PromoBanner() {
                 </button>
 
                 {/* Image container */}
-                <div className="rounded-3xl overflow-hidden shadow-[0_25px_60px_rgba(0,0,0,0.5)]">
+                <div className="rounded-3xl overflow-hidden shadow-[0_25px_60px_rgba(0,0,0,0.5)] bg-stone-100">
                     <img
                         src={banner.image_url}
                         alt="Special offer"
+                        /* width/height reserve a 3:2 box before the image decodes,
+                           so the popup doesn't jump as it loads */
+                        width={1200}
+                        height={800}
+                        decoding="async"
                         className="w-full block"
                         style={{ maxHeight: "82vh", objectFit: "cover" }}
                     />

@@ -29,25 +29,60 @@ import ForgotPassword from "../pages/ForgotPassword";
 import NotFound from "../pages/NotFound";
 import ErrorPage from "../pages/ErrorPage";
 
+/** Set once we've already force-reloaded for a failed chunk, so we can't loop. */
+const CHUNK_RELOAD_KEY = "coreatoms_chunk_reloaded";
+
+/**
+ * `React.lazy` memoises a *rejected* promise, so once a chunk fails to load —
+ * the usual stale-hash failure right after a deploy — every retry re-throws the
+ * same error and the ErrorBoundary's "Try again" button looks dead. Retry the
+ * import once, then fall back to a single hard reload to pick up the new
+ * asset manifest.
+ */
+function lazyWithRetry(importer) {
+  return React.lazy(() =>
+    importer()
+      .then((mod) => {
+        try { sessionStorage.removeItem(CHUNK_RELOAD_KEY); } catch { /* ignore */ }
+        return mod;
+      })
+      .catch(() => importer().catch((err) => {
+        // Default to "already reloaded" so an unavailable sessionStorage means
+        // the error surfaces instead of the page reloading in a loop.
+        let alreadyReloaded = true;
+        try {
+          alreadyReloaded = sessionStorage.getItem(CHUNK_RELOAD_KEY) === "1";
+          if (!alreadyReloaded) sessionStorage.setItem(CHUNK_RELOAD_KEY, "1");
+        } catch { /* ignore */ }
+
+        if (alreadyReloaded) throw err;
+        window.location.reload();
+        return new Promise(() => { }); // never settles — the reload takes over
+      }))
+  );
+}
+
 /** Lazy-loaded pages — keeps heavy code out of the initial bundle. */
-const Shop = React.lazy(() => import("../pages/Shop"));
-const Cart = React.lazy(() => import("../pages/Cart"));
-const ProductDetail = React.lazy(() => import("../pages/ProductDetail"));
-const MyOrders = React.lazy(() => import("../pages/MyOrders"));
-const Checkout = React.lazy(() => import("../pages/Checkout"));
-const ResetPassword = React.lazy(() => import("../pages/ResetPassword"));
-const AdminDashboard = React.lazy(() => import("../pages/AdminDashboard.jsx"));
+const Shop = lazyWithRetry(() => import("../pages/Shop"));
+const Cart = lazyWithRetry(() => import("../pages/Cart"));
+const ProductDetail = lazyWithRetry(() => import("../pages/ProductDetail"));
+const MyOrders = lazyWithRetry(() => import("../pages/MyOrders"));
+const Checkout = lazyWithRetry(() => import("../pages/Checkout"));
+const ResetPassword = lazyWithRetry(() => import("../pages/ResetPassword"));
+const AdminDashboard = lazyWithRetry(() => import("../pages/AdminDashboard.jsx"));
 
 import ProtectedRoute from "./ProtectedRoute";
 import AdminRoute from "./AdminRoute";
+import RouteFallback from "./RouteFallback";
 import { useAuth } from "../context/AuthContext";
 
 // Redirects admins away from the public home page to /admin
 function HomeRoute() {
-  const { loading, isAdmin, user, profile } = useAuth();
-  // Wait for both auth session AND profile to resolve before rendering
-  if (loading) return null;
-  if (user && !profile) return null; // profile still being fetched
+  const { loading, isAdmin, isAuthenticated, roleResolved } = useAuth();
+  // Wait for the authoritative role before deciding — but never render nothing:
+  // if the profile fetch ultimately fails, `roleResolved` still flips and the
+  // storefront renders instead of a permanently blank page.
+  if (loading || (isAuthenticated && !roleResolved)) return <RouteFallback />;
   if (isAdmin) return <Navigate to="/admin" replace />;
   return <Home />;
 }
@@ -64,7 +99,7 @@ export const router = createBrowserRouter([
       { path: "product/:id", element: <ProductDetail /> },
       { path: "login", element: <Login /> },
       { path: "forgot-password", element: <ForgotPassword /> },
-      { path: "reset-password", element: <Suspense fallback={<div className="py-20 text-center text-sm text-stone-400 animate-pulse">Loading…</div>}><ResetPassword /></Suspense> },
+      { path: "reset-password", element: <Suspense fallback={<RouteFallback />}><ResetPassword /></Suspense> },
 
       {
         path: "orders",
@@ -86,7 +121,7 @@ export const router = createBrowserRouter([
         path: "admin",
         element: (
           <AdminRoute>
-            <Suspense fallback={<div className="py-20 text-center text-sm text-stone-400 animate-pulse">Loading admin…</div>}>
+            <Suspense fallback={<RouteFallback label="Loading admin…" />}>
               <AdminDashboard />
             </Suspense>
           </AdminRoute>

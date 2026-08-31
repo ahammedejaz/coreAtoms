@@ -149,13 +149,41 @@ registers tokens in `mobile/src/services/notifications.js` (physical devices onl
 
 - Order RPCs are `SECURITY DEFINER` and re-derive price, GST, shipping and coupon discount server-side. The
   `p_gst` and `p_discount` arguments are accepted for compatibility and ignored.
+- **GST is charged on the discounted taxable value** (`subtotal - coupon discount`), not the gross subtotal.
+  Client and RPC must always agree on this — `Checkout.jsx` and both order RPCs compute
+  `taxable = subtotal - discount`, then `gst = round(taxable * pct)`, then `total = taxable + shipping + gst - coins`.
+- **Coupon restrictions are enforced server-side.** `resolve_coupon_percentage(code, user_id)` is the single
+  source of truth for `active`, `startsAt`/`endsAt`, the `emails` whitelist and `newUsersOnly`; both order RPCs
+  and the customer-facing `validate_coupon(code)` call it. Checkout must never validate coupons from the raw
+  `discount_codes` setting again — that is how targeted codes leaked to every signed-in customer.
+- **Prepaid orders are verified by amount, not just by signature.** The Razorpay HMAC only proves a payment
+  belongs to an order; it says nothing about how much was paid. `verify-razorpay-payment` reads the captured
+  amount from Razorpay's API and passes it as `p_amount_paid_paise`, and `place_order_prepaid` rejects the order
+  if its own computed total exceeds what was actually paid. `place_order_prepaid` is also idempotent on
+  `razorpay_payment_id` (backed by a partial unique index), so a retry returns the existing order instead of
+  duplicating stock and coin deductions.
+- Variant purchases decrement `product_variants.stock_qty`; only non-variant purchases touch `products.stock_qty`.
+  `cancel_order` restores stock to whichever table the line came from and refunds redeemed CoreCoins.
+- `profiles` UPDATE carries a `WITH CHECK` that blocks a customer from setting their own `role` to `admin`.
+  Never add a second permissive UPDATE policy on `profiles` without that guard — permissive policies OR together,
+  so one unguarded policy re-opens full admin self-elevation.
 - `EXECUTE` is granted narrowly: `place_order_cod`, `cancel_order`, `process_pending_corecoins` and
   `log_failed_order` to `authenticated`; `place_order_prepaid` to `service_role` only, because just the
   `verify-razorpay-payment` Edge Function calls it. `anon` can execute nothing except `is_admin()`, which RLS
   policies depend on. Do not re-grant to `anon` — the guards compare `p_user_id` against `auth.uid()`, which is
   NULL for anonymous callers, so an anon grant means anyone can place orders as anyone.
-- `app_settings` has one SELECT policy: everything is world-readable except `discount_codes`,
-  `warehouse_address`, `delhivery_client_name` and `delhivery_pickup_name`, which require a signed-in user.
+- `app_settings` must have exactly **one** permissive SELECT policy — permissive policies OR together, so a
+  second one silently defeats the sensitive-key filter. Today it hides `discount_codes`, `warehouse_address`,
+  `delhivery_client_name` and `delhivery_pickup_name` from anonymous users.
+  `supabase/migrations/20260831090000_restrict_discount_codes_to_admins.sql` tightens those four to admins only
+  and is **deliberately not applied yet**: it must go out with the web release that ships the `validate_coupon`
+  version of Checkout, or coupon entry breaks on the live site.
+- Every Edge Function that touches money or customer data verifies the caller with
+  `supabase.auth.getUser(token)` — never by base64-decoding the JWT. `create-razorpay-order`,
+  `verify-razorpay-payment` and `delhivery-track` all require a real signed-in user, and `delhivery-track`
+  additionally checks the caller owns an order or replacement carrying that waybill.
+- The shared rate limiter keys on the **right-most** `x-forwarded-for` hop. The left-most entry is
+  caller-supplied, so reading it let anyone defeat every limit with a random header per request.
 - Never expose `SUPABASE_SERVICE_ROLE_KEY` or `RAZORPAY_KEY_SECRET` to a client; they belong in Edge Function
   secrets only.
 

@@ -26,11 +26,14 @@
 //   order_id: string (UUID),
 //   shipping_address: { name, phone, address, city, state, pin, country },
 //   items: [{ name, qty, price }],
-//   total_amount: number,
 //   payment_method: "cod" | "prepaid" | "pickup" | "repl",
 //   weight: number (in grams),
 //   skip_order_update?: boolean  — if true, skip updating the orders table
 // }
+//
+// Amounts are NOT taken from the request body. The COD amount and the declared
+// value are read from the `orders` row, because `cod_amount` is how much cash
+// the courier collects at the customer's door.
 
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 import { getCorsHeaders, handleCorsPreflightRequest } from "../_shared/cors.ts";
@@ -92,11 +95,8 @@ Deno.serve(async (req) => {
         // Fall back to app_settings if env vars aren't set
         if (!CLIENT_NAME || !PICKUP_NAME) {
             try {
-                const sbUrl = Deno.env.get("SUPABASE_URL")!;
-                const sbKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
-                const settingsSb = createClient(sbUrl, sbKey);
                 const keys = ["delhivery_client_name", "delhivery_pickup_name"];
-                const { data: rows } = await settingsSb
+                const { data: rows } = await adminClient
                     .from("app_settings").select("key, value").in("key", keys);
                 const settingsMap: Record<string, string> = {};
                 (rows || []).forEach((r: { key: string; value: string }) => {
@@ -125,7 +125,6 @@ Deno.serve(async (req) => {
             order_id,
             shipping_address,
             items,
-            total_amount,
             payment_method,
             weight,
             skip_order_update,
@@ -137,6 +136,45 @@ Deno.serve(async (req) => {
                 JSON.stringify({ error: "order_id and shipping_address are required" }),
                 {
                     status: 400,
+                    headers: { ...corsHeaders, "Content-Type": "application/json" },
+                }
+            );
+        }
+
+        // ── Load the order ──
+        // Money and payment mode come from here, never from the request body.
+        // `cod_amount` tells the courier how much cash to collect from the
+        // customer; taking that from the caller meant a wrong or tampered
+        // number became a real amount collected at the door.
+        const { data: order, error: orderErr } = await adminClient
+            .from("orders")
+            .select("id, status, payment_method, total_amount_inr, delhivery_waybill")
+            .eq("id", order_id)
+            .maybeSingle();
+
+        if (orderErr || !order) {
+            return new Response(
+                JSON.stringify({ error: "Order not found" }),
+                {
+                    status: 404,
+                    headers: { ...corsHeaders, "Content-Type": "application/json" },
+                }
+            );
+        }
+
+        // A forward shipment for an order that already has a waybill is almost
+        // always a double-click or a retry. Waybills cost money and a second one
+        // orphans the first, so return what the order already has.
+        if (!skip_order_update && order.delhivery_waybill) {
+            return new Response(
+                JSON.stringify({
+                    success: true,
+                    already_shipped: true,
+                    waybill: order.delhivery_waybill,
+                    tracking_url: `https://www.delhivery.com/track/package/${order.delhivery_waybill}`,
+                }),
+                {
+                    status: 200,
                     headers: { ...corsHeaders, "Content-Type": "application/json" },
                 }
             );
@@ -164,7 +202,30 @@ Deno.serve(async (req) => {
 
         const isReverse = paymentMode === "Pickup";
         const isREPL = paymentMode === "REPL";
-        const isCOD = paymentMode === "COD";
+
+        // Only collect cash if the stored order actually is a COD order. The
+        // request asking for COD is not enough — that would let a prepaid order
+        // be charged a second time on the doorstep.
+        const orderIsCod = String(order.payment_method || "").toLowerCase() === "cod";
+        if (paymentMode === "COD" && !orderIsCod) {
+            return new Response(
+                JSON.stringify({
+                    error: "Refusing to create a COD shipment for an order that is not COD",
+                }),
+                {
+                    status: 409,
+                    headers: { ...corsHeaders, "Content-Type": "application/json" },
+                }
+            );
+        }
+        const isCOD = paymentMode === "COD" && orderIsCod;
+
+        // Authoritative amounts, read from the order rather than the caller.
+        const orderTotal = Number(order.total_amount_inr || 0);
+        const codAmount = isCOD ? orderTotal : 0;
+        // Reverse pickups carry no declared value; everything else declares the
+        // order total for insurance and customs paperwork.
+        const declaredValue = isReverse ? 0 : orderTotal;
 
         // For Pickup/REPL, validate warehouse address is configured
         if ((isReverse || isREPL) && !WAREHOUSE.pin) {
@@ -273,9 +334,9 @@ Deno.serve(async (req) => {
                         .map((i: { name: string }) => i.name)
                         .join(", "),
                     hsn_code: "",
-                    cod_amount: isCOD ? String(total_amount || 0) : "0",
+                    cod_amount: String(codAmount),
                     order_date: new Date().toISOString(),
-                    total_amount: String(total_amount || 0),
+                    total_amount: String(declaredValue),
                     seller_add: "",
                     seller_name: "",
                     seller_inv: "",
@@ -363,22 +424,45 @@ Deno.serve(async (req) => {
         const trackingUrl = `https://www.delhivery.com/track/package/${waybill}`;
 
         if (!skip_order_update) {
-            const supabaseUrl = Deno.env.get("SUPABASE_URL")!;
-            const supabaseKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
-            const supabase = createClient(supabaseUrl, supabaseKey);
+            // Only advance an order that has not moved past dispatch. The old
+            // code set "processing" unconditionally, so re-running it on a
+            // delivered order walked its status backwards.
+            const advanceable = ["placed", "confirmed"];
+            const patch: Record<string, string> = {
+                delhivery_waybill: waybill,
+                courier_name: "Delhivery",
+                tracking_url: trackingUrl,
+            };
+            if (advanceable.includes(String(order.status))) {
+                patch.status = "processing";
+            }
 
-            const { error: dbError } = await supabase
+            const { error: dbError } = await adminClient
                 .from("orders")
-                .update({
-                    delhivery_waybill: waybill,
-                    courier_name: "Delhivery",
-                    tracking_url: trackingUrl,
-                    status: "processing",
-                })
+                .update(patch)
                 .eq("id", order_id);
 
             if (dbError) {
-                console.error("DB update error:", dbError);
+                // Delhivery has already issued (and billed) this waybill. Losing
+                // it here means nobody can track or reconcile the shipment, so
+                // fail loudly and hand the waybill back for manual recovery
+                // rather than reporting a clean success.
+                console.error("DB update error after waybill was issued:", dbError, "waybill:", waybill);
+                return new Response(
+                    JSON.stringify({
+                        error:
+                            "Shipment was created at Delhivery but could not be saved to the order. " +
+                            "Record this waybill against the order manually.",
+                        waybill,
+                        tracking_url: trackingUrl,
+                        order_id,
+                        details: dbError.message,
+                    }),
+                    {
+                        status: 500,
+                        headers: { ...corsHeaders, "Content-Type": "application/json" },
+                    }
+                );
             }
         }
 
@@ -398,7 +482,7 @@ Deno.serve(async (req) => {
     } catch (err) {
         console.error("Error:", err);
         return new Response(
-            JSON.stringify({ error: (err as Error).message || "Internal server error" }),
+            JSON.stringify({ error: "Internal server error" }),
             {
                 status: 500,
                 headers: { ...corsHeaders, "Content-Type": "application/json" },

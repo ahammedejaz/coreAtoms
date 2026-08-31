@@ -57,7 +57,19 @@ Deno.serve(async (req) => {
         }
 
         // Parse request body
-        const { pincode, weight_grams } = await req.json();
+        let parsed: { pincode?: unknown; weight_grams?: unknown };
+        try {
+            parsed = await req.json();
+        } catch {
+            return new Response(
+                JSON.stringify({ error: "Invalid request body" }),
+                {
+                    status: 400,
+                    headers: { ...corsHeaders, "Content-Type": "application/json" },
+                }
+            );
+        }
+        const { pincode, weight_grams } = parsed;
         const weightGrams = Number(weight_grams) || 500; // default 500g
 
         if (!pincode || !/^\d{6}$/.test(String(pincode))) {
@@ -232,7 +244,7 @@ Deno.serve(async (req) => {
     } catch (err) {
         console.error("Error:", err);
         return new Response(
-            JSON.stringify({ error: (err as Error).message || "Internal server error" }),
+            JSON.stringify({ error: "Internal server error" }),
             {
                 status: 500,
                 headers: { ...corsHeaders, "Content-Type": "application/json" },

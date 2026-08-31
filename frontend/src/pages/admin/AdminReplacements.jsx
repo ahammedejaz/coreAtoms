@@ -12,6 +12,7 @@ import { supabase } from "../../services/supabase/client";
 import { useToast } from "../../context/ToastContext";
 import { money } from "../../utils/format";
 import ShipmentTracker from "../../components/ShipmentTracker";
+import ConfirmDialog from "../../components/ConfirmDialog";
 
 const STATUS_STYLES = {
     pending: "bg-amber-50 text-amber-700 border border-amber-200",
@@ -42,8 +43,11 @@ export default function AdminReplacements({ onCountChange }) {
     const [lightboxImg, setLightboxImg] = useState(null);
     const [warehouse, setWarehouse] = useState(null);
     const [warehouseLoading, setWarehouseLoading] = useState(true);
+    const [loadErr, setLoadErr] = useState("");
+    const [confirmDlg, setConfirmDlg] = useState(null);
 
     const load = async () => {
+        setLoadErr("");
         const { data, error } = await supabase
             .from("replacements")
             .select(`
@@ -71,6 +75,9 @@ export default function AdminReplacements({ onCountChange }) {
             .order("created_at", { ascending: false });
 
         if (error) {
+            // Leaving the list empty on a read failure reads as "no requests",
+            // which is the opposite of the truth.
+            setLoadErr(error.message);
             showToast(error.message, "error");
         } else {
             setReplacements(data || []);
@@ -94,19 +101,28 @@ export default function AdminReplacements({ onCountChange }) {
             });
     }, []);
 
-    const updateStatus = async (id, newStatus) => {
+    const updateStatus = async (id, newStatus, { withNotes = false } = {}) => {
         setProcessing(id);
-        const notes = adminNotes[id] || "";
+        const patch = {
+            status: newStatus,
+            updated_at: new Date().toISOString(),
+        };
+        // Only write notes on the transition that actually collects them. The
+        // notes box renders for pending requests only, so every later
+        // transition was sending an empty value and erasing the decision note
+        // the admin wrote when they approved or rejected the request.
+        if (withNotes) {
+            patch.admin_notes = (adminNotes[id] || "").trim() || null;
+        }
         const { error } = await supabase
             .from("replacements")
-            .update({
-                status: newStatus,
-                admin_notes: notes || null,
-                updated_at: new Date().toISOString(),
-            })
+            .update(patch)
             .eq("id", id);
 
         if (error) {
+            // Leaving the list empty on a read failure reads as "no requests",
+            // which is the opposite of the truth.
+            setLoadErr(error.message);
             showToast(error.message, "error");
         } else {
             showToast(
@@ -123,8 +139,7 @@ export default function AdminReplacements({ onCountChange }) {
     };
 
     /* ── Ship replacement (forward Prepaid) via Delhivery ── */
-    const shipReplacement = async (replacement) => {
-        if (!window.confirm("Ship replacement via Delhivery? This will create a real shipment and assign a waybill.")) return;
+    const doShipReplacement = async (replacement) => {
         setProcessing(replacement.id);
         try {
             const order = replacement.orders || {};
@@ -185,7 +200,15 @@ export default function AdminReplacements({ onCountChange }) {
                 .eq("id", replacement.id);
 
             if (dbErr) {
-                showToast(dbErr.message, "error");
+                // Delhivery has already issued and billed this waybill. If it
+                // is not saved here it is lost, and the next click buys
+                // another one, so put it where someone can copy it.
+                setLoadErr(
+                    `Shipment ${result.waybill} was created at Delhivery but could not be saved ` +
+                    `to the replacement record. Save this waybill manually before retrying — ` +
+                    `retrying will buy a second one. (${dbErr.message})`
+                );
+                showToast(`Saved at Delhivery but not here — AWB ${result.waybill}`, "error");
             } else {
                 showToast(`Replacement shipped! AWB: ${result.waybill}`, "success");
                 load();
@@ -197,8 +220,7 @@ export default function AdminReplacements({ onCountChange }) {
     };
 
     /* ── Create reverse pickup via Delhivery (Pickup mode) ── */
-    const createReversePickup = async (replacement) => {
-        if (!window.confirm("Schedule reverse pickup via Delhivery? The courier will pick up the damaged product from the customer.")) return;
+    const doCreateReversePickup = async (replacement) => {
         setProcessing(replacement.id);
         try {
             const order = replacement.orders || {};
@@ -259,7 +281,15 @@ export default function AdminReplacements({ onCountChange }) {
                 .eq("id", replacement.id);
 
             if (dbErr) {
-                showToast(dbErr.message, "error");
+                // Delhivery has already issued and billed this waybill. If it
+                // is not saved here it is lost, and the next click buys
+                // another one, so put it where someone can copy it.
+                setLoadErr(
+                    `Shipment ${result.waybill} was created at Delhivery but could not be saved ` +
+                    `to the replacement record. Save this waybill manually before retrying — ` +
+                    `retrying will buy a second one. (${dbErr.message})`
+                );
+                showToast(`Saved at Delhivery but not here — AWB ${result.waybill}`, "error");
             } else {
                 showToast(`Reverse pickup scheduled! AWB: ${result.waybill}`, "success");
                 load();
@@ -271,8 +301,7 @@ export default function AdminReplacements({ onCountChange }) {
     };
 
     /* ── Create exchange shipment via Delhivery (REPL mode) ── */
-    const createExchangeShipment = async (replacement) => {
-        if (!window.confirm("Create exchange shipment (REPL)? Delhivery will pick up the damaged product and deliver the replacement in one trip.")) return;
+    const doCreateExchangeShipment = async (replacement) => {
         setProcessing(replacement.id);
         try {
             const order = replacement.orders || {};
@@ -333,7 +362,15 @@ export default function AdminReplacements({ onCountChange }) {
                 .eq("id", replacement.id);
 
             if (dbErr) {
-                showToast(dbErr.message, "error");
+                // Delhivery has already issued and billed this waybill. If it
+                // is not saved here it is lost, and the next click buys
+                // another one, so put it where someone can copy it.
+                setLoadErr(
+                    `Shipment ${result.waybill} was created at Delhivery but could not be saved ` +
+                    `to the replacement record. Save this waybill manually before retrying — ` +
+                    `retrying will buy a second one. (${dbErr.message})`
+                );
+                showToast(`Saved at Delhivery but not here — AWB ${result.waybill}`, "error");
             } else {
                 showToast(`Exchange shipment created! AWB: ${result.waybill}`, "success");
                 load();
@@ -343,6 +380,42 @@ export default function AdminReplacements({ onCountChange }) {
         }
         setProcessing(null);
     };
+
+
+    /* ── Confirmation wrappers ──
+       Each of these spends money: Delhivery issues and bills a waybill the
+       moment it is called, and a second click buys a second one. They used to
+       sit behind window.confirm, which blocks the whole page and cannot say
+       which request it is about. */
+    const confirmAction = (title, message, confirmLabel, run) =>
+        setConfirmDlg({
+            title,
+            message,
+            confirmLabel,
+            variant: "info",
+            onConfirm: () => { setConfirmDlg(null); run(); },
+        });
+
+    const shipReplacement = (replacement) => confirmAction(
+        "Ship replacement?",
+        "Delhivery will issue a billable waybill and a new unit will be sent to the customer.",
+        "Create shipment",
+        () => doShipReplacement(replacement),
+    );
+
+    const createReversePickup = (replacement) => confirmAction(
+        "Schedule reverse pickup?",
+        "Delhivery will issue a billable waybill and collect the damaged product from the customer.",
+        "Schedule pickup",
+        () => doCreateReversePickup(replacement),
+    );
+
+    const createExchangeShipment = (replacement) => confirmAction(
+        "Create exchange shipment?",
+        "Delhivery will issue one billable waybill covering both the pickup of the damaged product and the delivery of its replacement.",
+        "Create exchange",
+        () => doCreateExchangeShipment(replacement),
+    );
 
     const markPickupReceived = (id) => updateStatus(id, "pickup_received");
 
@@ -370,6 +443,16 @@ export default function AdminReplacements({ onCountChange }) {
 
     return (
         <div className="space-y-5">
+            {loadErr && (
+                <div role="alert" className="rounded-2xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700 flex flex-wrap items-center gap-3">
+                    <span className="flex-1 min-w-0">{loadErr}</span>
+                    <button type="button" onClick={() => { setLoadErr(""); load(); }}
+                        className="shrink-0 rounded-xl border border-red-300 bg-white px-3 py-1.5 text-xs font-semibold text-red-700 hover:bg-red-100">
+                        Reload
+                    </button>
+                </div>
+            )}
+
             {/* ── Filters ── */}
             <div className="flex flex-wrap gap-2">
                 {["all", "pending", "approved", "pickup_scheduled", "pickup_received", "replacement_shipped", "rejected"].map(f => (
@@ -562,7 +645,7 @@ export default function AdminReplacements({ onCountChange }) {
                                             <div className="flex gap-2">
                                                 <button
                                                     type="button"
-                                                    onClick={() => updateStatus(r.id, "approved")}
+                                                    onClick={() => updateStatus(r.id, "approved", { withNotes: true })}
                                                     disabled={processing === r.id}
                                                     className="flex-1 rounded-xl bg-emerald-600 px-4 py-2.5 text-sm font-semibold text-white hover:bg-emerald-700 active:scale-95 transition-all disabled:opacity-50 flex items-center justify-center gap-1.5"
                                                 >
@@ -573,7 +656,7 @@ export default function AdminReplacements({ onCountChange }) {
                                                 </button>
                                                 <button
                                                     type="button"
-                                                    onClick={() => updateStatus(r.id, "rejected")}
+                                                    onClick={() => updateStatus(r.id, "rejected", { withNotes: true })}
                                                     disabled={processing === r.id}
                                                     className="flex-1 rounded-xl border border-red-200 bg-white px-4 py-2.5 text-sm font-semibold text-red-600 hover:bg-red-50 active:scale-95 transition-all disabled:opacity-50 flex items-center justify-center gap-1.5"
                                                 >
@@ -728,6 +811,13 @@ export default function AdminReplacements({ onCountChange }) {
                     );
                 })}
             </div>
+
+            {confirmDlg && (
+                <ConfirmDialog
+                    {...confirmDlg}
+                    onCancel={() => setConfirmDlg(null)}
+                />
+            )}
 
             {/* ── Lightbox ── */}
             {lightboxImg && (

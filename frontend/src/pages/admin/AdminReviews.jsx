@@ -16,17 +16,23 @@ import ConfirmDialog from "../../components/ConfirmDialog";
 import { useToast } from "../../context/ToastContext";
 import useKeyboardShortcut from "../../hooks/useKeyboardShortcut";
 
-export default function AdminReviews({ onCountChange }) {
+export default function AdminReviews({ onCountChange, isActive = true }) {
     const { showToast } = useToast();
     const [reviews, setReviews] = useState([]);
     const [loading, setLoading] = useState(true);
     const [err, setErr] = useState("");
     const [search, setSearch] = useState("");
     const [confirmDlg, setConfirmDlg] = useState(null);
+    const [confirmBusy, setConfirmBusy] = useState(false);
 
     // Ctrl+S → refresh reviews
     const loadRef = useRef(null);
-    const handleCtrlS = useCallback((e) => { e.preventDefault(); loadRef.current?.(); }, []);
+    // Every tab stays mounted, so an ungated handler fires on all of them at once.
+    const handleCtrlS = useCallback((e) => {
+        if (!isActive) return;
+        e.preventDefault();
+        loadRef.current?.();
+    }, [isActive]);
     useKeyboardShortcut("ctrl+s", handleCtrlS);
 
     const load = async () => {
@@ -41,7 +47,11 @@ export default function AdminReviews({ onCountChange }) {
         const userIds = [...new Set(raw.map((r) => r.user_id).filter(Boolean))];
         const profileMap = {};
         if (userIds.length) {
-            const { data: pr } = await supabase.from("profiles").select("id,full_name,email").in("id", userIds);
+            const { data: pr, error: prErr } = await supabase
+                .from("profiles").select("id,full_name,email").in("id", userIds);
+            // Reviews still render without profiles, but say so rather than
+            // labelling every real customer "Anonymous".
+            if (prErr) setErr(`Reviews loaded, but customer names could not be read: ${prErr.message}`);
             (pr || []).forEach((p) => { profileMap[p.id] = p; });
         }
         const enriched = raw.map((r) => ({ ...r, _profile: profileMap[r.user_id] || null }));
@@ -49,6 +59,10 @@ export default function AdminReviews({ onCountChange }) {
         onCountChange?.(enriched.length);
         setLoading(false);
     };
+
+    // Ctrl+S reaches `load` through a ref so the shortcut handler does not have
+    // to be re-registered on every render.
+    useEffect(() => { loadRef.current = load; });
 
     // Load on mount so the badge in the shell shows the count immediately
     useEffect(() => { load(); }, []); // eslint-disable-line
@@ -61,8 +75,10 @@ export default function AdminReviews({ onCountChange }) {
             confirmLabel: "Delete review",
             variant: "danger",
             onConfirm: async () => {
-                setConfirmDlg(null);
+                setConfirmBusy(true);
                 const { error } = await supabase.from("product_reviews").delete().eq("id", id);
+                setConfirmBusy(false);
+                setConfirmDlg(null);
                 if (error) { showToast(error.message, "error"); return; }
                 setReviews((prev) => {
                     const next = prev.filter((r) => r.id !== id);
@@ -167,7 +183,8 @@ export default function AdminReviews({ onCountChange }) {
             {confirmDlg && (
                 <ConfirmDialog
                     {...confirmDlg}
-                    onCancel={() => setConfirmDlg(null)}
+                    loading={confirmBusy}
+                    onCancel={() => { if (!confirmBusy) setConfirmDlg(null); }}
                 />
             )}
         </>

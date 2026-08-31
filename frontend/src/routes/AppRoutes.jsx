@@ -71,6 +71,14 @@ const Checkout = lazyWithRetry(() => import("../pages/Checkout"));
 const ResetPassword = lazyWithRetry(() => import("../pages/ResetPassword"));
 const AdminDashboard = lazyWithRetry(() => import("../pages/AdminDashboard.jsx"));
 
+// Policy and help pages — lazy so the legal chunk never weighs down the shop
+const TermsAndConditions = lazyWithRetry(() => import("../pages/legal/TermsAndConditions"));
+const PrivacyPolicy = lazyWithRetry(() => import("../pages/legal/PrivacyPolicy"));
+const ShippingPolicy = lazyWithRetry(() => import("../pages/legal/ShippingPolicy"));
+const RefundPolicy = lazyWithRetry(() => import("../pages/legal/RefundPolicy"));
+const Contact = lazyWithRetry(() => import("../pages/legal/Contact"));
+const FAQPage = lazyWithRetry(() => import("../pages/legal/FAQPage"));
+
 import ProtectedRoute from "./ProtectedRoute";
 import AdminRoute from "./AdminRoute";
 import RouteFallback from "./RouteFallback";
@@ -100,6 +108,14 @@ export const router = createBrowserRouter([
       { path: "login", element: <Login /> },
       { path: "forgot-password", element: <ForgotPassword /> },
       { path: "reset-password", element: <Suspense fallback={<RouteFallback />}><ResetPassword /></Suspense> },
+
+      // Policies & help — public, static, indexable
+      { path: "terms", element: <TermsAndConditions /> },
+      { path: "privacy", element: <PrivacyPolicy /> },
+      { path: "shipping-policy", element: <ShippingPolicy /> },
+      { path: "refund-policy", element: <RefundPolicy /> },
+      { path: "contact", element: <Contact /> },
+      { path: "faq", element: <FAQPage /> },
 
       {
         path: "orders",

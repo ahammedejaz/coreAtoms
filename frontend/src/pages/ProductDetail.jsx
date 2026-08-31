@@ -26,6 +26,7 @@ import PincodeChecker from "../components/PincodeChecker";
 import RichText from "../components/RichText";
 import BenefitIcon from "../components/BenefitIcon";
 import { SkeletonProductDetail } from "../components/Skeleton";
+import RelatedProducts from "../components/RelatedProducts";
 import { useToast } from "../context/ToastContext";
 
 import { money } from "../utils/format";
@@ -664,6 +665,9 @@ export default function ProductDetail() {
           </div>
         </div>
       )}
+
+      {/* ── Cross-sell ── */}
+      <RelatedProducts productId={product.id} category={product.category} gstPercent={gstPercent} />
 
     </div>
   );

@@ -39,6 +39,7 @@ const SETTING_KEYS = [
     "max_items_per_order", "shipping_amount", "free_shipping_min", "gst_percentage",
     "razorpay_enabled", "cod_enabled", "replacements_enabled", "warehouse_address",
     "discount_codes", "corecoins_enabled", "corecoins_config", "promo_banner",
+    "store_info",
 ];
 
 /** Accordion chevron — rotates when its section is open. */
@@ -95,6 +96,15 @@ export default function AdminSettings({ isActive = true }) {
     const [warehouseLoading, setWarehouseLoading] = useState(true);
     const [warehouseSaving, setWarehouseSaving] = useState(false);
 
+    // Store information — business identity shown in the footer, on the
+    // contact page and inside the policy pages. All fields optional.
+    const [storeInfo, setStoreInfo] = useState({
+        legal_name: "", address: "", support_email: "",
+        support_phone: "", fssai_license: "", grievance_officer: "",
+    });
+    const [storeInfoLoading, setStoreInfoLoading] = useState(true);
+    const [storeInfoSaving, setStoreInfoSaving] = useState(false);
+
     // Discount codes
     const [discountCodes, setDiscountCodes] = useState([]);
     const [discountLoading, setDiscountLoading] = useState(true);
@@ -142,6 +152,7 @@ export default function AdminSettings({ isActive = true }) {
             setDiscountLoading(false);
             setCorecoinsLoading(false);
             setBannerLoading(false);
+            setStoreInfoLoading(false);
         };
 
         if (error) {
@@ -178,6 +189,10 @@ export default function AdminSettings({ isActive = true }) {
 
         if (map.warehouse_address && typeof map.warehouse_address === "object") {
             setWarehouse(prev => ({ ...prev, ...map.warehouse_address }));
+        }
+
+        if (map.store_info && typeof map.store_info === "object") {
+            setStoreInfo(prev => ({ ...prev, ...map.store_info }));
         }
 
         setDiscountCodes(Array.isArray(map.discount_codes) ? map.discount_codes : []);
@@ -375,6 +390,27 @@ export default function AdminSettings({ isActive = true }) {
             showToast("Warehouse address saved", "success");
         }
         setWarehouseSaving(false);
+    };
+
+    const saveStoreInfo = async () => {
+        if (blockedByLoad()) return;
+        const email = storeInfo.support_email.trim();
+        if (email && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
+            showToast("Support email doesn't look valid", "error");
+            return;
+        }
+        setStoreInfoSaving(true);
+        const value = Object.fromEntries(
+            Object.entries(storeInfo).map(([k, v]) => [k, String(v || "").trim()])
+        );
+        const { error } = await supabase.from("app_settings")
+            .upsert({ key: "store_info", value }, { onConflict: "key" });
+        if (error) {
+            showToast(error.message, "error");
+        } else {
+            showToast("Store information saved", "success");
+        }
+        setStoreInfoSaving(false);
     };
 
     // ── Discount code helpers ──
@@ -882,6 +918,66 @@ export default function AdminSettings({ isActive = true }) {
                                 <div className="mt-4">
                                     <button type="button" onClick={saveWarehouse} disabled={!loaded || warehouseSaving} className="btn-primary py-2.5 px-5 text-sm disabled:opacity-50">
                                         {warehouseSaving ? "Saving…" : "Save Warehouse Address"}
+                                    </button>
+                                </div>
+                            </>
+                        )}
+                    </div>
+                )}
+            </div>
+
+            {/* ── Store Information ── */}
+            <div className="rounded-2xl border border-[#E8E4DE] bg-white">
+                <button type="button" onClick={() => toggleSection("storeinfo")} className="w-full flex items-center justify-between p-5 text-left">
+                    <div>
+                        <div className="text-base font-semibold text-stone-900">Store Information</div>
+                        <div className="mt-0.5 text-xs text-stone-500">Business identity shown in the footer, contact page and policy pages. Required for going live.</div>
+                    </div>
+                    <Chevron open={openSections.has("storeinfo")} />
+                </button>
+                {openSections.has("storeinfo") && (
+                    <div className="px-5 pb-5 border-t border-[#E8E4DE] pt-4">
+                        {storeInfoLoading ? (
+                            <div className="py-4 text-sm text-stone-400 animate-pulse">Loading…</div>
+                        ) : (
+                            <>
+                                <div className="grid gap-4 sm:grid-cols-2">
+                                    <div>
+                                        <label className="text-xs text-stone-400 block mb-1">Legal business name</label>
+                                        <input value={storeInfo.legal_name} onChange={e => setStoreInfo(prev => ({ ...prev, legal_name: e.target.value }))} placeholder="Core Atoms Lifecare Pvt. Ltd."
+                                            className="w-full rounded-xl border border-[#E8E4DE] bg-white px-3 py-2.5 text-sm text-stone-900 placeholder:text-stone-400 focus:ring-2 focus:ring-[#1e3a5f]/20 outline-none" />
+                                    </div>
+                                    <div>
+                                        <label className="text-xs text-stone-400 block mb-1">FSSAI licence number</label>
+                                        <input value={storeInfo.fssai_license} onChange={e => setStoreInfo(prev => ({ ...prev, fssai_license: e.target.value }))} placeholder="10012345678901"
+                                            className="w-full rounded-xl border border-[#E8E4DE] bg-white px-3 py-2.5 text-sm text-stone-900 placeholder:text-stone-400 focus:ring-2 focus:ring-[#1e3a5f]/20 outline-none font-mono" />
+                                        <p className="text-[11px] text-stone-400 mt-1">Shown with the supplement disclaimer in the footer.</p>
+                                    </div>
+                                    <div>
+                                        <label className="text-xs text-stone-400 block mb-1">Support email</label>
+                                        <input type="email" value={storeInfo.support_email} onChange={e => setStoreInfo(prev => ({ ...prev, support_email: e.target.value }))} placeholder="support@coreatoms.in"
+                                            className="w-full rounded-xl border border-[#E8E4DE] bg-white px-3 py-2.5 text-sm text-stone-900 placeholder:text-stone-400 focus:ring-2 focus:ring-[#1e3a5f]/20 outline-none" />
+                                    </div>
+                                    <div>
+                                        <label className="text-xs text-stone-400 block mb-1">Support phone</label>
+                                        <input value={storeInfo.support_phone} onChange={e => setStoreInfo(prev => ({ ...prev, support_phone: e.target.value }))} placeholder="+91 98765 43210"
+                                            className="w-full rounded-xl border border-[#E8E4DE] bg-white px-3 py-2.5 text-sm text-stone-900 placeholder:text-stone-400 focus:ring-2 focus:ring-[#1e3a5f]/20 outline-none" />
+                                    </div>
+                                    <div className="sm:col-span-2">
+                                        <label className="text-xs text-stone-400 block mb-1">Registered address</label>
+                                        <textarea value={storeInfo.address} onChange={e => setStoreInfo(prev => ({ ...prev, address: e.target.value }))} placeholder="Registered office address, city, state, pincode" rows={2}
+                                            className="w-full rounded-xl border border-[#E8E4DE] bg-white px-3 py-2.5 text-sm text-stone-900 placeholder:text-stone-400 focus:ring-2 focus:ring-[#1e3a5f]/20 outline-none resize-none" />
+                                    </div>
+                                    <div className="sm:col-span-2">
+                                        <label className="text-xs text-stone-400 block mb-1">Grievance officer (name)</label>
+                                        <input value={storeInfo.grievance_officer} onChange={e => setStoreInfo(prev => ({ ...prev, grievance_officer: e.target.value }))} placeholder="Full name of the grievance contact"
+                                            className="w-full rounded-xl border border-[#E8E4DE] bg-white px-3 py-2.5 text-sm text-stone-900 placeholder:text-stone-400 focus:ring-2 focus:ring-[#1e3a5f]/20 outline-none" />
+                                        <p className="text-[11px] text-stone-400 mt-1">Published on the Contact page as required by the Consumer Protection (E-Commerce) Rules, 2020.</p>
+                                    </div>
+                                </div>
+                                <div className="mt-4">
+                                    <button type="button" onClick={saveStoreInfo} disabled={!loaded || storeInfoSaving} className="btn-primary py-2.5 px-5 text-sm disabled:opacity-50">
+                                        {storeInfoSaving ? "Saving…" : "Save Store Information"}
                                     </button>
                                 </div>
                             </>

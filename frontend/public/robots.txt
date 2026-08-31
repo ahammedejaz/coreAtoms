@@ -1,0 +1,13 @@
+# Core Atoms — https://www.robotstxt.org/robotstxt.html
+# The storefront is open to crawlers; the admin dashboard and anything that
+# only makes sense for a signed-in shopper is not.
+
+User-agent: *
+Allow: /
+Disallow: /admin
+Disallow: /checkout
+Disallow: /cart
+Disallow: /orders
+Disallow: /login
+Disallow: /reset-password
+Disallow: /forgot-password

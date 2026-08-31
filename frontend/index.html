@@ -5,9 +5,34 @@
   <meta charset="UTF-8" />
   <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <meta name="theme-color" content="#1e3a5f" />
+
+  <!-- Supabase is the only third-party origin the app talks to (data, auth and
+       storage images all come from it). Vite substitutes VITE_SUPABASE_URL at
+       build time; the app refuses to boot without that variable, so it is
+       always present in a real build. -->
+  <link rel="preconnect" href="%VITE_SUPABASE_URL%" crossorigin />
+  <link rel="dns-prefetch" href="%VITE_SUPABASE_URL%" />
+
+  <title>Core Atoms | Nutraceuticals</title>
   <meta name="description"
     content="Core Atoms — Premium nutraceuticals with clean labels, COD available pan-India. Shop multivitamins, joint support, collagen, and more." />
-  <title>Core Atoms | Nutraceuticals</title>
+
+  <!-- Shell defaults so crawlers and link unfurlers that never run JS still see
+       something. components/SEO.jsx sets per-page values at runtime.
+       og:url is deliberately omitted: no production domain is configured
+       anywhere in this repo, and SEO.jsx derives it from the live origin. -->
+  <meta property="og:type" content="website" />
+  <meta property="og:site_name" content="Core Atoms" />
+  <meta property="og:title" content="Core Atoms | Nutraceuticals" />
+  <meta property="og:description"
+    content="Premium nutraceuticals with clean labels, COD available pan-India. Shop multivitamins, joint support, collagen, and more." />
+  <meta property="og:image" content="/logo.png" />
+  <meta name="twitter:card" content="summary_large_image" />
+  <meta name="twitter:title" content="Core Atoms | Nutraceuticals" />
+  <meta name="twitter:description"
+    content="Premium nutraceuticals with clean labels, COD available pan-India. Shop multivitamins, joint support, collagen, and more." />
+  <meta name="twitter:image" content="/logo.png" />
 </head>
 
 <body>

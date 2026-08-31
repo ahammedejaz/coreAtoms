@@ -11,9 +11,12 @@
  *
  * Uses composite cart keys (`productId_variantId`) for variant items.
  *
+ * Also emits Product / BreadcrumbList / FAQPage JSON-LD, each only when the
+ * product genuinely has the data behind it.
+ *
  * @module pages/ProductDetail
  */
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { Link, useNavigate, useParams } from "react-router-dom";
 import { useCart } from "../context/CartContext";
 import { fetchProductById } from "../services/products";
@@ -23,17 +26,60 @@ import PincodeChecker from "../components/PincodeChecker";
 import RichText from "../components/RichText";
 import BenefitIcon from "../components/BenefitIcon";
 import { SkeletonProductDetail } from "../components/Skeleton";
+import { useToast } from "../context/ToastContext";
 
 import { money } from "../utils/format";
 
+const BRAND_NAME = "Core Atoms";
+
 function cartKey(productId, variantId) {
   return variantId ? `${productId}_${variantId}` : String(productId);
+}
+
+/** Collapses pasted line breaks and double spaces into a single meta-safe line. */
+function plainText(value) {
+  return String(value || "").replace(/\s+/g, " ").trim();
+}
+
+/**
+ * Trims to roughly what a SERP snippet shows, cutting on a word boundary.
+ * Product descriptions here run to several thousand characters.
+ */
+function truncateForMeta(value, max = 155) {
+  const clean = plainText(value);
+  if (clean.length <= max) return clean;
+  const cut = clean.slice(0, max);
+  const lastSpace = cut.lastIndexOf(" ");
+  const trimmed = lastSpace > max * 0.5 ? cut.slice(0, lastSpace) : cut;
+  return `${trimmed.replace(/[\s.,;:—-]+$/, "")}…`;
+}
+
+/**
+ * Applies / clears the 2× gallery zoom directly on the <img>. Kept imperative
+ * so pointer moves don't re-render the whole page.
+ */
+function applyZoom(container, clientX, clientY) {
+  const img = container.querySelector("img");
+  if (!img) return;
+  const rect = container.getBoundingClientRect();
+  const x = ((clientX - rect.left) / rect.width) * 100;
+  const y = ((clientY - rect.top) / rect.height) * 100;
+  img.style.transformOrigin = `${x}% ${y}%`;
+  img.style.transform = "scale(2)";
+}
+
+function clearZoom(container) {
+  const img = container?.querySelector("img");
+  if (!img) return;
+  img.style.transformOrigin = "center center";
+  img.style.transform = "scale(1)";
 }
 
 export default function ProductDetail() {
   const { id } = useParams();
   const navigate = useNavigate();
   const { items, addItem, maxItems, updateQty } = useCart();
+  const { showToast } = useToast();
 
   const [product, setProduct] = useState(null);
   const [loading, setLoading] = useState(true);
@@ -95,14 +141,16 @@ export default function ProductDetail() {
 
   const handlePlus = () => {
     if (!id || !product || !canAdd) return;
+    const itemName = selectedVariant ? `${product.name} — ${selectedVariant.label}` : product.name;
     addItem({
       id: activeKey,
-      name: selectedVariant ? `${product.name} — ${selectedVariant.label}` : product.name,
+      name: itemName,
       image: product.image,
       category: product.category,
       price: activePrice,
       unitPrice: activePrice,
     }, 1);
+    showToast(`${itemName} added to cart`, "success");
   };
 
   const handleMinus = () => {
@@ -112,8 +160,98 @@ export default function ProductDetail() {
 
   const images = (product?.images?.length > 0 ? product.images : [product?.image]).filter(Boolean);
 
-  const pageTitle = product ? `${product.name} | Core Atoms` : "Product | Core Atoms";
-  const pageDescription = product?.description || "Premium nutraceutical supplement from Core Atoms.";
+  /* ── Gallery zoom: hover on mouse, tap-to-toggle on touch/pen ── */
+  const galleryRef = useRef(null);
+  const tapStartRef = useRef(null);
+  const tapZoomedRef = useRef(false);
+
+  const resetGalleryZoom = () => {
+    tapZoomedRef.current = false;
+    clearZoom(galleryRef.current);
+  };
+
+  const pageTitle = product ? `${product.name} | ${BRAND_NAME}` : `Product | ${BRAND_NAME}`;
+  // An untruncated description can run past 6,000 characters — no search engine
+  // shows that, and a bloated <meta> is worse than a tight one.
+  const pageDescription = truncateForMeta(product?.description) ||
+    "Premium nutraceutical supplement from Core Atoms.";
+
+  /**
+   * Structured data. Nothing is invented: aggregateRating appears only with
+   * real reviews, FAQPage only with real FAQs, availability comes from stock.
+   */
+  const structuredData = useMemo(() => {
+    if (!product) return [];
+    const origin = typeof window !== "undefined" ? window.location.origin : "";
+    const url = `${origin}/product/${product.id}`;
+    const variants = product.variants || [];
+    const inStock = variants.length > 0
+      ? variants.some((v) => (v.stockQty ?? 0) > 0)
+      : (product.stockQty ?? 0) > 0;
+
+    const productNode = {
+      "@context": "https://schema.org",
+      "@type": "Product",
+      name: product.name,
+      brand: { "@type": "Brand", name: BRAND_NAME },
+      offers: {
+        "@type": "Offer",
+        url,
+        priceCurrency: "INR",
+        price: Number(product.price ?? 0).toFixed(2),
+        availability: inStock ? "https://schema.org/InStock" : "https://schema.org/OutOfStock",
+        seller: { "@type": "Organization", name: BRAND_NAME },
+      },
+    };
+    const description = plainText(product.description);
+    const imageList = (product.images?.length > 0 ? product.images : [product.image]).filter(Boolean);
+    if (description) productNode.description = description;
+    if (product.sku) productNode.sku = product.sku;
+    if (imageList.length > 0) productNode.image = imageList;
+    if (product.category) productNode.category = product.category;
+    if (product.reviewCount > 0 && product.avgRating) {
+      productNode.aggregateRating = {
+        "@type": "AggregateRating",
+        ratingValue: Number(product.avgRating),
+        reviewCount: product.reviewCount,
+        bestRating: 5,
+        worstRating: 1,
+      };
+    }
+
+    // Mirrors the on-page breadcrumb exactly, category segment included.
+    const crumbs = [{ name: "Shop", item: `${origin}/shop` }];
+    if (product.category) {
+      crumbs.push({
+        name: product.category,
+        item: `${origin}/shop?category=${encodeURIComponent(product.category)}`,
+      });
+    }
+    crumbs.push({ name: product.name, item: url });
+    const breadcrumbNode = {
+      "@context": "https://schema.org",
+      "@type": "BreadcrumbList",
+      itemListElement: crumbs.map((c, i) => ({
+        "@type": "ListItem",
+        position: i + 1,
+        name: c.name,
+        item: c.item,
+      })),
+    };
+
+    const faqs = (product.details?.faqs || []).filter((f) => f.q && f.a);
+    const faqNode = faqs.length > 0 ? {
+      "@context": "https://schema.org",
+      "@type": "FAQPage",
+      mainEntity: faqs.map((f) => ({
+        "@type": "Question",
+        name: f.q,
+        acceptedAnswer: { "@type": "Answer", text: f.a },
+      })),
+    } : null;
+
+    return [productNode, breadcrumbNode, faqNode].filter(Boolean);
+  }, [product]);
 
   /* ── Loading skeleton ── */
   if (loading) {
@@ -135,7 +273,23 @@ export default function ProductDetail() {
 
   return (
     <div className="pb-16 overflow-x-hidden">
-      <SEO title={pageTitle} description={pageDescription} ogImage={product.image} />
+      <SEO
+        title={pageTitle}
+        description={pageDescription}
+        ogImage={product.image}
+        canonical={`/product/${product.id}`}
+        type="product"
+      />
+
+      {/* Structured data — stringified, never interpolated. */}
+      {structuredData.map((node) => (
+        <script
+          key={node["@type"]}
+          type="application/ld+json"
+          dangerouslySetInnerHTML={{ __html: JSON.stringify(node) }}
+        />
+      ))}
+
       <div className="mx-auto max-w-6xl px-4 py-6 sm:py-10">
 
         {/* ── Breadcrumb ── */}
@@ -161,30 +315,42 @@ export default function ProductDetail() {
 
           {/* ══ LEFT — Image Gallery ══ */}
           <div className="space-y-3 lg:sticky lg:top-24 lg:self-start min-w-0">
-            {/* Main image with hover zoom */}
+            {/* Main image — hover zoom on mouse, tap-to-toggle zoom on touch,
+                so the cursor-zoom-in affordance isn't a lie on a phone. */}
             <div
+              ref={galleryRef}
               className="rounded-2xl border border-[#E8E4DE] bg-white overflow-hidden cursor-zoom-in aspect-[4/3] sm:aspect-auto sm:h-[440px]"
-              onMouseMove={(e) => {
-                const img = e.currentTarget.querySelector("img");
-                if (!img) return;
-                const rect = e.currentTarget.getBoundingClientRect();
-                const x = ((e.clientX - rect.left) / rect.width) * 100;
-                const y = ((e.clientY - rect.top) / rect.height) * 100;
-                img.style.transformOrigin = `${x}% ${y}%`;
-                img.style.transform = "scale(2)";
+              onPointerMove={(e) => {
+                if (e.pointerType === "mouse") applyZoom(e.currentTarget, e.clientX, e.clientY);
               }}
-              onMouseLeave={(e) => {
-                const img = e.currentTarget.querySelector("img");
-                if (!img) return;
-                img.style.transformOrigin = "center center";
-                img.style.transform = "scale(1)";
+              onPointerLeave={(e) => {
+                if (e.pointerType === "mouse") clearZoom(e.currentTarget);
               }}
+              onPointerDown={(e) => {
+                if (e.pointerType !== "mouse") tapStartRef.current = { x: e.clientX, y: e.clientY };
+              }}
+              onPointerUp={(e) => {
+                if (e.pointerType === "mouse") return;
+                const start = tapStartRef.current;
+                tapStartRef.current = null;
+                // A drag was a scroll, not a tap — leave the zoom alone.
+                if (!start || Math.hypot(e.clientX - start.x, e.clientY - start.y) > 10) return;
+                if (tapZoomedRef.current) {
+                  clearZoom(e.currentTarget);
+                  tapZoomedRef.current = false;
+                } else {
+                  applyZoom(e.currentTarget, e.clientX, e.clientY);
+                  tapZoomedRef.current = true;
+                }
+              }}
+              onPointerCancel={() => { tapStartRef.current = null; resetGalleryZoom(); }}
             >
               <img
                 src={images[activeImg] || product.image}
                 alt={product.name}
                 className="h-full w-full object-cover transition-transform duration-300 ease-out"
-                loading="lazy"
+                loading="eager"
+                fetchPriority="high"
                 sizes="(max-width: 1024px) 100vw, 50vw"
               />
             </div>
@@ -194,15 +360,17 @@ export default function ProductDetail() {
               <div className="flex gap-2 overflow-x-auto pb-1">
                 {images.map((src, i) => (
                   <button
-                    key={i}
+                    key={`${i}-${src}`}
                     type="button"
-                    onClick={() => setActiveImg(i)}
+                    onClick={() => { setActiveImg(i); resetGalleryZoom(); }}
+                    aria-label={`Show image ${i + 1} of ${images.length}`}
+                    aria-current={i === activeImg ? "true" : undefined}
                     className={`shrink-0 h-16 w-16 rounded-xl border-2 overflow-hidden transition-all ${i === activeImg
                       ? "border-[#1e3a5f] shadow-sm"
                       : "border-[#E8E4DE] hover:border-stone-400"
                       }`}
                   >
-                    <img src={src} alt={`View ${i + 1}`} className="h-full w-full object-cover" />
+                    <img src={src} alt="" className="h-full w-full object-cover" />
                   </button>
                 ))}
               </div>

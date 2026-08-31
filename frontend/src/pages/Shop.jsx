@@ -13,8 +13,8 @@
  *
  * @module pages/Shop
  */
-import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { Link, useSearchParams } from "react-router-dom";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useSearchParams } from "react-router-dom";
 import { fetchProducts } from "../services/products";
 import { useCart } from "../context/CartContext";
 import { supabase } from "../services/supabase/client";
@@ -23,7 +23,13 @@ import SEO from "../components/SEO";
 import { useToast } from "../context/ToastContext";
 import ScrollReveal from "../components/ScrollReveal";
 import ProductCard from "../components/ProductCard";
+import { SkeletonGrid } from "../components/Skeleton";
 
+const PAGE_TITLE = "Shop | Core Atoms";
+const PAGE_DESCRIPTION =
+  "Browse our full range of premium nutraceuticals. Clean labels, lab-tested, COD available across India.";
+/** Generic load failure copy — the raw Supabase message stays in the console. */
+const LOAD_ERROR_MESSAGE = "We couldn't load the catalogue just now. Please try again.";
 
 export default function Shop() {
   const { addItem } = useCart();
@@ -42,11 +48,13 @@ export default function Shop() {
       return prev;
     });
   };
+  // `replace` so a search doesn't push one history entry per keystroke —
+  // typing "collagen" used to need eight back presses to leave the page.
   const setQuery = (q) => {
     setSearchParams((prev) => {
       if (!q.trim()) prev.delete("q"); else prev.set("q", q);
       return prev;
-    });
+    }, { replace: true });
   };
 
   // Debounce search for performance
@@ -58,6 +66,9 @@ export default function Shop() {
   const loadProducts = useCallback(async () => {
     try {
       setLoading(true);
+      // Clear first: a failed initial fetch used to leave the red banner up
+      // forever, even after the realtime handler refetched successfully.
+      setErr("");
       const [list, settingsRes] = await Promise.all([
         fetchProducts(),
         supabase.from("app_settings").select("value").eq("key", "gst_percentage").maybeSingle(),
@@ -65,7 +76,8 @@ export default function Shop() {
       setProducts(list);
       setGstPercent(Number(settingsRes?.data?.value?.percentage ?? 0));
     } catch (e) {
-      setErr(e?.message || "Failed to load");
+      console.error("Shop load error:", e);
+      setErr(LOAD_ERROR_MESSAGE);
     } finally {
       setLoading(false);
     }
@@ -103,7 +115,7 @@ export default function Shop() {
     let list = products.filter((p) => p.isActive !== false);
     if (category !== "All") list = list.filter((p) => p.category === category);
     const q = debouncedQuery.trim().toLowerCase();
-    if (q) list = list.filter((p) => p.name.toLowerCase().includes(q) || p.category?.toLowerCase().includes(q));
+    if (q) list = list.filter((p) => p.name?.toLowerCase().includes(q) || p.category?.toLowerCase().includes(q));
     return list;
   }, [products, category, debouncedQuery]);
 
@@ -115,37 +127,33 @@ export default function Shop() {
     return () => clearTimeout(btnTimerRef.current);
   }, []);
 
-  /** Handles adding a product to cart with toast + button feedback. */
-  const handleAdd = (p) => {
+  /** Handles adding a product to cart with toast + button feedback.
+   *  Memoised so `ProductCard`'s React.memo isn't defeated by a fresh callback
+   *  identity on every keystroke in the search box. */
+  const handleAdd = useCallback((p) => {
     addItem(p, 1);
     setJustAddedId(p.id);
     showToast(`${p.name} added to cart`, "success");
     clearTimeout(btnTimerRef.current);
     btnTimerRef.current = setTimeout(() => setJustAddedId(null), 1000);
-  };
+  }, [addItem, showToast]);
 
+  // Loading state still emits <SEO> — a crawler that catches the page mid-load
+  // used to find no title or description at all.
   if (loading) return (
-    <div className="grid gap-5 sm:grid-cols-2 lg:grid-cols-3 py-4">
-      {Array.from({ length: 6 }).map((_, i) => (
-        <div key={i} className="rounded-2xl border border-[#E8E4DE] bg-white overflow-hidden animate-pulse">
-          <div className="h-[220px] bg-stone-100" />
-          <div className="p-5 space-y-3">
-            <div className="h-4 bg-stone-100 rounded w-3/4" />
-            <div className="h-3 bg-stone-100 rounded w-full" />
-            <div className="h-3 bg-stone-100 rounded w-2/3" />
-            <div className="h-10 bg-stone-100 rounded-xl mt-4" />
-          </div>
-        </div>
-      ))}
+    <div className="py-4">
+      <SEO title={PAGE_TITLE} description={PAGE_DESCRIPTION} canonical="/shop" />
+      <SkeletonGrid count={6} />
     </div>
   );
 
   return (
     <div>
+      <SEO title={PAGE_TITLE} description={PAGE_DESCRIPTION} canonical="/shop" />
+
       {/* Page header */}
       <ScrollReveal>
         <div className="mb-8">
-          <SEO title="Shop | Core Atoms" description="Browse our full range of premium nutraceuticals. Clean labels, lab-tested, COD available across India." />
           <p className="section-label">Our Collection</p>
           <h1 className="mt-2 text-3xl font-semibold tracking-tight text-stone-900">Shop</h1>
           <p className="mt-2 text-sm text-stone-500">Premium supplements, clean labels, COD available across India.</p>
@@ -172,6 +180,9 @@ export default function Shop() {
               </svg>
             </div>
             <input
+              id="shop-search"
+              type="search"
+              aria-label="Search products"
               value={query}
               onChange={(e) => setQuery(e.target.value)}
               placeholder="Search products…"
@@ -188,6 +199,8 @@ export default function Shop() {
               </svg>
             </div>
             <select
+              id="shop-category"
+              aria-label="Filter by category"
               value={category}
               onChange={(e) => setCategory(e.target.value)}
               className="appearance-none rounded-xl border border-[#E8E4DE]/80 bg-white/90 pl-10 pr-10 py-2.5 text-sm text-stone-900 outline-none transition-all duration-200 focus:border-[#1e3a5f]/40 focus:ring-[3px] focus:ring-[#1e3a5f]/8 focus:bg-white hover:border-stone-300 cursor-pointer"
@@ -217,7 +230,7 @@ export default function Shop() {
 
 
       {err && (
-        <div className="card p-6 mb-6 text-sm text-red-600">{err}</div>
+        <div className="card p-6 mb-6 text-sm text-red-600" role="alert">{err}</div>
       )}
 
       {active.length === 0 ? (

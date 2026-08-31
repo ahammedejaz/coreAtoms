@@ -7,14 +7,16 @@
  *   gst_percentage (to conditionally show 'Excl. GST & Shipping' on cards)
  *
  * All visible text, images, and links are admin-controlled via AdminHomepage.
- * The hero carousel auto-advances with a 5 s interval.
+ * The hero carousel auto-advances every 3.5 s; when no hero images are
+ * configured (or every configured URL is dead) it falls back to a branded
+ * gradient panel rather than a permanent shimmer.
  * Featured products strip reuses the shared `ProductCard` component.
  *
  * @module pages/Home
  */
 import { Link } from "react-router-dom";
 import { useCart } from "../context/CartContext";
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { fetchProducts } from "../services/products";
 import { supabase } from "../services/supabase/client";
 import ProductCard from "../components/ProductCard";
@@ -25,9 +27,11 @@ import ScrollReveal from "../components/ScrollReveal";
 import PromoBanner from "../components/PromoBanner";
 
 // ── Defaults (shown if admin hasn't saved yet) ────────────────────────────────
-const DEFAULT_HERO_IMAGES = [
-  "/hero/hero-1.jpg", "/hero/hero-2.jpg", "/hero/hero-3.jpg", "/hero/hero-4.jpg",
-];
+/** Hero auto-advance interval, ms. */
+const HERO_INTERVAL_MS = 3500;
+
+/** Generic load failure copy — the raw Supabase message stays in the console. */
+const LOAD_ERROR_MESSAGE = "We couldn't load products just now. Please try again.";
 
 const DEFAULT_HERO_COPY = {
   headline: "Engineered for",
@@ -76,10 +80,14 @@ export default function Home() {
 
   // Settings state
   const [heroReady, setHeroReady] = useState(false);
-  const [heroImages, setHeroImages] = useState(
-    DEFAULT_HERO_IMAGES.map((url) => ({ url, position: "50% 50%" }))
-  );
+  /** `null` until `app_settings` resolves, so the shimmer isn't replaced by the
+   *  branded fallback for a frame before real hero images arrive. */
+  const [heroImages, setHeroImages] = useState(null);
+  /** URLs the browser could not load — hidden so a 404 never sits in the deck. */
+  const [brokenSlides, setBrokenSlides] = useState({});
   const [heroIndex, setHeroIndex] = useState(0);
+  /** Bumped on manual navigation to restart the auto-advance interval. */
+  const [heroTick, setHeroTick] = useState(0);
   const [heroCopy, setHeroCopy] = useState(DEFAULT_HERO_COPY);
   const [pillars, setPillars] = useState(DEFAULT_PILLARS);
   const [categories, setCategories] = useState(DEFAULT_CATEGORIES);
@@ -110,13 +118,14 @@ export default function Home() {
       const map = {};
       (settingsRes.data || []).forEach((row) => { map[row.key] = row.value; });
 
-      // Hero images — support old string[] and new {url,position}[]
-      const rawImgs = Array.isArray(map.homepage_hero_images) && map.homepage_hero_images.length > 0
-        ? map.homepage_hero_images : DEFAULT_HERO_IMAGES;
+      // Hero images — support old string[] and new {url,position}[].
+      // No default list: there are no bundled hero assets to point at, so an
+      // unconfigured hero renders the branded gradient instead of 404s.
+      const rawImgs = Array.isArray(map.homepage_hero_images) ? map.homepage_hero_images : [];
       setHeroImages(rawImgs.map((item) =>
         typeof item === "string"
           ? { url: item, position: "50% 50%" }
-          : { url: item.url || "", position: item.position || "50% 50%" }
+          : { url: item?.url || "", position: item?.position || "50% 50%" }
       ));
 
       // Hero copy
@@ -153,7 +162,8 @@ export default function Home() {
       }
     } catch (e) {
       console.error("Home load error:", e);
-      setFetchError(e?.message || "Failed to load products. Please try again.");
+      setHeroImages((prev) => prev ?? []);
+      setFetchError(LOAD_ERROR_MESSAGE);
     } finally {
       setLoadingProducts(false);
     }
@@ -188,27 +198,40 @@ export default function Home() {
     };
   }, [loadData]);
 
-  // Preload hero images into browser cache so carousel transitions are instant
-  useEffect(() => {
-    if (!heroImages.length) return;
-    heroImages.forEach((slide) => {
-      const img = new window.Image();
-      img.src = slide.url;
-    });
-  }, [heroImages]);
+  // Slides actually worth rendering. Every slide is already in the DOM with
+  // loading="eager", so no separate `new Image()` preload pass is needed.
+  const slides = useMemo(
+    () => (heroImages || []).filter((s) => s.url && !brokenSlides[s.url]),
+    [heroImages, brokenSlides]
+  );
+  /** Settings haven't resolved yet — keep the shimmer, don't flash the fallback. */
+  const heroPending = heroImages === null;
 
-  // Carousel auto-advance
+  // Carousel auto-advance. `heroTick` is in the deps so a dot/arrow click
+  // restarts the countdown instead of being overridden a moment later.
   useEffect(() => {
-    if (heroImages.length <= 1) return;
-    const t = setInterval(() => setHeroIndex((i) => (i + 1) % heroImages.length), 3500);
+    if (slides.length <= 1) return;
+    const t = setInterval(() => setHeroIndex((i) => (i + 1) % slides.length), HERO_INTERVAL_MS);
     return () => clearInterval(t);
-  }, [heroImages]);
+  }, [slides.length, heroTick]);
 
   // Reset carousel index when images change; clamp to valid range if images shrink
   useEffect(() => {
-    if (heroImages.length === 0) return;
-    setHeroIndex((i) => (i >= heroImages.length ? 0 : i));
-  }, [heroImages]);
+    if (slides.length === 0) return;
+    setHeroIndex((i) => (i >= slides.length ? 0 : i));
+  }, [slides.length]);
+
+  /** Manual dot/arrow navigation — also restarts the auto-advance timer. */
+  const goToSlide = useCallback((i) => {
+    setHeroIndex(i);
+    setHeroTick((t) => t + 1);
+  }, []);
+
+  /** A slide 404'd: drop it from the deck and release the shimmer regardless. */
+  const handleSlideError = useCallback((url) => {
+    setBrokenSlides((prev) => ({ ...prev, [url]: true }));
+    setHeroReady(true);
+  }, []);
 
   /** Ref for button feedback timer (avoid polluting `window`). */
   const btnTimerRef = useRef(null);
@@ -218,14 +241,16 @@ export default function Home() {
     return () => clearTimeout(btnTimerRef.current);
   }, []);
 
-  /** Handles adding a product to cart with toast + button feedback. */
-  const handleAdd = (p) => {
+  /** Handles adding a product to cart with toast + button feedback.
+   *  Memoised so `ProductCard`'s React.memo isn't defeated by a fresh
+   *  callback identity on every render. */
+  const handleAdd = useCallback((p) => {
     addItem(p, 1);
     setJustAddedId(p.id);
     showToast(`${p.name} added to cart`, "success");
     clearTimeout(btnTimerRef.current);
     btnTimerRef.current = setTimeout(() => setJustAddedId(null), 900);
-  };
+  }, [addItem, showToast]);
 
   const trust = heroCopy.trustIcons || DEFAULT_HERO_COPY.trustIcons;
 
@@ -234,6 +259,7 @@ export default function Home() {
       <SEO
         title="Core Atoms | Nutraceuticals"
         description="Modern nutraceuticals designed for real routines. Clean formulas, structured stacks, COD available across India."
+        canonical="/"
       />
 
       {/* ── PROMO BANNER (admin-controlled) ─────────────────────────────── */}
@@ -246,69 +272,101 @@ export default function Home() {
         <div className="grid lg:grid-cols-2 gap-0">
 
           {/* LEFT — carousel: aspect-ratio on mobile, stretch to full card height on desktop */}
-          <div className="relative overflow-hidden aspect-[4/3] lg:aspect-auto">
-            {/* Shimmer skeleton — visible until first hero image loads */}
-            <div
-              className={`absolute inset-0 bg-stone-100 transition-opacity duration-500 ${heroReady ? "opacity-0 pointer-events-none" : "opacity-100"
-                }`}
-              style={{ zIndex: 5 }}
-            >
+          <div className="relative overflow-hidden aspect-[4/3] lg:aspect-auto" role="region" aria-roledescription="carousel" aria-label="Featured imagery">
+            {/* Shimmer skeleton — only while there is something still to load.
+                Released by the first onLoad *or* onError, so a dead URL can no
+                longer freeze the hero as a permanent grey block. */}
+            {(heroPending || slides.length > 0) && (
               <div
-                className="absolute inset-0"
-                style={{
-                  background: "linear-gradient(90deg, transparent 0%, rgba(255,255,255,0.5) 50%, transparent 100%)",
-                  backgroundSize: "200% 100%",
-                  animation: "shimmer 1.5s infinite",
-                }}
-              />
-            </div>
-
-            <div className="absolute inset-0">
-              {heroImages.map((slide, i) => (
+                className={`absolute inset-0 bg-stone-100 transition-opacity duration-500 ${heroReady ? "opacity-0 pointer-events-none" : "opacity-100"
+                  }`}
+                style={{ zIndex: 5 }}
+              >
                 <div
-                  key={i}
-                  className="absolute inset-0 transition-opacity duration-700"
-                  style={{ opacity: i === heroIndex ? 1 : 0, zIndex: i === heroIndex ? 1 : 0 }}
-                >
-                  <img
-                    src={slide.url}
-                    alt={`Hero ${i + 1}`}
-                    className="absolute inset-0 h-full w-full object-cover"
-                    style={{ objectPosition: slide.position || "50% 50%" }}
-                    loading="eager"
-                    fetchPriority={i === 0 ? "high" : "auto"}
-                    sizes="(max-width: 1024px) 100vw, 50vw"
-                    onLoad={i === 0 ? () => setHeroReady(true) : undefined}
-                  />
-                  <div className="absolute inset-0 bg-gradient-to-r from-white/20 via-transparent to-transparent" />
-                </div>
-              ))}
-            </div>
+                  className="absolute inset-0"
+                  style={{
+                    background: "linear-gradient(90deg, transparent 0%, rgba(255,255,255,0.5) 50%, transparent 100%)",
+                    backgroundSize: "200% 100%",
+                    animation: "shimmer 1.5s infinite",
+                  }}
+                />
+              </div>
+            )}
+
+            {slides.length > 0 ? (
+              <div className="absolute inset-0">
+                {slides.map((slide, i) => (
+                  <div
+                    key={`${i}-${slide.url}`}
+                    className="absolute inset-0 transition-opacity duration-700"
+                    style={{ opacity: i === heroIndex ? 1 : 0, zIndex: i === heroIndex ? 1 : 0 }}
+                  >
+                    <img
+                      src={slide.url}
+                      alt={`Hero ${i + 1}`}
+                      className="absolute inset-0 h-full w-full object-cover"
+                      style={{ objectPosition: slide.position || "50% 50%" }}
+                      loading="eager"
+                      fetchPriority={i === 0 ? "high" : "auto"}
+                      sizes="(max-width: 1024px) 100vw, 50vw"
+                      onLoad={i === 0 ? () => setHeroReady(true) : undefined}
+                      onError={() => handleSlideError(slide.url)}
+                    />
+                    <div className="absolute inset-0 bg-gradient-to-r from-white/20 via-transparent to-transparent" />
+                  </div>
+                ))}
+              </div>
+            ) : !heroPending && (
+              /* Branded fallback — no hero images configured, or every URL is
+                 dead. Pure CSS gradient plus the bundled logo, so nothing 404s. */
+              <div
+                className="absolute inset-0 flex items-center justify-center"
+                style={{ background: "linear-gradient(135deg, #1e3a5f 0%, #2f5c8f 55%, #1e3a5f 100%)" }}
+              >
+                <div
+                  className="absolute inset-0"
+                  style={{ background: "radial-gradient(ellipse at 30% 25%, rgba(255,255,255,0.16), transparent 55%)" }}
+                />
+                <img
+                  src="/logo.png"
+                  alt="Core Atoms"
+                  className="relative h-16 w-auto opacity-95 sm:h-20"
+                  loading="eager"
+                  fetchPriority="high"
+                />
+              </div>
+            )}
 
             {/* Dots */}
-            <div className="absolute bottom-5 left-6 flex gap-2" style={{ zIndex: 10 }}>
-              {heroImages.map((_, i) => (
-                <button key={i} type="button" onClick={() => setHeroIndex(i)}
-                  className={`h-2 rounded-full transition-all duration-300 ${i === heroIndex ? "w-6 bg-white shadow" : "w-2 bg-white/50"}`} />
-              ))}
-            </div>
+            {slides.length > 1 && (
+              <div className="absolute bottom-5 left-6 flex gap-2" style={{ zIndex: 10 }}>
+                {slides.map((slide, i) => (
+                  <button key={`${i}-${slide.url}`} type="button" onClick={() => goToSlide(i)}
+                    aria-label={`Show slide ${i + 1} of ${slides.length}`}
+                    aria-current={i === heroIndex ? "true" : undefined}
+                    className={`h-2 rounded-full transition-all duration-300 ${i === heroIndex ? "w-6 bg-white shadow" : "w-2 bg-white/50"}`} />
+                ))}
+              </div>
+            )}
 
             {/* Arrows */}
-            {heroImages.length > 1 && (
-              <div style={{ zIndex: 10 }} className="contents">
+            {slides.length > 1 && (
+              <>
                 <button type="button"
-                  onClick={() => setHeroIndex((heroIndex - 1 + heroImages.length) % heroImages.length)}
+                  onClick={() => goToSlide((heroIndex - 1 + slides.length) % slides.length)}
+                  aria-label="Previous slide"
                   className="absolute left-4 top-1/2 -translate-y-1/2 h-9 w-9 rounded-full bg-white/80 backdrop-blur-sm border border-white/60 shadow flex items-center justify-center text-stone-700 hover:bg-white transition"
                   style={{ zIndex: 10 }}>
-                  <svg className="h-4 w-4" viewBox="0 0 20 20" fill="none" stroke="currentColor" strokeWidth="2.5"><path d="M13 16l-6-6 6-6" /></svg>
+                  <svg className="h-4 w-4" viewBox="0 0 20 20" fill="none" stroke="currentColor" strokeWidth="2.5" aria-hidden="true"><path d="M13 16l-6-6 6-6" /></svg>
                 </button>
                 <button type="button"
-                  onClick={() => setHeroIndex((heroIndex + 1) % heroImages.length)}
+                  onClick={() => goToSlide((heroIndex + 1) % slides.length)}
+                  aria-label="Next slide"
                   className="absolute right-4 top-1/2 -translate-y-1/2 h-9 w-9 rounded-full bg-white/80 backdrop-blur-sm border border-white/60 shadow flex items-center justify-center text-stone-700 hover:bg-white transition"
                   style={{ zIndex: 10 }}>
-                  <svg className="h-4 w-4" viewBox="0 0 20 20" fill="none" stroke="currentColor" strokeWidth="2.5"><path d="M7 4l6 6-6 6" /></svg>
+                  <svg className="h-4 w-4" viewBox="0 0 20 20" fill="none" stroke="currentColor" strokeWidth="2.5" aria-hidden="true"><path d="M7 4l6 6-6 6" /></svg>
                 </button>
-              </div>
+              </>
             )}
           </div>
 

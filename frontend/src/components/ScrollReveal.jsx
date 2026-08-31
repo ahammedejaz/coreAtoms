@@ -4,10 +4,14 @@
  * Uses IntersectionObserver to animate children when they enter the viewport.
  * Supports multiple animation variants and stagger delays.
  *
+ * Children start at `opacity-0`, so anyone who has asked their OS to reduce
+ * motion gets them rendered visible and untransformed straight away — the
+ * observer never runs for them.
+ *
  * @param {{ children, variant?, delay?, threshold?, className?, as? }} props
  * @module components/ScrollReveal
  */
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useRef, useState, useSyncExternalStore } from "react";
 
 const VARIANTS = {
     "fade-up": "translate-y-8 opacity-0",
@@ -17,6 +21,23 @@ const VARIANTS = {
     "fade": "opacity-0",
     "scale": "scale-95 opacity-0",
 };
+
+const REDUCED_MOTION_QUERY = "(prefers-reduced-motion: reduce)";
+
+function subscribeToMotionPreference(onChange) {
+    const mq = window.matchMedia(REDUCED_MOTION_QUERY);
+    mq.addEventListener("change", onChange);
+    return () => mq.removeEventListener("change", onChange);
+}
+
+/** True when the visitor has asked the OS/browser to reduce motion. */
+function usePrefersReducedMotion() {
+    return useSyncExternalStore(
+        subscribeToMotionPreference,
+        () => window.matchMedia(REDUCED_MOTION_QUERY).matches,
+        () => false
+    );
+}
 
 export default function ScrollReveal({
     children,
@@ -28,8 +49,10 @@ export default function ScrollReveal({
 }) {
     const ref = useRef(null);
     const [visible, setVisible] = useState(false);
+    const reduceMotion = usePrefersReducedMotion();
 
     useEffect(() => {
+        if (reduceMotion) return;
         const el = ref.current;
         if (!el) return;
 
@@ -45,9 +68,14 @@ export default function ScrollReveal({
 
         observer.observe(el);
         return () => observer.disconnect();
-    }, [threshold]);
+    }, [threshold, reduceMotion]);
 
     const hiddenClass = VARIANTS[variant] || VARIANTS["fade-up"];
+
+    // Reduced motion: no transition, no transform, no hidden start state.
+    if (reduceMotion) {
+        return <Tag ref={ref} className={className}>{children}</Tag>;
+    }
 
     return (
         <Tag

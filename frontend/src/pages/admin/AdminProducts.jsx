@@ -16,7 +16,7 @@
  *
  * @module pages/admin/AdminProducts
  */
-import { Fragment, useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { supabase } from "../../services/supabase/client";
 import ImagePositionAdjuster from "../../components/ImagePositionAdjuster";
 import { SkeletonAdminTable } from "../../components/Skeleton";
@@ -29,21 +29,36 @@ import useKeyboardShortcut from "../../hooks/useKeyboardShortcut";
 
 const LOW_STOCK_THRESHOLD = 5;
 const PRODUCT_BUCKET = "product-images";
+const MAX_IMAGE_BYTES = 5 * 1024 * 1024; // 5 MB
+const MAX_HIGHLIGHTS = 6;
 
-export default function AdminProducts({ onProductsChange }) {
+/**
+ * `image_position` is used verbatim as a CSS `objectPosition` by the storefront.
+ * Older rows may carry a `"50% 50%/1.25"` zoom suffix from a previous version of
+ * the adjuster — CSS cannot use it, so keep only the focal point.
+ */
+const cleanImagePosition = (val) =>
+    String(val || "").split("/")[0].trim() || "50% 50%";
+
+export default function AdminProducts({ onProductsChange, isActive = true }) {
     const { showToast } = useToast();
     // -------------------- Products (Admin CRUD) --------------------
     const [products, setProducts] = useState([]);
     const [loadingProducts, setLoadingProducts] = useState(true);
     const [productErr, setProductErr] = useState("");
     const [confirmDlg, setConfirmDlg] = useState(null);
+    const [confirmBusy, setConfirmBusy] = useState(false);
 
-    // Ctrl+S → save product (when form is open)
-    const saveProductRef = useRef(null);
+    // Ctrl+S → save product (when this tab is on screen and the form is open).
+    // Routed through requestSave so it gets the same confirmation, dirty check
+    // and re-entrancy guard as the visible Save buttons.
+    const requestSaveRef = useRef(null);
     const showProductFormRef = useRef(false);
     const handleCtrlS = useCallback((e) => {
-        if (showProductFormRef.current) { e.preventDefault(); saveProductRef.current?.(); }
-    }, []);
+        if (!isActive || !showProductFormRef.current) return;
+        e.preventDefault();
+        requestSaveRef.current?.();
+    }, [isActive]);
     useKeyboardShortcut("ctrl+s", handleCtrlS);
 
     const [showProductForm, setShowProductForm] = useState(false);
@@ -76,7 +91,7 @@ export default function AdminProducts({ onProductsChange }) {
     // -------------------- Extra images (product_images table) --------------------
     const [extraImages, setExtraImages] = useState([]); // [{ id, image_url, sort_order }]
     const [extraImageFiles, setExtraImageFiles] = useState([]); // pending uploads
-    const [, setUploadingExtra] = useState(false);
+    const [extraImagePreviews, setExtraImagePreviews] = useState([]); // blob URLs, index-aligned
     const extraFileInputRef = useRef(null);
 
     // Inline stock edit
@@ -93,6 +108,49 @@ export default function AdminProducts({ onProductsChange }) {
     const formRef = useRef(null);
     const initialFormState = useRef(null);
     const initialVariants = useRef([]);
+    // Bumped on every form open/reset so a slow image/variant load from a
+    // previously edited product can't land on the form that replaced it.
+    const editRequestRef = useRef(0);
+    // Blob URL currently shown as the main-image preview, so it can be revoked.
+    const mainPreviewUrlRef = useRef(null);
+
+    // Blob previews for the pending extra-image uploads. Minted in an effect
+    // (never during render) and revoked when the file list changes or unmounts.
+    useEffect(() => {
+        const urls = extraImageFiles.map((f) => URL.createObjectURL(f));
+        setExtraImagePreviews(urls);
+        return () => urls.forEach((u) => URL.revokeObjectURL(u));
+    }, [extraImageFiles]);
+
+    useEffect(() => () => {
+        if (mainPreviewUrlRef.current) URL.revokeObjectURL(mainPreviewUrlRef.current);
+    }, []);
+
+    /** Points the main preview at a picked file, revoking the previous blob. */
+    const setMainPreviewFile = (file) => {
+        if (mainPreviewUrlRef.current) {
+            URL.revokeObjectURL(mainPreviewUrlRef.current);
+            mainPreviewUrlRef.current = null;
+        }
+        if (!file) return null;
+        const url = URL.createObjectURL(file);
+        mainPreviewUrlRef.current = url;
+        return url;
+    };
+
+    /** `accept="image/*"` is only a hint — enforce type and size before upload. */
+    const isAcceptableImage = (file) => {
+        if (!file) return false;
+        if (!String(file.type || "").startsWith("image/")) {
+            showToast(`"${file.name}" is not an image file`, "error");
+            return false;
+        }
+        if (file.size > MAX_IMAGE_BYTES) {
+            showToast(`"${file.name}" is larger than 5 MB`, "error");
+            return false;
+        }
+        return true;
+    };
 
     // NOTE: Ensure this bucket exists in Supabase Storage
 
@@ -106,11 +164,13 @@ export default function AdminProducts({ onProductsChange }) {
                 `
         id,
         name,
+        sku,
         category,
         description,
         price_inr,
         stock_qty,
         image_url,
+        image_position,
         is_active,
         created_at,
         about_text,
@@ -159,6 +219,8 @@ export default function AdminProducts({ onProductsChange }) {
 
     // -------------------- Helpers --------------------
     const resetProductForm = () => {
+        editRequestRef.current += 1; // cancel any in-flight image/variant loads
+        setMainPreviewFile(null);
         setEditingId(null);
         setPName("");
         setPSku("");
@@ -202,7 +264,12 @@ export default function AdminProducts({ onProductsChange }) {
     };
 
     const openEditProduct = (p) => {
-        // form close handled by parent
+        // Clear the previous product out first: without this, a rapid
+        // Edit A → Edit B leaves A's images/variants attached to B's form and
+        // the next save writes them onto B.
+        resetProductForm();
+        const reqId = editRequestRef.current;
+
         setEditingId(p.id);
         setPName(p.name || "");
         setPSku(p.sku || "");
@@ -213,15 +280,17 @@ export default function AdminProducts({ onProductsChange }) {
         setPActive(p.is_active !== false);
         setPImageUrl(p.image_url || "");
         setPImagePreview(p.image_url || "");
-        setPImagePosition(p.image_position || "50% 50%");
+        setPImagePosition(cleanImagePosition(p.image_position));
         setExtraImageFiles([]);
         // Load existing extra images from product_images table
         (async () => {
-            const { data } = await supabase
+            const { data, error } = await supabase
                 .from("product_images")
                 .select("id,image_url,sort_order")
                 .eq("product_id", p.id)
                 .order("sort_order", { ascending: true });
+            if (reqId !== editRequestRef.current) return; // a newer form is open
+            if (error) { showToast(error.message, "error"); return; }
             setExtraImages(data || []);
         })();
         setPAboutText(p.about_text || "");
@@ -240,7 +309,7 @@ export default function AdminProducts({ onProductsChange }) {
             stock: String(p.stock_qty ?? ""),
             desc: p.description || "",
             active: p.is_active !== false,
-            imagePosition: p.image_position || "50% 50%",
+            imagePosition: cleanImagePosition(p.image_position),
             aboutText: p.about_text || "",
             bestFor: p.best_for || "",
             pairsWellWith: p.pairs_well_with || "",
@@ -252,11 +321,13 @@ export default function AdminProducts({ onProductsChange }) {
         // Load variants
         setVariantErr("");
         (async () => {
-            const { data: vData } = await supabase
+            const { data: vData, error } = await supabase
                 .from("product_variants")
                 .select("id,label,price_inr,stock_qty,sku,sort_order,is_active")
                 .eq("product_id", p.id)
                 .order("sort_order", { ascending: true });
+            if (reqId !== editRequestRef.current) return; // a newer form is open
+            if (error) { setVariantErr(error.message); return; }
             const loaded = (vData || []).map((v) => ({ ...v, _dirty: false }));
             setVariants(loaded);
             initialVariants.current = loaded;
@@ -287,30 +358,25 @@ export default function AdminProducts({ onProductsChange }) {
 
     const uploadAndSaveExtraImages = async (productId) => {
         if (extraImageFiles.length === 0) return;
-        setUploadingExtra(true);
-        try {
-            // Get current max sort_order
-            const currentMax = extraImages.reduce((m, img) => Math.max(m, img.sort_order ?? 0), -1);
-            const inserts = [];
-            for (let i = 0; i < extraImageFiles.length; i++) {
-                const file = extraImageFiles[i];
-                const ext = String(file.name || "").split(".").pop().toLowerCase() || "jpg";
-                const path = `products/${Date.now()}-${Math.random().toString(16).slice(2)}.${ext}`;
-                const { error: upErr } = await supabase.storage
-                    .from(PRODUCT_BUCKET)
-                    .upload(path, file, { cacheControl: "3600", upsert: false });
-                if (upErr) throw new Error(upErr.message);
-                const { data } = supabase.storage.from(PRODUCT_BUCKET).getPublicUrl(path);
-                if (data?.publicUrl) {
-                    inserts.push({ product_id: productId, image_url: data.publicUrl, sort_order: currentMax + 1 + i });
-                }
+        // Get current max sort_order
+        const currentMax = extraImages.reduce((m, img) => Math.max(m, img.sort_order ?? 0), -1);
+        const inserts = [];
+        for (let i = 0; i < extraImageFiles.length; i++) {
+            const file = extraImageFiles[i];
+            const ext = String(file.name || "").split(".").pop().toLowerCase() || "jpg";
+            const path = `products/${Date.now()}-${Math.random().toString(16).slice(2)}.${ext}`;
+            const { error: upErr } = await supabase.storage
+                .from(PRODUCT_BUCKET)
+                .upload(path, file, { cacheControl: "3600", upsert: false });
+            if (upErr) throw new Error(upErr.message);
+            const { data } = supabase.storage.from(PRODUCT_BUCKET).getPublicUrl(path);
+            if (data?.publicUrl) {
+                inserts.push({ product_id: productId, image_url: data.publicUrl, sort_order: currentMax + 1 + i });
             }
-            if (inserts.length > 0) {
-                const { error } = await supabase.from("product_images").insert(inserts);
-                if (error) throw new Error(error.message);
-            }
-        } finally {
-            setUploadingExtra(false);
+        }
+        if (inserts.length > 0) {
+            const { error } = await supabase.from("product_images").insert(inserts);
+            if (error) throw new Error(error.message);
         }
     };
 
@@ -333,24 +399,43 @@ export default function AdminProducts({ onProductsChange }) {
     const moveExtraImage = async (imgId, direction) => {
         const idx = extraImages.findIndex((img) => img.id === imgId);
         const swapIdx = direction === "up" ? idx - 1 : idx + 1;
-        if (swapIdx < 0 || swapIdx >= extraImages.length) return;
+        if (idx < 0 || swapIdx < 0 || swapIdx >= extraImages.length) return;
 
-        const updated = [...extraImages];
-        const tmp = updated[idx].sort_order;
-        updated[idx] = { ...updated[idx], sort_order: updated[swapIdx].sort_order };
-        updated[swapIdx] = { ...updated[swapIdx], sort_order: tmp };
-        [updated[idx], updated[swapIdx]] = [updated[swapIdx], updated[idx]];
-        setExtraImages(updated);
+        // Renumber from the display order rather than swapping the two stored
+        // values: rows added before sort_order was populated hold NULL, and
+        // swapping NULL with NULL is a no-op that snaps back on reload.
+        const previous = extraImages;
+        const reordered = [...previous];
+        [reordered[idx], reordered[swapIdx]] = [reordered[swapIdx], reordered[idx]];
+        const renumbered = reordered.map((img, i) => ({ ...img, sort_order: i }));
+        setExtraImages(renumbered);
 
-        // Persist sort_order to DB
-        await supabase.from("product_images").update({ sort_order: updated[idx].sort_order }).eq("id", updated[idx].id);
-        await supabase.from("product_images").update({ sort_order: updated[swapIdx].sort_order }).eq("id", updated[swapIdx].id);
+        const before = new Map(previous.map((img) => [img.id, img.sort_order]));
+        const changed = renumbered.filter((img) => before.get(img.id) !== img.sort_order);
+        const results = await Promise.all(
+            changed.map((img) =>
+                supabase.from("product_images").update({ sort_order: img.sort_order }).eq("id", img.id)
+            )
+        );
+        const err = results.find((r) => r.error)?.error;
+        if (err) {
+            // A partial write would leave two rows sharing a sort_order — roll
+            // the UI back so it keeps matching the database.
+            setExtraImages(previous);
+            showToast(err.message, "error");
+        }
     };
 
+    /**
+     * Persists the variant rows and returns the list with freshly inserted ids
+     * filled in. Throws on the first failure so the caller cannot report a
+     * successful save; the message is also surfaced inline via `variantErr`.
+     */
     const saveVariants = async (productId) => {
         setVariantErr("");
-        for (let i = 0; i < variants.length; i++) {
-            const v = variants[i];
+        const saved = [...variants];
+        for (let i = 0; i < saved.length; i++) {
+            const v = saved[i];
             const label = String(v.label || "").trim();
             if (!label) continue;
             const price = Number(v.price_inr);
@@ -371,13 +456,20 @@ export default function AdminProducts({ onProductsChange }) {
             if (v.id) {
                 // existing row — update
                 const { error } = await supabase.from("product_variants").update(payload).eq("id", v.id);
-                if (error) { setVariantErr(error.message); return; }
+                if (error) { setVariantErr(error.message); throw new Error(`Variant "${label}": ${error.message}`); }
             } else {
-                // new row — insert
-                const { error } = await supabase.from("product_variants").insert({ ...payload });
-                if (error) { setVariantErr(error.message); return; }
+                // new row — insert, keeping the id so a second save updates this
+                // row instead of inserting a duplicate
+                const { data: inserted, error } = await supabase
+                    .from("product_variants")
+                    .insert({ ...payload })
+                    .select("id")
+                    .single();
+                if (error) { setVariantErr(error.message); throw new Error(`Variant "${label}": ${error.message}`); }
+                saved[i] = { ...v, id: inserted?.id };
             }
         }
+        return saved;
     };
 
     const saveProduct = async () => {
@@ -387,8 +479,25 @@ export default function AdminProducts({ onProductsChange }) {
             const name = String(pName || "").trim();
             const category = String(pCategory || "").trim();
             const description = String(pDesc || "").trim();
-            const price = Number(pPrice);
-            const stock = Number(pStock);
+            const priceRaw = String(pPrice ?? "").trim();
+            const stockRaw = String(pStock ?? "").trim();
+
+            // Number("") is 0, so a blank field would otherwise publish a ₹0
+            // product. When variants own the pricing the base inputs are
+            // disabled, so fall back to the cheapest variant and the combined
+            // variant stock instead of failing the save.
+            const variantPrices = variants
+                .map((v) => Number(v.price_inr))
+                .filter((n) => Number.isFinite(n) && n >= 0);
+            const variantStocks = variants
+                .map((v) => Number(v.stock_qty))
+                .filter((n) => Number.isFinite(n) && n >= 0);
+            const price = priceRaw !== ""
+                ? Number(priceRaw)
+                : (variantPrices.length ? Math.min(...variantPrices) : NaN);
+            const stock = stockRaw !== ""
+                ? Number(stockRaw)
+                : (variantStocks.length ? variantStocks.reduce((s, n) => s + n, 0) : NaN);
 
             if (!name) throw new Error("Product name is required");
             if (!Number.isFinite(price) || price < 0)
@@ -431,7 +540,7 @@ export default function AdminProducts({ onProductsChange }) {
                 price_inr: price,
                 stock_qty: stock,
                 image_url: image_url || null,
-                image_position: pImagePosition || "50% 50%",
+                image_position: cleanImagePosition(pImagePosition),
                 is_active: !!pActive,
                 about_text: String(pAboutText || "").trim() || null,
                 best_for: String(pBestFor || "").trim() || null,
@@ -442,6 +551,7 @@ export default function AdminProducts({ onProductsChange }) {
                 updated_at: new Date().toISOString(),
             };
 
+            let savedVariants;
             if (editingId) {
                 const { error } = await supabase
                     .from("products")
@@ -449,7 +559,7 @@ export default function AdminProducts({ onProductsChange }) {
                     .eq("id", editingId);
                 if (error) throw new Error(error.message);
                 await uploadAndSaveExtraImages(editingId);
-                await saveVariants(editingId);
+                savedVariants = await saveVariants(editingId);
                 showToast("Product updated successfully", "success");
             } else {
                 const { data: inserted, error } = await supabase
@@ -459,9 +569,17 @@ export default function AdminProducts({ onProductsChange }) {
                     .single();
                 if (error) throw new Error(error.message);
                 await uploadAndSaveExtraImages(inserted.id);
-                await saveVariants(inserted.id);
+                savedVariants = await saveVariants(inserted.id);
+                // Switch the open form to edit mode — without this the next save
+                // re-enters the insert branch and creates a duplicate product.
+                setEditingId(inserted.id);
                 showToast("Product created successfully", "success");
             }
+
+            // Reflect any value the save derived (price/stock from variants) back
+            // into the form so the snapshot below matches what is on screen.
+            setPPrice(String(price));
+            setPStock(String(stock));
 
             // Sync snapshot so isDirty resets to false
             initialFormState.current = {
@@ -472,7 +590,7 @@ export default function AdminProducts({ onProductsChange }) {
                 stock: String(stock),
                 desc: description,
                 active: !!pActive,
-                imagePosition: pImagePosition || "50% 50%",
+                imagePosition: cleanImagePosition(pImagePosition),
                 aboutText: String(pAboutText || "").trim(),
                 bestFor: String(pBestFor || "").trim(),
                 pairsWellWith: String(pPairsWellWith || "").trim(),
@@ -481,7 +599,10 @@ export default function AdminProducts({ onProductsChange }) {
                 detailsJson: JSON.stringify(normalizeProductDetails(detailsEmpty ? null : detailsClean)),
             };
             setPDetails(normalizeProductDetails(detailsEmpty ? null : detailsClean));
-            initialVariants.current = variants.map((v) => ({ ...v }));
+            // Keep the ids the inserts returned, otherwise the next save inserts
+            // the same variants again.
+            setVariants(savedVariants);
+            initialVariants.current = savedVariants.map((v) => ({ ...v }));
 
             await loadProducts();
             setPFile(null);
@@ -494,7 +615,6 @@ export default function AdminProducts({ onProductsChange }) {
             setSavingProduct(false);
         }
     };
-    saveProductRef.current = saveProduct;
     showProductFormRef.current = showProductForm;
 
     useEffect(() => {
@@ -577,9 +697,10 @@ export default function AdminProducts({ onProductsChange }) {
         return false;
     }, [editingId, pName, pSku, pCategory, pPrice, pStock, pDesc, pActive, pImagePosition, pAboutText, pBestFor, pPairsWellWith, pRecommendedStack, pHighlights, pDetails, pFile, extraImageFiles, variants]);
 
-    // One save entry point so the header button and the sticky bar share the
-    // same confirmation flow.
+    // One save entry point so the header button, the sticky bar and Ctrl+S all
+    // share the same confirmation, dirty check and re-entrancy guard.
     const requestSave = () => {
+        if (savingProduct || !isDirty) return;
         setConfirmDlg({
             title: editingId ? "Save changes?" : "Create product?",
             message: editingId
@@ -592,6 +713,22 @@ export default function AdminProducts({ onProductsChange }) {
                 await saveProduct();
             },
         });
+    };
+    requestSaveRef.current = requestSave;
+
+    /** Adds a card highlight, explaining out loud when the add is dropped. */
+    const addHighlight = (raw) => {
+        const val = String(raw || "").trim().replace(/,$/, "");
+        if (!val) return;
+        if (pHighlights.includes(val)) {
+            showToast(`"${val}" is already added`, "info");
+            return;
+        }
+        if (pHighlights.length >= MAX_HIGHLIGHTS) {
+            showToast(`Up to ${MAX_HIGHLIGHTS} highlights per product — remove one first`, "error");
+            return;
+        }
+        setPHighlights((prev) => [...prev, val]);
     };
 
     // Detect monograph headings in the About text and lift them into the
@@ -878,10 +1015,7 @@ export default function AdminProducts({ onProductsChange }) {
                                             onKeyDown={(e) => {
                                                 if ((e.key === "Enter" || e.key === ",") && pHighlightInput.trim()) {
                                                     e.preventDefault();
-                                                    const val = pHighlightInput.trim().replace(/,$/, "");
-                                                    if (val && !pHighlights.includes(val) && pHighlights.length < 6) {
-                                                        setPHighlights(prev => [...prev, val]);
-                                                    }
+                                                    addHighlight(pHighlightInput);
                                                     setPHighlightInput("");
                                                 }
                                             }}
@@ -891,13 +1025,10 @@ export default function AdminProducts({ onProductsChange }) {
                                         <button
                                             type="button"
                                             onClick={() => {
-                                                const val = pHighlightInput.trim().replace(/,$/, "");
-                                                if (val && !pHighlights.includes(val) && pHighlights.length < 6) {
-                                                    setPHighlights(prev => [...prev, val]);
-                                                }
+                                                addHighlight(pHighlightInput);
                                                 setPHighlightInput("");
                                             }}
-                                            disabled={!pHighlightInput.trim() || pHighlights.length >= 6}
+                                            disabled={!pHighlightInput.trim() || pHighlights.length >= MAX_HIGHLIGHTS}
                                             className="rounded-xl border border-[#E8E4DE] bg-white px-3 py-2 text-xs font-semibold text-stone-700 hover:bg-stone-50 disabled:opacity-40 transition"
                                         >
                                             Add
@@ -911,9 +1042,7 @@ export default function AdminProducts({ onProductsChange }) {
                                             <button
                                                 key={preset}
                                                 type="button"
-                                                onClick={() => {
-                                                    if (pHighlights.length < 6) setPHighlights(prev => [...prev, preset]);
-                                                }}
+                                                onClick={() => addHighlight(preset)}
                                                 className="rounded-full border border-dashed border-stone-300 bg-white px-2.5 py-0.5 text-[10px] text-stone-500 hover:border-[#1e3a5f] hover:text-[#1e3a5f] transition"
                                             >
                                                 + {preset}
@@ -986,8 +1115,13 @@ export default function AdminProducts({ onProductsChange }) {
                                                                     confirmLabel: "Remove variant",
                                                                     variant: "danger",
                                                                     onConfirm: async () => {
+                                                                        setConfirmBusy(true);
+                                                                        const { error } = await supabase.from("product_variants").delete().eq("id", v.id);
+                                                                        setConfirmBusy(false);
                                                                         setConfirmDlg(null);
-                                                                        await supabase.from("product_variants").delete().eq("id", v.id);
+                                                                        // Without this an RLS/network failure removes the
+                                                                        // row from the UI only, and it reappears on reopen.
+                                                                        if (error) { showToast(error.message, "error"); return; }
                                                                         setVariants(prev => prev.filter((_, j) => j !== i));
                                                                         showToast("Variant removed", "success");
                                                                     },
@@ -1101,8 +1235,13 @@ export default function AdminProducts({ onProductsChange }) {
                                                 className="hidden"
                                                 onChange={(e) => {
                                                     const f = e.target.files?.[0] || null;
+                                                    if (f && !isAcceptableImage(f)) {
+                                                        e.target.value = "";
+                                                        return;
+                                                    }
                                                     setPFile(f);
-                                                    if (f) setPImagePreview(URL.createObjectURL(f));
+                                                    const url = setMainPreviewFile(f);
+                                                    if (url) setPImagePreview(url);
                                                 }}
                                             />
                                         </label>
@@ -1113,7 +1252,7 @@ export default function AdminProducts({ onProductsChange }) {
                                                         src={pImagePreview}
                                                         alt="Preview"
                                                         className="absolute inset-0 h-full w-full object-cover"
-                                                        style={{ objectPosition: pImagePosition.includes("/") ? pImagePosition.split("/")[0].trim() : pImagePosition }}
+                                                        style={{ objectPosition: cleanImagePosition(pImagePosition) }}
                                                     />
                                                 </div>
                                                 <div className="flex flex-col gap-1.5 justify-center">
@@ -1126,7 +1265,7 @@ export default function AdminProducts({ onProductsChange }) {
                                                         className="inline-flex items-center gap-1.5 rounded-lg border border-[#E8E4DE] bg-stone-50 px-2.5 py-1.5 text-xs font-medium text-stone-700 hover:border-[#1e3a5f]/40 hover:bg-[#EFF6FF] transition w-fit"
                                                     >
                                                         <svg className="h-3 w-3 text-[#1e3a5f]" viewBox="0 0 20 20" fill="currentColor"><path d="M5 3a2 2 0 00-2 2v2a2 2 0 002 2h2a2 2 0 002-2V5a2 2 0 00-2-2H5zM5 11a2 2 0 00-2 2v2a2 2 0 002 2h2a2 2 0 002-2v-2a2 2 0 00-2-2H5zM11 5a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2h-2a2 2 0 01-2-2V5zM14 11a1 1 0 011 1v1h1a1 1 0 110 2h-1v1a1 1 0 11-2 0v-1h-1a1 1 0 110-2h1v-1a1 1 0 011-1z" /></svg>
-                                                        Adjust position & zoom
+                                                        Adjust position
                                                     </button>
                                                     {pImagePosition !== "50% 50%" && (
                                                         <div className="text-[10px] text-stone-400 font-mono">{pImagePosition}</div>
@@ -1200,10 +1339,10 @@ export default function AdminProducts({ onProductsChange }) {
                                         multiple
                                         className="hidden"
                                         onChange={(e) => {
-                                            const files = Array.from(e.target.files || []);
+                                            const files = Array.from(e.target.files || []).filter(isAcceptableImage);
+                                            if (extraFileInputRef.current) extraFileInputRef.current.value = "";
                                             if (!files.length) return;
                                             setExtraImageFiles((prev) => [...prev, ...files]);
-                                            if (extraFileInputRef.current) extraFileInputRef.current.value = "";
                                         }}
                                     />
 
@@ -1215,12 +1354,16 @@ export default function AdminProducts({ onProductsChange }) {
                                             </div>
                                             <div className="flex flex-wrap gap-2">
                                                 {extraImageFiles.map((f, i) => (
-                                                    <div key={i} className="relative group">
-                                                        <img
-                                                            src={URL.createObjectURL(f)}
-                                                            alt=""
-                                                            className="h-16 w-16 rounded-xl border-2 border-amber-300 object-cover"
-                                                        />
+                                                    <div key={`${f.name}-${f.lastModified}-${i}`} className="relative group">
+                                                        {extraImagePreviews[i] ? (
+                                                            <img
+                                                                src={extraImagePreviews[i]}
+                                                                alt=""
+                                                                className="h-16 w-16 rounded-xl border-2 border-amber-300 object-cover"
+                                                            />
+                                                        ) : (
+                                                            <div className="h-16 w-16 rounded-xl border-2 border-amber-300 bg-stone-100" />
+                                                        )}
                                                         <button
                                                             type="button"
                                                             onClick={() => setExtraImageFiles((prev) => prev.filter((_, idx) => idx !== i))}
@@ -1346,14 +1489,32 @@ export default function AdminProducts({ onProductsChange }) {
                             <SkeletonAdminTable rows={4} />
                         ) : productErr ? (
                             <div className="text-sm text-red-600">{productErr}</div>
-                        ) : products.length === 0 ? (
+                        ) : filteredProducts.length === 0 ? (
+                            // Rows come from the filtered list, so an empty search
+                            // result must say so instead of "No products yet".
                             <div className="mt-8 flex flex-col items-center py-10 text-center">
                                 <div className="h-14 w-14 rounded-2xl bg-stone-100 flex items-center justify-center mb-4">
                                     <svg className="h-7 w-7 text-stone-400" viewBox="0 0 20 20" fill="currentColor"><path fillRule="evenodd" d="M10 2a4 4 0 00-4 4v1H5a1 1 0 00-.994.89l-1 9A1 1 0 004 18h12a1 1 0 00.994-1.11l-1-9A1 1 0 0015 7h-1V6a4 4 0 00-4-4zm2 5V6a2 2 0 10-4 0v1h4zm-6 3a1 1 0 112 0 1 1 0 01-2 0zm7-1a1 1 0 100 2 1 1 0 000-2z" clipRule="evenodd" /></svg>
                                 </div>
-                                <div className="text-sm font-semibold text-stone-700">No products yet</div>
-                                <p className="mt-1 text-xs text-stone-400 max-w-xs">Add your first product to get started.</p>
-                                <button type="button" onClick={openAddProduct} className="btn-primary mt-4 text-sm">+ Add product</button>
+                                <div className="text-sm font-semibold text-stone-700">
+                                    {productSearch ? "No matching products" : "No products yet"}
+                                </div>
+                                <p className="mt-1 text-xs text-stone-400 max-w-xs">
+                                    {productSearch
+                                        ? "No product matches that name or category."
+                                        : "Add your first product to get started."}
+                                </p>
+                                {productSearch ? (
+                                    <button
+                                        type="button"
+                                        onClick={() => setProductSearch("")}
+                                        className="mt-4 rounded-xl border border-[#E8E4DE] bg-white px-3 py-2 text-xs font-semibold text-stone-700 hover:bg-stone-50 transition"
+                                    >
+                                        Clear search
+                                    </button>
+                                ) : (
+                                    <button type="button" onClick={openAddProduct} className="btn-primary mt-4 text-sm">+ Add product</button>
+                                )}
                             </div>
                         ) : (
                             <div className="mt-2">
@@ -1373,7 +1534,7 @@ export default function AdminProducts({ onProductsChange }) {
                                                                 src={p.image_url}
                                                                 alt={p.name}
                                                                 className="h-full w-full object-cover"
-                                                                style={{ objectPosition: p.image_position || "50% 50%" }}
+                                                                style={{ objectPosition: cleanImagePosition(p.image_position) }}
                                                                 loading="lazy"
                                                             />
                                                         ) : null}
@@ -1422,7 +1583,7 @@ export default function AdminProducts({ onProductsChange }) {
                                                                                 min={0}
                                                                                 autoFocus
                                                                             />
-                                                                            <button type="button" onClick={() => saveInlineStock(p.id)} className="text-[10px] font-semibold text-stone-900">Save</button>
+                                                                            <button type="button" onClick={() => saveInlineStock(p.id)} disabled={savingInlineStock} className="text-[10px] font-semibold text-stone-900 disabled:opacity-40">{savingInlineStock ? "…" : "Save"}</button>
                                                                             <button type="button" onClick={() => { setInlineStockId(null); setInlineStockValue(""); }} className="text-[10px] text-stone-400">✕</button>
                                                                         </div>
                                                                     ) : (
@@ -1635,14 +1796,13 @@ export default function AdminProducts({ onProductsChange }) {
                 </div>
             </div>
 
-            {/* Image Position & Zoom Adjuster Modal */}
+            {/* Image Position Adjuster Modal */}
             {showImageAdjuster && pImagePreview && (
                 <ImagePositionAdjuster
                     src={pImagePreview}
                     position={pImagePosition}
-                    showZoom
                     aspectRatio="37/22"
-                    onSave={(val) => setPImagePosition(val)}
+                    onSave={(val) => setPImagePosition(cleanImagePosition(val))}
                     onClose={() => setShowImageAdjuster(false)}
                 />
             )}
@@ -1650,7 +1810,8 @@ export default function AdminProducts({ onProductsChange }) {
             {confirmDlg && (
                 <ConfirmDialog
                     {...confirmDlg}
-                    onCancel={() => setConfirmDlg(null)}
+                    loading={confirmBusy}
+                    onCancel={() => { if (!confirmBusy) setConfirmDlg(null); }}
                 />
             )}
         </>

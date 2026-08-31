@@ -74,7 +74,10 @@ function SectionHeader({ step, title, desc }) {
 
 
 // ── Main Component ────────────────────────────────────────────────────────────
-export default function AdminHomepage({ products = [] }) {
+export default function AdminHomepage({ products = [], isActive = true }) {
+    // Refuses to save until a load has succeeded — see load() below.
+    const [loaded, setLoaded] = useState(false);
+    const [loadErr, setLoadErr] = useState("");
     const { showToast } = useToast();
     // ── Logo ─────────────────────────────────────────────────────────────────
     const [logoUrl, setLogoUrl] = useState("");
@@ -122,13 +125,24 @@ export default function AdminHomepage({ products = [] }) {
 
     const load = async () => {
         setLoading(true);
-        const { data } = await supabase
+        setLoadErr("");
+        const { data, error } = await supabase
             .from("app_settings")
             .select("key,value")
             .in("key", [
                 "homepage_hero_images", "homepage_hero_copy", "homepage_featured_products",
                 "homepage_pillars", "homepage_categories", "homepage_philosophy", "site_logo",
             ]);
+
+        // Every field below falls back to a hardcoded default. If the read
+        // failed, saving those defaults would publish them over the live
+        // homepage — so refuse to save until a load has actually succeeded.
+        if (error) {
+            setLoaded(false);
+            setLoadErr(error.message);
+            setLoading(false);
+            return;
+        }
 
         const map = {};
         (data || []).forEach((row) => { map[row.key] = row.value; });
@@ -154,7 +168,9 @@ export default function AdminHomepage({ products = [] }) {
         setBody(c.body || DEFAULT_COPY.body);
         setPrimaryCta(c.primaryCta || DEFAULT_COPY.primaryCta);
         setSecondaryCta(c.secondaryCta || DEFAULT_COPY.secondaryCta);
-        if (Array.isArray(c.trustIcons) && c.trustIcons.length === 3) setTrust(c.trustIcons);
+        // Any stored length is honoured. Requiring exactly 3 silently replaced a
+        // saved array of 2 or 4 with the defaults, which the next save wrote back.
+        if (Array.isArray(c.trustIcons) && c.trustIcons.length > 0) setTrust(c.trustIcons);
 
         // Pillars
         if (Array.isArray(map.homepage_pillars) && map.homepage_pillars.length > 0) setPillars(map.homepage_pillars);
@@ -172,16 +188,27 @@ export default function AdminHomepage({ products = [] }) {
         setPhiloBody(ph.body || DEFAULT_PHILOSOPHY.body);
         setPhiloCta(ph.cta || DEFAULT_PHILOSOPHY.cta);
 
+        setLoaded(true);
         setLoading(false);
     };
 
     // ── Keyboard shortcut: Ctrl+S to save ────────────────────────────────────
+    // Every admin tab stays mounted (see AdminDashboard), so without the
+    // isActive guard one Ctrl+S fired every tab's save at once.
     const saveRef = useRef(null);
-    const handleCtrlS = useCallback((e) => { e.preventDefault(); saveRef.current?.(); }, []);
+    const handleCtrlS = useCallback((e) => {
+        if (!isActive) return;
+        e.preventDefault();
+        saveRef.current?.();
+    }, [isActive]);
     useKeyboardShortcut("ctrl+s", handleCtrlS);
 
     // ── Save ─────────────────────────────────────────────────────────────────
     const save = async () => {
+        if (!loaded) {
+            setMsg("Homepage settings could not be loaded, so saving is disabled — reload and try again.");
+            return;
+        }
         setSaving(true);
         setMsg("");
         setImgErr("");
@@ -253,6 +280,18 @@ export default function AdminHomepage({ products = [] }) {
     return (
         <div className="space-y-5 max-w-4xl">
 
+            {loadErr && (
+                <div role="alert" className="rounded-2xl border border-red-200 bg-red-50 px-4 py-3">
+                    <div className="text-sm font-semibold text-red-800">Could not load the homepage settings</div>
+                    <p className="mt-1 text-xs text-red-700">
+                        Saving is disabled so the editor cannot overwrite your live homepage with its defaults. {loadErr}
+                    </p>
+                    <button type="button" onClick={load} className="mt-2 text-xs font-semibold text-red-800 underline">
+                        Try again
+                    </button>
+                </div>
+            )}
+
             {/* ── Sticky save bar ── */}
             <div className="sticky top-0 z-20 -mx-1 flex flex-col sm:flex-row sm:items-center justify-between gap-3 rounded-2xl border border-[#E8E4DE] bg-white/90 backdrop-blur px-4 sm:px-5 py-3 shadow-sm">
                 <div className="min-w-0">
@@ -261,7 +300,7 @@ export default function AdminHomepage({ products = [] }) {
                 </div>
                 <div className="flex items-center gap-3 shrink-0">
                     {msg && <span className={`text-xs sm:text-sm truncate max-w-[180px] sm:max-w-none ${msg.includes("failed") ? "text-red-600" : "text-emerald-600"}`}>{msg}</span>}
-                    <button type="button" onClick={save} disabled={saving} className="btn-primary disabled:opacity-50 px-5 py-2 text-sm">
+                    <button type="button" onClick={save} disabled={!loaded || saving} className="btn-primary disabled:opacity-50 px-5 py-2 text-sm">
                         {saving ? "Saving…" : "Save all"}
                     </button>
                 </div>
@@ -533,7 +572,7 @@ export default function AdminHomepage({ products = [] }) {
             {/* Bottom save */}
             <div className="flex items-center justify-end gap-3 pb-6">
                 {msg && <span className={`text-sm ${msg.includes("failed") ? "text-red-600" : "text-emerald-600"}`}>{msg}</span>}
-                <button type="button" onClick={save} disabled={saving} className="btn-primary disabled:opacity-50 px-6 py-2.5">
+                <button type="button" onClick={save} disabled={!loaded || saving} className="btn-primary disabled:opacity-50 px-6 py-2.5">
                     {saving ? "Saving…" : "Save all"}
                 </button>
             </div>

@@ -105,25 +105,35 @@ export default function AdminDashboard() {
     const [replacementCount, setReplacementCount] = useState(0);
 
     const stats = useMemo(() => {
+        const statusOf = (o) => String(o.status || "").toLowerCase();
+        const countOf = (status) => orders.filter((o) => statusOf(o) === status).length;
+
         const totalOrders = orders.length;
         const totalRevenue = orders
-            .filter((o) => String(o.status || "").toLowerCase() === "delivered")
+            .filter((o) => statusOf(o) === "delivered")
             .reduce((s, o) => s + Number(o.computed_total_inr || 0), 0);
         const activeProducts = products.filter((p) => p.is_active).length;
         const lowStock = products.filter(
             (p) => p.is_active && Number(p.stock_qty || 0) <= LOW_STOCK_THRESHOLD
         ).length;
+        // Needs admin attention — an order still waiting to be picked up and shipped.
         const pendingOrders = orders.filter(
-            (o) => ["placed", "processing"].includes(String(o.status || "").toLowerCase())
+            (o) => ["placed", "confirmed", "processing"].includes(statusOf(o))
         ).length;
+        // Every live order that has not been delivered (or cancelled / failed) yet,
+        // so each status sits in exactly one of the two money buckets.
         const pendingSalesAmount = orders
-            .filter((o) => ["placed", "processing", "shipped"].includes(String(o.status || "").toLowerCase()))
+            .filter((o) => ["placed", "confirmed", "processing", "shipped", "out_for_delivery"].includes(statusOf(o)))
             .reduce((s, o) => s + Number(o.computed_total_inr || 0), 0);
-        const placedCount = orders.filter((o) => String(o.status || "").toLowerCase() === "placed").length;
-        const processingCount = orders.filter((o) => String(o.status || "").toLowerCase() === "processing").length;
-        const shippedCount = orders.filter((o) => String(o.status || "").toLowerCase() === "shipped").length;
-        const deliveredCount = orders.filter((o) => String(o.status || "").toLowerCase() === "delivered").length;
-        return { totalOrders, totalRevenue, activeProducts, lowStock, pendingOrders, pendingSalesAmount, placedCount, processingCount, shippedCount, deliveredCount };
+        return {
+            totalOrders, totalRevenue, activeProducts, lowStock, pendingOrders, pendingSalesAmount,
+            placedCount: countOf("placed"),
+            confirmedCount: countOf("confirmed"),
+            processingCount: countOf("processing"),
+            shippedCount: countOf("shipped"),
+            outForDeliveryCount: countOf("out_for_delivery"),
+            deliveredCount: countOf("delivered"),
+        };
     }, [orders, products]);
 
     if (!profile || profile.role !== "admin") {
@@ -207,29 +217,26 @@ export default function AdminDashboard() {
                         icon={STAT_ICONS.pending}
                         label="Pending Sales"
                         value={`₹${stats.pendingSalesAmount.toLocaleString("en-IN")}`}
-                        sub="Placed · Processing · Shipped"
+                        sub="Everything not yet delivered"
                         warn={stats.pendingSalesAmount > 0} warnColor="blue"
                         iconBg="bg-sky-50" iconColor="text-sky-500"
                     />
                     <div className="rounded-2xl border border-[#E8E4DE] bg-white p-4 shadow-sm transition-shadow hover:shadow-md h-full flex flex-col justify-center">
                         <div className="text-[11px] font-medium uppercase tracking-wide text-stone-400 mb-3">Order Status</div>
-                        <div className="space-y-2">
-                            <div className="flex items-center justify-between gap-2">
-                                <span className="inline-flex items-center rounded-full bg-green-50 px-2 py-0.5 text-[10px] font-semibold text-green-700">Placed</span>
-                                <span className="text-sm font-bold text-stone-900">{stats.placedCount}</span>
-                            </div>
-                            <div className="flex items-center justify-between gap-2">
-                                <span className="inline-flex items-center rounded-full bg-yellow-50 px-2 py-0.5 text-[10px] font-semibold text-yellow-700">Processing</span>
-                                <span className="text-sm font-bold text-stone-900">{stats.processingCount}</span>
-                            </div>
-                            <div className="flex items-center justify-between gap-2">
-                                <span className="inline-flex items-center rounded-full bg-blue-50 px-2 py-0.5 text-[10px] font-semibold text-blue-700">Shipped</span>
-                                <span className="text-sm font-bold text-stone-900">{stats.shippedCount}</span>
-                            </div>
-                            <div className="flex items-center justify-between gap-2">
-                                <span className="inline-flex items-center rounded-full bg-emerald-50 px-2 py-0.5 text-[10px] font-semibold text-emerald-700">Delivered</span>
-                                <span className="text-sm font-bold text-stone-900">{stats.deliveredCount}</span>
-                            </div>
+                        <div className="space-y-1.5">
+                            {[
+                                { label: "Placed", value: stats.placedCount, cls: "bg-green-50 text-green-700" },
+                                { label: "Confirmed", value: stats.confirmedCount, cls: "bg-teal-50 text-teal-700" },
+                                { label: "Processing", value: stats.processingCount, cls: "bg-yellow-50 text-yellow-700" },
+                                { label: "Shipped", value: stats.shippedCount, cls: "bg-blue-50 text-blue-700" },
+                                { label: "Out for Delivery", value: stats.outForDeliveryCount, cls: "bg-indigo-50 text-indigo-700" },
+                                { label: "Delivered", value: stats.deliveredCount, cls: "bg-emerald-50 text-emerald-700" },
+                            ].map((row) => (
+                                <div key={row.label} className="flex items-center justify-between gap-2">
+                                    <span className={`inline-flex items-center rounded-full px-2 py-0.5 text-[10px] font-semibold ${row.cls}`}>{row.label}</span>
+                                    <span className="text-sm font-bold text-stone-900">{row.value}</span>
+                                </div>
+                            ))}
                         </div>
                     </div>
                     <StatCard icon={STAT_ICONS.products} label="Active Products" value={stats.activeProducts} iconBg="bg-violet-50" iconColor="text-violet-500" />
@@ -263,13 +270,16 @@ export default function AdminDashboard() {
                     </div>
                 </div>
 
-                {/* ── Tab Panels — always mounted, hidden via CSS ── */}
+                {/* ── Tab Panels — always mounted, hidden via CSS ──
+                    Every tab registers its own global Ctrl+S listener, so each one
+                    gets `isActive` and ignores the shortcut unless it is on screen.
+                    Without it a single Ctrl+S fires all seven tabs' handlers. */}
                 <div className="mt-6">
-                    <div {...panel("products")}><AdminProducts onProductsChange={setProducts} /></div>
-                    <div {...panel("orders")}  ><AdminOrders onOrdersChange={setOrders} /></div>
-                    <div {...panel("settings")}><AdminSettings /></div>
-                    <div {...panel("reviews")} ><AdminReviews onCountChange={setReviewCount} /></div>
-                    <div {...panel("homepage")}><AdminHomepage products={products} /></div>
+                    <div {...panel("products")}><AdminProducts onProductsChange={setProducts} isActive={activeTab === "products"} /></div>
+                    <div {...panel("orders")}  ><AdminOrders onOrdersChange={setOrders} isActive={activeTab === "orders"} /></div>
+                    <div {...panel("settings")}><AdminSettings isActive={activeTab === "settings"} /></div>
+                    <div {...panel("reviews")} ><AdminReviews onCountChange={setReviewCount} isActive={activeTab === "reviews"} /></div>
+                    <div {...panel("homepage")}><AdminHomepage products={products} isActive={activeTab === "homepage"} /></div>
                     <div {...panel("replacements")}><AdminReplacements onCountChange={setReplacementCount} /></div>
                     <div {...panel("corecoins")}><AdminCoreCoins /></div>
                 </div>

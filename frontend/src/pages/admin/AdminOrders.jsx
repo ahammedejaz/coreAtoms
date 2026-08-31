@@ -6,7 +6,8 @@
  * filterable, paginated table with expandable detail cards.
  *
  * Features:
- *  - Status pipeline: placed → processing → shipped → delivered / cancelled
+ *  - Status pipeline: placed → confirmed → processing → shipped →
+ *    out_for_delivery → delivered / cancelled
  *  - Payment Breakdown card: items subtotal, shipping, GST, CoreCoins discount, total
  *    (reads stored shipping_amount / gst_amount; falls back to derivation for old orders)
  *  - Delhivery shipping: create shipment → assign waybill + tracking URL on order
@@ -27,12 +28,13 @@ import useKeyboardShortcut from "../../hooks/useKeyboardShortcut";
 import ShipmentTracker from "../../components/ShipmentTracker";
 
 
-export default function AdminOrders({ onOrdersChange }) {
+export default function AdminOrders({ onOrdersChange, isActive = true }) {
     const { showToast } = useToast();
     const [orders, setOrders] = useState([]);
     const [loadingOrders, setLoadingOrders] = useState(false);
     const [orderErr, setOrderErr] = useState("");
     const [confirmDlg, setConfirmDlg] = useState(null);
+    const [confirmBusy, setConfirmBusy] = useState(false);
     const [shippingOrderId, setShippingOrderId] = useState(null); // order currently being shipped via Delhivery
     const [warehouse, setWarehouse] = useState(null);
     const [testMode, setTestMode] = useState(() => localStorage.getItem("admin_test_mode") === "true");
@@ -45,9 +47,14 @@ export default function AdminOrders({ onOrdersChange }) {
         });
     };
 
-    // Ctrl+S → export CSV
+    // Ctrl+S → export CSV. Every admin tab stays mounted, so this only fires
+    // while the Orders tab is the one on screen.
     const exportRef = useRef(null);
-    const handleCtrlS = useCallback((e) => { e.preventDefault(); exportRef.current?.(); }, []);
+    const handleCtrlS = useCallback((e) => {
+        if (!isActive) return;
+        e.preventDefault();
+        exportRef.current?.();
+    }, [isActive]);
     useKeyboardShortcut("ctrl+s", handleCtrlS);
     const [orderSearch, setOrderSearch] = useState("");
     const [orderStatusFilter, setOrderStatusFilter] = useState("All");
@@ -63,10 +70,13 @@ export default function AdminOrders({ onOrdersChange }) {
         });
     };
 
-    const STATUS_OPTIONS = ["placed", "processing", "shipped", "out_for_delivery", "delivered", "cancelled"];
+    // Statuses an admin may assign. `payment_failed` is set by the payment flow
+    // only — it still needs a label and a badge so it renders correctly.
+    const STATUS_OPTIONS = ["placed", "confirmed", "processing", "shipped", "out_for_delivery", "delivered", "cancelled"];
 
     const STATUS_LABELS = {
         placed: "Placed",
+        confirmed: "Confirmed",
         processing: "Processing",
         shipped: "Shipped",
         out_for_delivery: "Out for Delivery",
@@ -77,12 +87,23 @@ export default function AdminOrders({ onOrdersChange }) {
 
     const STATUS_BADGE = {
         placed: "bg-green-50 text-green-700",
+        confirmed: "bg-teal-50 text-teal-700",
         processing: "bg-yellow-50 text-yellow-700",
         shipped: "bg-blue-50 text-blue-700",
         out_for_delivery: "bg-indigo-50 text-indigo-700",
         delivered: "bg-emerald-50 text-emerald-700",
         cancelled: "bg-red-50 text-red-700",
         payment_failed: "bg-red-50 text-red-700",
+    };
+
+    /**
+     * The one rule the per-row status <select> enforces — Test Mode only, and
+     * never once a waybill exists or the parcel has left. The bulk action uses
+     * the same predicate so it cannot quietly revert a shipped order.
+     */
+    const canEditStatus = (o) => {
+        const st = String(o?.status || "").trim().toLowerCase();
+        return testMode && !o?.delhivery_waybill && st !== "shipped" && st !== "delivered";
     };
 
     // ── WhatsApp click-to-chat ────────────────────────────────────
@@ -149,6 +170,14 @@ export default function AdminOrders({ onOrdersChange }) {
             `Hello ${name}!\n\nYour order *#${id}* has been *successfully delivered*!\n\nWe hope you're enjoying your Core Atoms products. Your wellness journey just got an upgrade!\n\n*View your order details:*\nhttps://${SITE_URL}/orders\n\n*We'd love your feedback!* If you have a moment, a quick review would mean the world to us.\n\nThank you for choosing Core Atoms - we're always here if you need anything!\n\nWarmly,\n*Team Core Atoms*`,
         cancelled: (name, id) =>
             `Hello ${name},\n\nWe'd like to inform you that your order *#${id}* has been *cancelled*.\n\nIf this was unintentional, or if you'd like to place a new order, we're here to assist you right away.\n\n*Visit our store:*\nhttps://${SITE_URL}/shop\n\nYour satisfaction is our priority - don't hesitate to reach out!\n\nBest regards,\n*Team Core Atoms*`,
+        confirmed: (name, id) =>
+            `Hello ${name}!\n\nGood news - your order *#${id}* is *confirmed*.\n\nWe've received everything we need and your order is queued for processing. We'll message you again the moment it ships.\n\n*Track your order anytime:*\nhttps://${SITE_URL}/orders\n\nThank you for choosing Core Atoms!\n\nWarm regards,\n*Team Core Atoms*`,
+        payment_failed: (name, id) =>
+            `Hello ${name},\n\nWe were unable to confirm the payment for your order *#${id}*, so it has not been placed.\n\nIf money left your account it will be refunded automatically by your bank. You're welcome to try again whenever you're ready.\n\n*Retry your order:*\nhttps://${SITE_URL}/cart\n\nReply here and we'll gladly help you complete it.\n\nBest regards,\n*Team Core Atoms*`,
+        // Neutral fallback — never claim an order was placed successfully for a
+        // status we have no copy for.
+        generic: (name, id) =>
+            `Hello ${name},\n\nAn update on your Core Atoms order *#${id}*.\n\n*View your order:*\nhttps://${SITE_URL}/orders\n\nReply here if you need any help - we're happy to assist.\n\nWarm regards,\n*Team Core Atoms*`,
     };
 
     const getWhatsAppUrl = (order) => {
@@ -158,7 +187,7 @@ export default function AdminOrders({ onOrdersChange }) {
         const intlPhone = phone.startsWith("+") ? phone : `+91${phone}`;
         const name = order.shipping_name || order.user_full_name || "there";
         const st = String(order.status || "placed").toLowerCase();
-        const msgFn = WA_MESSAGES[st] || WA_MESSAGES.placed;
+        const msgFn = WA_MESSAGES[st] || WA_MESSAGES.generic;
         const shortId = String(order.id || "").slice(0, 8);
         const text = encodeURIComponent(msgFn(name, shortId));
         return `https://wa.me/${intlPhone.replace("+", "")}?text=${text}`;
@@ -211,20 +240,48 @@ export default function AdminOrders({ onOrdersChange }) {
 
     const applyBulkStatus = () => {
         if (!bulkStatus || selectedOrderIds.size === 0) return;
-        const count = selectedOrderIds.size;
+
+        // Apply the same guards the per-row <select> enforces — otherwise a
+        // shipped order with a Delhivery waybill can be reverted to "placed".
+        const selected = orders.filter((o) => selectedOrderIds.has(o.id));
+        const eligible = selected.filter(canEditStatus);
+        const skipped = selected.length - eligible.length;
+
+        if (eligible.length === 0) {
+            showToast(
+                testMode
+                    ? "None of the selected orders can change status — they are shipped, delivered, or already have a waybill"
+                    : "Enable Test Mode to change order status",
+                "error"
+            );
+            return;
+        }
+
         setConfirmDlg({
             title: "Bulk status update",
-            message: `Set ${count} order(s) to "${STATUS_LABELS[bulkStatus] || bulkStatus}"?`,
-            confirmLabel: `Update ${count} orders`,
+            message: `Set ${eligible.length} order(s) to "${STATUS_LABELS[bulkStatus] || bulkStatus}"?`
+                + (skipped > 0 ? ` ${skipped} locked order(s) will be skipped.` : ""),
+            confirmLabel: `Update ${eligible.length} orders`,
             variant: "info",
             onConfirm: async () => {
-                setConfirmDlg(null);
+                setConfirmBusy(true);
                 setApplyingBulk(true);
-                const ids = Array.from(selectedOrderIds);
-                const { error } = await supabase.from("orders").update({ status: bulkStatus }).in("id", ids);
+                const ids = eligible.map((o) => o.id);
+                const updatePayload = { status: bulkStatus };
+                // Same stamp the single-order path writes — MyOrders derives the
+                // replacement window from delivered_at, so skipping it here left
+                // bulk-delivered orders replaceable forever.
+                if (bulkStatus === "delivered") updatePayload.delivered_at = new Date().toISOString();
+                const { error } = await supabase.from("orders").update(updatePayload).in("id", ids);
                 setApplyingBulk(false);
+                setConfirmBusy(false);
+                setConfirmDlg(null);
                 if (error) { showToast(error.message, "error"); return; }
-                showToast(`${count} order(s) → ${STATUS_LABELS[bulkStatus]}`, "success");
+                showToast(
+                    `${ids.length} order(s) → ${STATUS_LABELS[bulkStatus]}`
+                    + (skipped > 0 ? ` · ${skipped} skipped` : ""),
+                    "success"
+                );
                 setSelectedOrderIds(new Set());
                 setBulkStatus("");
                 load();
@@ -271,6 +328,7 @@ export default function AdminOrders({ onOrdersChange }) {
           ),
           order_items (
             product_id,
+            product_name,
             qty,
             unit_price_inr,
             line_total_inr,
@@ -349,7 +407,10 @@ export default function AdminOrders({ onOrdersChange }) {
 
                     return {
                         product_id: it?.product_id,
-                        product_name: it?.products?.name || "",
+                        // Prefer the snapshot stored on the line item — the join
+                        // is empty once the product row is deleted, which would
+                        // render historical orders as "Product #null".
+                        product_name: it?.product_name || it?.products?.name || "",
                         variant_label: it?.variant_label || "",
                         qty: it?.qty,
                         qty_num: Number.isFinite(qtyNum) ? qtyNum : 0,
@@ -462,6 +523,18 @@ export default function AdminOrders({ onOrdersChange }) {
     // Reset page when filters change
     useEffect(() => { setOrderPage(1); }, [orderSearch, orderStatusFilter, orderDateFrom, orderDateTo]);
 
+    const hasActiveFilters =
+        !!orderSearch || orderStatusFilter !== "All" || !!orderDateFrom || !!orderDateTo;
+
+    const clearFilters = () => {
+        setOrderSearch("");
+        setOrderStatusFilter("All");
+        setOrderDateFrom("");
+        setOrderDateTo("");
+        setSelectedOrderIds(new Set());
+        setBulkStatus("");
+    };
+
     // -------------------- CSV Export --------------------
     const exportOrdersCSV = () => {
         const rows = filteredOrders;
@@ -502,14 +575,22 @@ export default function AdminOrders({ onOrdersChange }) {
         });
 
         const csv = [headers.map(escape).join(","), ...csvRows].join("\n");
-        const blob = new Blob([csv], { type: "text/csv;charset=utf-8;" });
+        // Leading BOM so Excel reads the file as UTF-8 and renders ₹ correctly.
+        const blob = new Blob(["\uFEFF" + csv], { type: "text/csv;charset=utf-8;" });
         const url = URL.createObjectURL(blob);
         const a = document.createElement("a");
         a.href = url;
         const dateStr = new Date().toISOString().slice(0, 10);
         a.download = `coreatoms-orders-${dateStr}.csv`;
+        a.style.display = "none";
+        // Some browsers ignore a click on a detached anchor, and revoking the
+        // URL synchronously cancels the download that click just started.
+        document.body.appendChild(a);
         a.click();
-        URL.revokeObjectURL(url);
+        setTimeout(() => {
+            a.remove();
+            URL.revokeObjectURL(url);
+        }, 1000);
     };
     exportRef.current = exportOrdersCSV;
 
@@ -612,12 +693,10 @@ export default function AdminOrders({ onOrdersChange }) {
                                 className="mt-1 w-full rounded-xl border border-[#E8E4DE] bg-white px-3 py-2 text-sm text-stone-900 focus:ring-2 focus:ring-[#1e3a5f]/20 outline-none"
                             >
                                 <option value="All">All</option>
-                                <option value="placed">Placed</option>
-                                <option value="processing">Processing</option>
-                                <option value="shipped">Shipped</option>
-                                <option value="out_for_delivery">Out for Delivery</option>
-                                <option value="delivered">Delivered</option>
-                                <option value="cancelled">Cancelled</option>
+                                {STATUS_OPTIONS.map((s) => (
+                                    <option key={s} value={s}>{STATUS_LABELS[s]}</option>
+                                ))}
+                                <option value="payment_failed">{STATUS_LABELS.payment_failed}</option>
                             </select>
                         </div>
 
@@ -704,14 +783,7 @@ export default function AdminOrders({ onOrdersChange }) {
 
                             <button
                                 type="button"
-                                onClick={() => {
-                                    setOrderSearch("");
-                                    setOrderStatusFilter("All");
-                                    setOrderDateFrom("");
-                                    setOrderDateTo("");
-                                    setSelectedOrderIds(new Set());
-                                    setBulkStatus("");
-                                }}
+                                onClick={clearFilters}
                                 className="rounded-xl border border-[#1e3a5f]/30 bg-white px-3 py-2 text-xs font-semibold text-[#1e3a5f] hover:bg-[#EFF6FF] active:scale-95 transition-all duration-150"
                             >
                                 Clear filters
@@ -737,12 +809,29 @@ export default function AdminOrders({ onOrdersChange }) {
                     {loadingOrders ? (
                         <div className="mt-4"><SkeletonAdminTable rows={5} /></div>
                     ) : filteredOrders.length === 0 ? (
+                        // "No orders yet" is only true when nothing is filtered —
+                        // otherwise the filters simply matched nothing.
                         <div className="mt-8 flex flex-col items-center py-10 text-center">
                             <div className="h-14 w-14 rounded-2xl bg-stone-100 flex items-center justify-center mb-4">
                                 <svg className="h-7 w-7 text-stone-400" viewBox="0 0 20 20" fill="currentColor"><path d="M4 4a2 2 0 012-2h4.586A2 2 0 0112 2.586L15.414 6A2 2 0 0116 7.414V16a2 2 0 01-2 2H6a2 2 0 01-2-2V4z" /></svg>
                             </div>
-                            <div className="text-sm font-semibold text-stone-700">No orders yet</div>
-                            <p className="mt-1 text-xs text-stone-400 max-w-xs">Orders will appear here once customers place them.</p>
+                            <div className="text-sm font-semibold text-stone-700">
+                                {orders.length === 0 ? "No orders yet" : "No matching orders"}
+                            </div>
+                            <p className="mt-1 text-xs text-stone-400 max-w-xs">
+                                {orders.length === 0
+                                    ? "Orders will appear here once customers place them."
+                                    : `None of the ${orders.length} orders match the current filters.`}
+                            </p>
+                            {orders.length > 0 && hasActiveFilters && (
+                                <button
+                                    type="button"
+                                    onClick={clearFilters}
+                                    className="mt-4 rounded-xl border border-[#E8E4DE] bg-white px-3 py-2 text-xs font-semibold text-stone-700 hover:bg-stone-50 transition"
+                                >
+                                    Clear filters
+                                </button>
+                            )}
                         </div>
                     ) : (
                         <div className="mt-3">
@@ -803,16 +892,18 @@ export default function AdminOrders({ onOrdersChange }) {
                                                 <select
                                                     value={st}
                                                     onChange={(e) => updateOrderStatus(o.id, e.target.value)}
-                                                    disabled={!testMode || !!o.delhivery_waybill || st === "shipped" || st === "delivered"}
-                                                    className={`w-full rounded-xl border border-[#E8E4DE] bg-white px-3 py-2 text-xs ${!testMode || o.delhivery_waybill || st === "shipped" || st === "delivered" ? "opacity-50 cursor-not-allowed" : ""}`}
+                                                    disabled={!canEditStatus(o)}
+                                                    className={`w-full rounded-xl border border-[#E8E4DE] bg-white px-3 py-2 text-xs ${!canEditStatus(o) ? "opacity-50 cursor-not-allowed" : ""}`}
                                                     title={!testMode ? "Enable Test Mode to change status" : o.delhivery_waybill ? "Status locked — shipped via Delhivery" : ""}
                                                 >
-                                                    <option value="placed">Placed</option>
-                                                    <option value="processing">Processing</option>
-                                                    <option value="shipped">Shipped</option>
-                                                    <option value="out_for_delivery">Out for Delivery</option>
-                                                    <option value="delivered">Delivered</option>
-                                                    <option value="cancelled">Cancelled</option>
+                                                    {/* Statuses the admin cannot assign (payment_failed) still need
+                                                        an option, or the <select> silently displays "Placed". */}
+                                                    {!STATUS_OPTIONS.includes(st) && (
+                                                        <option value={st} disabled>{STATUS_LABELS[st] || st || "—"}</option>
+                                                    )}
+                                                    {STATUS_OPTIONS.map((s) => (
+                                                        <option key={s} value={s}>{STATUS_LABELS[s]}</option>
+                                                    ))}
                                                 </select>
 
                                                 <div className="grid grid-cols-2 gap-2">
@@ -1007,8 +1098,8 @@ export default function AdminOrders({ onOrdersChange }) {
                                                     className="h-4 w-4 rounded"
                                                 />
                                             </th>
-                                            <th className="py-2 pr-4 w-[14%]">Order ID</th>
-                                            <th className="py-2 pr-4 w-[22%]">Customer</th>
+                                            <th className="py-2 pr-4 w-[10%]">Order ID</th>
+                                            <th className="py-2 pr-4 w-[26%]">Customer</th>
                                             <th className="py-2 pr-4 w-[9%]">Total</th>
                                             <th className="py-2 pr-4 w-[10%]">Status</th>
                                             <th className="py-2 pr-4 w-[10%]">Payment</th>
@@ -1046,8 +1137,12 @@ export default function AdminOrders({ onOrdersChange }) {
                                                                 className="h-4 w-4 rounded"
                                                             />
                                                         </td>
-                                                        <td className="py-2 pr-4 text-xs font-semibold text-stone-900 break-all">
-                                                            #{o.id}
+                                                        <td className="py-2 pr-4 text-xs font-semibold text-stone-900">
+                                                            {/* A full 36-char UUID wraps to 5–6 lines in this column;
+                                                                show the short form and keep the full id on hover. */}
+                                                            <span className="font-mono" title={String(o.id)}>
+                                                                #{String(o.id).slice(0, 8)}
+                                                            </span>
                                                         </td>
 
                                                         <td className="py-2 pr-4 text-xs text-stone-500 break-all">
@@ -1084,16 +1179,16 @@ export default function AdminOrders({ onOrdersChange }) {
                                                                 <select
                                                                     value={st}
                                                                     onChange={(e) => updateOrderStatus(o.id, e.target.value)}
-                                                                    disabled={!testMode || !!o.delhivery_waybill || st === "shipped" || st === "delivered"}
-                                                                    className={`w-full rounded-lg border border-[#E8E4DE] bg-white px-2 py-1.5 text-xs ${!testMode || o.delhivery_waybill || st === "shipped" || st === "delivered" ? "opacity-50 cursor-not-allowed" : ""}`}
+                                                                    disabled={!canEditStatus(o)}
+                                                                    className={`w-full rounded-lg border border-[#E8E4DE] bg-white px-2 py-1.5 text-xs ${!canEditStatus(o) ? "opacity-50 cursor-not-allowed" : ""}`}
                                                                     title={!testMode ? "Enable Test Mode to change status" : o.delhivery_waybill ? "Status locked — shipped via Delhivery" : ""}
                                                                 >
-                                                                    <option value="placed">Placed</option>
-                                                                    <option value="processing">Processing</option>
-                                                                    <option value="shipped">Shipped</option>
-                                                                    <option value="out_for_delivery">Out for Delivery</option>
-                                                                    <option value="delivered">Delivered</option>
-                                                                    <option value="cancelled">Cancelled</option>
+                                                                    {!STATUS_OPTIONS.includes(st) && (
+                                                                        <option value={st} disabled>{STATUS_LABELS[st] || st || "—"}</option>
+                                                                    )}
+                                                                    {STATUS_OPTIONS.map((s) => (
+                                                                        <option key={s} value={s}>{STATUS_LABELS[s]}</option>
+                                                                    ))}
                                                                 </select>
 
                                                                 <div className="flex gap-2">
@@ -1383,7 +1478,8 @@ export default function AdminOrders({ onOrdersChange }) {
             {confirmDlg && (
                 <ConfirmDialog
                     {...confirmDlg}
-                    onCancel={() => setConfirmDlg(null)}
+                    loading={confirmBusy}
+                    onCancel={() => { if (!confirmBusy) setConfirmDlg(null); }}
                 />
             )}
         </>

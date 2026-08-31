@@ -1,18 +1,21 @@
 /**
  * ImagePositionAdjuster.jsx — Shared drag-to-reposition modal for images.
  *
- * Used by `AdminProducts` (product card images with zoom) and
- * `AdminHomepage` (hero carousel images without zoom).
+ * Used by `AdminProducts` (product card images) and `AdminHomepage`
+ * (hero carousel images).
  *
  * ### Props:
  * | Prop       | Type       | Description |
  * |------------|------------|-------------|
  * | `src`      | `string`   | Image URL (or blob preview) to display |
  * | `position` | `string?`  | Initial CSS `objectPosition`, e.g. `"50% 50%"` |
- * | `showZoom` | `boolean?` | Whether to show the zoom slider (default `false`) |
  * | `aspectRatio` | `string?` | CSS `aspect-ratio` for the preview (default `"2/1"`) |
  * | `onSave`   | `Function` | Called with the final position string, e.g. `"30% 70%"` |
  * | `onClose`  | `Function` | Called when the modal should close |
+ *
+ * There is deliberately no zoom control: the saved string is consumed directly
+ * as a CSS `objectPosition` (see `ProductCard`), which has no room for a scale
+ * factor, so a zoom value could never survive the round trip.
  *
  * @module components/ImagePositionAdjuster
  */
@@ -21,24 +24,15 @@ import { useEffect, useRef, useState } from "react";
 export default function ImagePositionAdjuster({
     src,
     position,
-    showZoom = false,
     aspectRatio = "2/1",
     onSave,
     onClose,
 }) {
     const containerRef = useRef(null);
     const [pos, setPos] = useState(() => {
-        if (position) {
-            const parts = position.split(" ");
-            return { x: parseFloat(parts[0]) || 50, y: parseFloat(parts[1]) || 50 };
-        }
-        return { x: 50, y: 50 };
-    });
-    const [zoom, setZoom] = useState(() => {
-        if (showZoom && position && position.includes("/")) {
-            return parseFloat(position.split("/")[1]) || 1;
-        }
-        return 1;
+        // Legacy values may carry a "50% 50%/1.25" zoom suffix — ignore it.
+        const parts = String(position || "").split("/")[0].trim().split(" ");
+        return { x: parseFloat(parts[0]) || 50, y: parseFloat(parts[1]) || 50 };
     });
     const dragging = useRef(false);
     const lastMouse = useRef(null);
@@ -86,15 +80,16 @@ export default function ImagePositionAdjuster({
 
     return (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm p-4">
-            <div className="bg-white rounded-2xl shadow-2xl w-full max-w-lg overflow-hidden">
+            {/* max-h + internal scroll so the footer stays reachable on short viewports */}
+            <div className="bg-white rounded-2xl shadow-2xl w-full max-w-lg max-h-[90vh] overflow-hidden flex flex-col">
                 {/* Header */}
-                <div className="flex items-center justify-between px-5 py-4 border-b border-[#E8E4DE]">
+                <div className="shrink-0 flex items-center justify-between px-5 py-4 border-b border-[#E8E4DE]">
                     <div>
                         <div className="text-sm font-semibold text-stone-900">
-                            Adjust Image Position{showZoom ? " & Zoom" : ""}
+                            Adjust Image Position
                         </div>
                         <div className="text-xs text-stone-400 mt-0.5">
-                            Drag to reposition{showZoom ? " · use slider to zoom" : ""}
+                            Drag to reposition
                         </div>
                     </div>
                     <button type="button" onClick={onClose} className="h-7 w-7 rounded-full border border-[#E8E4DE] flex items-center justify-center text-stone-400 hover:text-stone-700">
@@ -102,7 +97,7 @@ export default function ImagePositionAdjuster({
                     </button>
                 </div>
 
-                <div className="p-5">
+                <div className="p-5 overflow-y-auto">
                     {/* Preview frame */}
                     <div
                         ref={containerRef}
@@ -115,12 +110,7 @@ export default function ImagePositionAdjuster({
                             src={src}
                             alt="Position preview"
                             className="absolute inset-0 w-full h-full pointer-events-none"
-                            style={{
-                                objectFit: "cover",
-                                objectPosition: posStr,
-                                transform: showZoom && zoom !== 1 ? `scale(${zoom})` : undefined,
-                                transformOrigin: showZoom ? posStr : undefined,
-                            }}
+                            style={{ objectFit: "cover", objectPosition: posStr }}
                             draggable={false}
                         />
                         {/* Rule-of-thirds grid */}
@@ -136,27 +126,10 @@ export default function ImagePositionAdjuster({
                         </div>
                     </div>
 
-                    {/* Zoom slider (optional) */}
-                    {showZoom && (
-                        <div className="mt-4">
-                            <div className="flex items-center justify-between mb-1.5">
-                                <div className="text-xs text-stone-500 font-medium">Zoom</div>
-                                <div className="text-xs font-mono text-stone-700">{zoom.toFixed(2)}×</div>
-                            </div>
-                            <div className="flex items-center gap-3">
-                                <span className="text-xs text-stone-400">1×</span>
-                                <input type="range" min="100" max="200" step="1" value={Math.round(zoom * 100)}
-                                    onChange={(e) => setZoom(Number(e.target.value) / 100)}
-                                    className="flex-1 accent-[#1e3a5f]" />
-                                <span className="text-xs text-stone-400">2×</span>
-                            </div>
-                        </div>
-                    )}
-
                     {/* Position info + presets */}
                     <div className="mt-3 flex items-center justify-between">
                         <div className="text-xs text-stone-400">Position: <span className="font-mono text-stone-700">{posStr}</span></div>
-                        <button type="button" onClick={() => { setPos({ x: 50, y: 50 }); setZoom(1); }} className="text-xs text-[#1e3a5f] hover:underline">Reset</button>
+                        <button type="button" onClick={() => setPos({ x: 50, y: 50 })} className="text-xs text-[#1e3a5f] hover:underline">Reset</button>
                     </div>
                     <div className="mt-3 flex flex-wrap gap-2">
                         {[
@@ -173,7 +146,7 @@ export default function ImagePositionAdjuster({
                 </div>
 
                 {/* Footer */}
-                <div className="flex items-center justify-end gap-3 px-5 py-4 border-t border-[#E8E4DE]">
+                <div className="shrink-0 flex items-center justify-end gap-3 px-5 py-4 border-t border-[#E8E4DE]">
                     <button type="button" onClick={onClose} className="rounded-xl border border-[#E8E4DE] px-4 py-2 text-sm text-stone-600 hover:bg-stone-50">Cancel</button>
                     <button type="button" onClick={() => { onSave(posStr); onClose(); }}
                         className="rounded-xl bg-[#1e3a5f] px-5 py-2 text-sm font-semibold text-white hover:bg-[#16304f] transition">Apply</button>

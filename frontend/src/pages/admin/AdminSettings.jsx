@@ -30,8 +30,16 @@
  */
 import { useCallback, useEffect, useRef, useState } from "react";
 import { supabase } from "../../services/supabase/client";
+import ConfirmDialog from "../../components/ConfirmDialog";
 import { useToast } from "../../context/ToastContext";
 import useKeyboardShortcut from "../../hooks/useKeyboardShortcut";
+
+/** Every app_settings key this panel owns — read in one query so one error check covers all of them. */
+const SETTING_KEYS = [
+    "max_items_per_order", "shipping_amount", "free_shipping_min", "gst_percentage",
+    "razorpay_enabled", "cod_enabled", "replacements_enabled", "warehouse_address",
+    "discount_codes", "corecoins_enabled", "corecoins_config", "promo_banner",
+];
 
 /** Accordion chevron — rotates when its section is open. */
 function Chevron({ open }) {
@@ -44,8 +52,14 @@ function Chevron({ open }) {
     );
 }
 
-export default function AdminSettings() {
+export default function AdminSettings({ isActive = true }) {
     const { showToast } = useToast();
+    // Every field below starts at a hardcoded default. If the read fails those
+    // defaults must never reach a save, or they overwrite the live config.
+    const [loaded, setLoaded] = useState(false);
+    const [loadErr, setLoadErr] = useState("");
+    const [confirmDlg, setConfirmDlg] = useState(null);
+    const [confirmBusy, setConfirmBusy] = useState(false);
     const [maxItems, setMaxItems] = useState(15);
     const [shippingAmount, setShippingAmount] = useState(0);
     const [freeShippingMin, setFreeShippingMin] = useState(500);
@@ -111,107 +125,96 @@ export default function AdminSettings() {
     const [bannerFile, setBannerFile] = useState(null);
     const [bannerPreview, setBannerPreview] = useState("");
 
-    useEffect(() => {
-        supabase.from("app_settings").select("value")
-            .eq("key", "max_items_per_order").maybeSingle()
-            .then(({ data }) => {
-                const n = Number(data?.value?.n);
-                if (Number.isFinite(n) && n > 0) setMaxItems(n);
-            });
+    const loadSettings = async () => {
+        setLoadErr("");
+        const { data, error } = await supabase
+            .from("app_settings")
+            .select("key,value")
+            .in("key", SETTING_KEYS);
 
-        supabase.from("app_settings").select("value")
-            .eq("key", "shipping_amount").maybeSingle()
-            .then(({ data }) => {
-                const n = Number(data?.value?.amount);
-                if (Number.isFinite(n) && n >= 0) setShippingAmount(n);
-            });
+        // Mark the section spinners done either way, so a failure is visible
+        // rather than looking like a permanent load.
+        const finishSpinners = () => {
+            setRazorpayLoading(false);
+            setCodLoading(false);
+            setReplacementsLoading(false);
+            setWarehouseLoading(false);
+            setDiscountLoading(false);
+            setCorecoinsLoading(false);
+            setBannerLoading(false);
+        };
 
-        supabase.from("app_settings").select("value")
-            .eq("key", "free_shipping_min").maybeSingle()
-            .then(({ data }) => {
-                const n = Number(data?.value?.amount);
-                if (Number.isFinite(n) && n >= 0) setFreeShippingMin(n);
-            });
+        if (error) {
+            // Leave every field at its default but refuse to save — publishing
+            // those defaults would wipe the live configuration.
+            setLoaded(false);
+            setLoadErr(error.message);
+            finishSpinners();
+            return;
+        }
 
-        supabase.from("app_settings").select("value")
-            .eq("key", "gst_percentage").maybeSingle()
-            .then(({ data }) => {
-                const n = Number(data?.value?.percentage);
-                if (Number.isFinite(n) && n >= 0) setGstPercent(n);
-            });
+        const map = {};
+        (data || []).forEach((row) => { map[row.key] = row.value; });
 
-        // Load Razorpay toggle
-        supabase.from("app_settings").select("value")
-            .eq("key", "razorpay_enabled").maybeSingle()
-            .then(({ data }) => {
-                setRazorpayEnabled(data?.value?.enabled === true);
-                setRazorpayLoading(false);
-            });
+        const maxN = Number(map.max_items_per_order?.n);
+        if (Number.isFinite(maxN) && maxN > 0) setMaxItems(maxN);
 
-        // Load COD toggle (defaults to true if not set)
-        supabase.from("app_settings").select("value")
-            .eq("key", "cod_enabled").maybeSingle()
-            .then(({ data }) => {
-                setCodEnabled(data?.value?.enabled !== false);
-                setCodLoading(false);
-            });
+        const shipN = Number(map.shipping_amount?.amount);
+        if (Number.isFinite(shipN) && shipN >= 0) setShippingAmount(shipN);
 
-        // Load replacements toggle
-        supabase.from("app_settings").select("value")
-            .eq("key", "replacements_enabled").maybeSingle()
-            .then(({ data }) => {
-                setReplacementsEnabled(data?.value?.enabled === true);
-                if (data?.value?.window_days) setReplacementWindowDays(data.value.window_days);
-                if (data?.value?.window_minutes) setReplacementWindowMinutes(data.value.window_minutes);
-                setReplacementsLoading(false);
-            });
+        const freeN = Number(map.free_shipping_min?.amount);
+        if (Number.isFinite(freeN) && freeN >= 0) setFreeShippingMin(freeN);
 
-        // Load warehouse address
-        supabase.from("app_settings").select("value")
-            .eq("key", "warehouse_address").maybeSingle()
-            .then(({ data }) => {
-                if (data?.value && typeof data.value === "object") {
-                    setWarehouse(prev => ({ ...prev, ...data.value }));
-                }
-                setWarehouseLoading(false);
-            });
+        const gstN = Number(map.gst_percentage?.percentage);
+        if (Number.isFinite(gstN) && gstN >= 0) setGstPercent(gstN);
 
-        // Load discount codes
-        supabase.from("app_settings").select("value")
-            .eq("key", "discount_codes").maybeSingle()
-            .then(({ data }) => {
-                setDiscountCodes(Array.isArray(data?.value) ? data.value : []);
-                setDiscountLoading(false);
-            });
+        setRazorpayEnabled(map.razorpay_enabled?.enabled === true);
+        // COD defaults to true if the row is missing
+        setCodEnabled(map.cod_enabled?.enabled !== false);
 
-        // Load CoreCoins
-        supabase.from("app_settings").select("value")
-            .eq("key", "corecoins_enabled").maybeSingle()
-            .then(({ data }) => {
-                setCorecoinsEnabled(data?.value?.enabled === true);
-            });
-        supabase.from("app_settings").select("value")
-            .eq("key", "corecoins_config").maybeSingle()
-            .then(({ data }) => {
-                if (data?.value && typeof data.value === "object") {
-                    setCorecoinsConfig(prev => ({ ...prev, ...data.value }));
-                }
-                setCorecoinsLoading(false);
-            });
+        setReplacementsEnabled(map.replacements_enabled?.enabled === true);
+        if (map.replacements_enabled?.window_days) setReplacementWindowDays(map.replacements_enabled.window_days);
+        if (map.replacements_enabled?.window_minutes) setReplacementWindowMinutes(map.replacements_enabled.window_minutes);
 
-        // Load promo banner
-        supabase.from("app_settings").select("value")
-            .eq("key", "promo_banner").maybeSingle()
-            .then(({ data }) => {
-                if (data?.value) {
-                    setBannerEnabled(!!data.value.enabled);
-                    setBannerImageUrl(data.value.image_url || "");
-                }
-                setBannerLoading(false);
-            });
-    }, []);
+        if (map.warehouse_address && typeof map.warehouse_address === "object") {
+            setWarehouse(prev => ({ ...prev, ...map.warehouse_address }));
+        }
+
+        setDiscountCodes(Array.isArray(map.discount_codes) ? map.discount_codes : []);
+
+        setCorecoinsEnabled(map.corecoins_enabled?.enabled === true);
+        if (map.corecoins_config && typeof map.corecoins_config === "object") {
+            setCorecoinsConfig(prev => ({ ...prev, ...map.corecoins_config }));
+        }
+
+        if (map.promo_banner) {
+            setBannerEnabled(!!map.promo_banner.enabled);
+            setBannerImageUrl(map.promo_banner.image_url || "");
+        }
+
+        finishSpinners();
+        setLoaded(true);
+    };
+
+    useEffect(() => { loadSettings(); }, []); // eslint-disable-line
+
+    /**
+     * Guards every write. Returns true (and explains) when the settings have not
+     * been read successfully, so no save can publish the hardcoded defaults.
+     */
+    const blockedByLoad = () => {
+        if (loaded) return false;
+        showToast(
+            loadErr
+                ? `Settings failed to load (${loadErr}) — reload before saving`
+                : "Settings are still loading",
+            "error"
+        );
+        return true;
+    };
 
     const save = async () => {
+        if (blockedByLoad()) return;
         setSaving(true);
         const n = Number(maxItems);
         if (!Number.isFinite(n) || n <= 0) {
@@ -253,6 +256,7 @@ export default function AdminSettings() {
     };
 
     const toggleRazorpay = async () => {
+        if (blockedByLoad()) return;
         const newVal = !razorpayEnabled;
         if (!newVal && !codEnabled) {
             showToast("Cannot disable Razorpay — COD is also disabled. Enable at least one payment method.", "error");
@@ -271,6 +275,7 @@ export default function AdminSettings() {
     };
 
     const toggleCod = async () => {
+        if (blockedByLoad()) return;
         const newVal = !codEnabled;
         if (!newVal && !razorpayEnabled) {
             showToast("Cannot disable COD — Razorpay is also disabled. Enable at least one payment method.", "error");
@@ -289,6 +294,7 @@ export default function AdminSettings() {
     };
 
     const toggleReplacements = async () => {
+        if (blockedByLoad()) return;
         setReplacementsSaving(true);
         const newVal = !replacementsEnabled;
         const { error } = await supabase.from("app_settings")
@@ -303,6 +309,7 @@ export default function AdminSettings() {
     };
 
     const saveReplacementWindowDays = async () => {
+        if (blockedByLoad()) return;
         setReplacementsSaving(true);
         const { error } = await supabase.from("app_settings")
             .upsert({ key: "replacements_enabled", value: { enabled: replacementsEnabled, window_days: Number(replacementWindowDays) || 1, window_minutes: Number(replacementWindowMinutes) || 0 } }, { onConflict: "key" });
@@ -313,6 +320,7 @@ export default function AdminSettings() {
 
     // ── CoreCoins helpers ──
     const toggleCorecoins = async () => {
+        if (blockedByLoad()) return;
         setCorecoinsSaving(true);
         const newVal = !corecoinsEnabled;
         const { error } = await supabase.from("app_settings")
@@ -327,6 +335,7 @@ export default function AdminSettings() {
     };
 
     const saveCorecoinsConfig = async () => {
+        if (blockedByLoad()) return;
         const c = corecoinsConfig;
         const earnRate = Number(c.earn_rate);
         const earnPer = Number(c.earn_per_rupees);
@@ -347,6 +356,7 @@ export default function AdminSettings() {
     };
 
     const saveWarehouse = async () => {
+        if (blockedByLoad()) return;
         const w = warehouse;
         if (!w.name || !w.phone || !w.address || !w.city || !w.state || !w.pin) {
             showToast("All warehouse fields are required", "error");
@@ -369,6 +379,7 @@ export default function AdminSettings() {
 
     // ── Discount code helpers ──
     const saveDiscountCodes = async (codes) => {
+        if (blockedByLoad()) return false;
         const { error } = await supabase.from("app_settings")
             .upsert({ key: "discount_codes", value: codes }, { onConflict: "key" });
         if (error) { showToast(error.message, "error"); return false; }
@@ -395,19 +406,36 @@ export default function AdminSettings() {
         setAddingCode(false);
     };
 
-    const deleteDiscountCode = async (code) => {
-        const ok = await saveDiscountCodes(discountCodes.filter(c => c.code !== code));
-        if (ok) showToast(`Code "${code}" deleted`, "info");
+    const deleteDiscountCode = (code) => {
+        setConfirmDlg({
+            title: "Delete discount code?",
+            message: `"${code}" will stop working for every customer immediately. This cannot be undone.`,
+            confirmLabel: "Delete code",
+            variant: "danger",
+            onConfirm: async () => {
+                setConfirmBusy(true);
+                const ok = await saveDiscountCodes(discountCodes.filter(c => c.code !== code));
+                setConfirmBusy(false);
+                setConfirmDlg(null);
+                if (ok) showToast(`Code "${code}" deleted`, "info");
+            },
+        });
     };
 
-    // Ctrl+S to save
+    // Ctrl+S to save. Every admin tab stays mounted, so this must only fire
+    // while Settings is the tab on screen.
     const saveRef = useRef(save);
     saveRef.current = save;
-    const handleCtrlS = useCallback((e) => { e.preventDefault(); saveRef.current(); }, []);
+    const handleCtrlS = useCallback((e) => {
+        if (!isActive) return;
+        e.preventDefault();
+        saveRef.current();
+    }, [isActive]);
     useKeyboardShortcut("ctrl+s", handleCtrlS);
 
     // ── Promo Banner helpers ──
     const toggleBanner = async () => {
+        if (blockedByLoad()) return;
         setBannerSaving(true);
         const next = !bannerEnabled;
         const { error } = await supabase.from("app_settings").upsert(
@@ -427,18 +455,15 @@ export default function AdminSettings() {
     };
 
     const saveBanner = async () => {
+        if (blockedByLoad()) return;
         setBannerSaving(true);
         let url = bannerImageUrl;
 
-        // Upload image if new file selected
+        // Upload the replacement first. Deleting the old object up front left
+        // promo_banner.image_url pointing at a deleted file whenever the upload
+        // failed — a live, broken banner.
+        const previousUrl = bannerImageUrl;
         if (bannerFile) {
-            // Delete old banner from storage before uploading new one
-            if (bannerImageUrl) {
-                try {
-                    const oldPath = bannerImageUrl.split("/hero-images/")[1];
-                    if (oldPath) await supabase.storage.from("hero-images").remove([oldPath]);
-                } catch { /* ignore delete errors — proceed with upload */ }
-            }
             const ext = bannerFile.name.split(".").pop();
             const path = `promo-banner/banner-${Date.now()}.${ext}`;
             const { error: upErr } = await supabase.storage.from("hero-images").upload(path, bannerFile, { cacheControl: "3600", upsert: true });
@@ -453,6 +478,13 @@ export default function AdminSettings() {
         );
         if (error) showToast(error.message, "error");
         else {
+            // Only now is the old object unreferenced — safe to remove.
+            if (bannerFile && previousUrl && previousUrl !== url) {
+                try {
+                    const oldPath = previousUrl.split("/hero-images/")[1];
+                    if (oldPath) await supabase.storage.from("hero-images").remove([oldPath]);
+                } catch { /* ignore delete errors — the new banner is already live */ }
+            }
             setBannerImageUrl(url);
             setBannerFile(null);
             setBannerPreview("");
@@ -463,6 +495,24 @@ export default function AdminSettings() {
 
     return (
         <div className="max-w-2xl space-y-4">
+            {/* Saving while the read failed would publish the hardcoded defaults
+                over the live config, so every write is blocked until a retry. */}
+            {loadErr && (
+                <div className="rounded-2xl border border-red-200 bg-red-50 px-4 py-3">
+                    <div className="text-sm font-semibold text-red-700">Settings failed to load</div>
+                    <p className="mt-1 text-xs text-red-600">
+                        {loadErr} — the values below are placeholders, so saving is disabled until the settings load.
+                    </p>
+                    <button
+                        type="button"
+                        onClick={loadSettings}
+                        className="mt-3 rounded-xl border border-red-300 bg-white px-3 py-2 text-xs font-semibold text-red-700 hover:bg-red-100 transition"
+                    >
+                        ↺ Retry
+                    </button>
+                </div>
+            )}
+
             {/* ── Promo Banner ── */}
             <div className="rounded-2xl border border-[#E8E4DE] bg-white">
                 <button type="button" onClick={() => toggleSection("banner")} className="w-full flex items-center justify-between p-5 text-left">
@@ -482,7 +532,7 @@ export default function AdminSettings() {
                     <div className="px-5 pb-5 border-t border-[#E8E4DE] pt-4">
                         <div className="flex items-center justify-between mb-4">
                             <span className="text-sm font-medium text-stone-700">Enable banner</span>
-                            <button type="button" role="switch" aria-checked={bannerEnabled} disabled={bannerLoading || bannerSaving} onClick={toggleBanner}
+                            <button type="button" role="switch" aria-checked={bannerEnabled} disabled={!loaded || bannerLoading || bannerSaving} onClick={toggleBanner}
                                 className={["relative inline-flex h-7 w-12 shrink-0 cursor-pointer items-center rounded-full transition-colors duration-200 focus:outline-none disabled:opacity-50 disabled:cursor-not-allowed",
                                     bannerEnabled ? "bg-emerald-500" : "bg-stone-300"].join(" ")}>
                                 <span className={["inline-block h-5 w-5 rounded-full bg-white shadow-md transform transition-transform duration-200",
@@ -501,7 +551,7 @@ export default function AdminSettings() {
                                     <input type="file" accept="image/*" onChange={handleBannerFile} className="hidden" />
                                 </label>
                                 {bannerFile && (
-                                    <button type="button" onClick={saveBanner} disabled={bannerSaving} className="btn-primary py-2.5 px-5 text-sm disabled:opacity-50">
+                                    <button type="button" onClick={saveBanner} disabled={!loaded || bannerSaving} className="btn-primary py-2.5 px-5 text-sm disabled:opacity-50">
                                         {bannerSaving ? "Uploading…" : "Save Banner"}
                                     </button>
                                 )}
@@ -551,7 +601,7 @@ export default function AdminSettings() {
                             </div>
                         </div>
                         <div className="mt-4 flex items-center gap-3">
-                            <button onClick={save} disabled={saving} className="btn-primary disabled:opacity-50">{saving ? "Saving..." : "Save"}</button>
+                            <button onClick={save} disabled={!loaded || saving} className="btn-primary disabled:opacity-50">{saving ? "Saving..." : "Save"}</button>
                             <span className="text-xs text-stone-400">Ctrl+S</span>
                         </div>
                     </div>
@@ -581,7 +631,7 @@ export default function AdminSettings() {
                                     </div>
                                     <div className="mt-0.5 text-xs text-stone-500">Allow customers to pay cash on delivery.</div>
                                 </div>
-                                <button type="button" role="switch" aria-checked={codEnabled} disabled={codLoading || codSaving} onClick={toggleCod}
+                                <button type="button" role="switch" aria-checked={codEnabled} disabled={!loaded || codLoading || codSaving} onClick={toggleCod}
                                     className={["relative inline-flex h-7 w-12 shrink-0 cursor-pointer items-center rounded-full transition-colors duration-200 focus:outline-none disabled:opacity-50 disabled:cursor-not-allowed",
                                         codEnabled ? "bg-emerald-500" : "bg-stone-300"].join(" ")}>
                                     <span className={["inline-block h-5 w-5 rounded-full bg-white shadow-md transform transition-transform duration-200",
@@ -601,7 +651,7 @@ export default function AdminSettings() {
                                     </div>
                                     <div className="mt-0.5 text-xs text-stone-500">Accept UPI, cards, wallets, and net banking via Razorpay.</div>
                                 </div>
-                                <button type="button" role="switch" aria-checked={razorpayEnabled} disabled={razorpayLoading || razorpaySaving} onClick={toggleRazorpay}
+                                <button type="button" role="switch" aria-checked={razorpayEnabled} disabled={!loaded || razorpayLoading || razorpaySaving} onClick={toggleRazorpay}
                                     className={["relative inline-flex h-7 w-12 shrink-0 cursor-pointer items-center rounded-full transition-colors duration-200 focus:outline-none disabled:opacity-50 disabled:cursor-not-allowed",
                                         razorpayEnabled ? "bg-emerald-500" : "bg-stone-300"].join(" ")}>
                                     <span className={["inline-block h-5 w-5 rounded-full bg-white shadow-md transform transition-transform duration-200",
@@ -653,7 +703,7 @@ export default function AdminSettings() {
                     <div className="px-5 pb-5 border-t border-[#E8E4DE] pt-4 space-y-4">
                         <div className="flex items-center justify-between gap-4">
                             <span className="text-sm font-medium text-stone-700">Enable replacements</span>
-                            <button type="button" role="switch" aria-checked={replacementsEnabled} disabled={replacementsLoading || replacementsSaving} onClick={toggleReplacements}
+                            <button type="button" role="switch" aria-checked={replacementsEnabled} disabled={!loaded || replacementsLoading || replacementsSaving} onClick={toggleReplacements}
                                 className={["relative inline-flex h-7 w-12 shrink-0 cursor-pointer items-center rounded-full transition-colors duration-200 focus:outline-none disabled:opacity-50 disabled:cursor-not-allowed",
                                     replacementsEnabled ? "bg-emerald-500" : "bg-stone-300"].join(" ")}>
                                 <span className={["inline-block h-5 w-5 rounded-full bg-white shadow-md transform transition-transform duration-200",
@@ -675,7 +725,7 @@ export default function AdminSettings() {
                             <button
                                 type="button"
                                 onClick={saveReplacementWindowDays}
-                                disabled={replacementsSaving}
+                                disabled={!loaded || replacementsSaving}
                                 className="px-4 py-2 rounded-lg bg-stone-900 text-white text-sm font-medium hover:bg-stone-700 disabled:opacity-50 transition-colors"
                             >
                                 Save
@@ -696,7 +746,7 @@ export default function AdminSettings() {
                             <button
                                 type="button"
                                 onClick={saveReplacementWindowDays}
-                                disabled={replacementsSaving}
+                                disabled={!loaded || replacementsSaving}
                                 className="px-4 py-2 rounded-lg bg-stone-900 text-white text-sm font-medium hover:bg-stone-700 disabled:opacity-50 transition-colors"
                             >
                                 Save
@@ -726,7 +776,7 @@ export default function AdminSettings() {
                         {/* Toggle */}
                         <div className="flex items-center justify-between gap-4">
                             <span className="text-sm font-medium text-stone-700">Enable CoreCoins</span>
-                            <button type="button" role="switch" aria-checked={corecoinsEnabled} disabled={corecoinsLoading || corecoinsSaving} onClick={toggleCorecoins}
+                            <button type="button" role="switch" aria-checked={corecoinsEnabled} disabled={!loaded || corecoinsLoading || corecoinsSaving} onClick={toggleCorecoins}
                                 className={["relative inline-flex h-7 w-12 shrink-0 cursor-pointer items-center rounded-full transition-colors duration-200 focus:outline-none disabled:opacity-50 disabled:cursor-not-allowed",
                                     corecoinsEnabled ? "bg-emerald-500" : "bg-stone-300"].join(" ")}>
                                 <span className={["inline-block h-5 w-5 rounded-full bg-white shadow-md transform transition-transform duration-200",
@@ -774,7 +824,7 @@ export default function AdminSettings() {
                             <p>• Minimum <strong className="text-stone-900">{corecoinsConfig.min_redeem} coins</strong> required to redeem. Each coin = <strong className="text-stone-900">₹{corecoinsConfig.coin_value_inr}</strong>.</p>
                         </div>
 
-                        <button type="button" onClick={saveCorecoinsConfig} disabled={corecoinsSaving}
+                        <button type="button" onClick={saveCorecoinsConfig} disabled={!loaded || corecoinsSaving}
                             className="btn-primary py-2.5 px-5 text-sm disabled:opacity-50">
                             {corecoinsSaving ? "Saving…" : "Save CoreCoins Settings"}
                         </button>
@@ -830,7 +880,7 @@ export default function AdminSettings() {
                                     </div>
                                 </div>
                                 <div className="mt-4">
-                                    <button type="button" onClick={saveWarehouse} disabled={warehouseSaving} className="btn-primary py-2.5 px-5 text-sm disabled:opacity-50">
+                                    <button type="button" onClick={saveWarehouse} disabled={!loaded || warehouseSaving} className="btn-primary py-2.5 px-5 text-sm disabled:opacity-50">
                                         {warehouseSaving ? "Saving…" : "Save Warehouse Address"}
                                     </button>
                                 </div>
@@ -892,7 +942,7 @@ export default function AdminSettings() {
                                     <span className="text-xs text-stone-600">New users only</span>
                                 </label>
                             </div>
-                            <button type="button" onClick={addDiscountCode} disabled={addingCode} className="mt-3 btn-primary py-2 px-5 text-sm disabled:opacity-50">
+                            <button type="button" onClick={addDiscountCode} disabled={!loaded || addingCode} className="mt-3 btn-primary py-2 px-5 text-sm disabled:opacity-50">
                                 {addingCode ? "Adding…" : "Add Code"}
                             </button>
                         </div>
@@ -929,6 +979,14 @@ export default function AdminSettings() {
                     </div>
                 )}
             </div>
+
+            {confirmDlg && (
+                <ConfirmDialog
+                    {...confirmDlg}
+                    loading={confirmBusy}
+                    onCancel={() => { if (!confirmBusy) setConfirmDlg(null); }}
+                />
+            )}
         </div>
     );
 }

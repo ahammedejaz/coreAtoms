@@ -13,6 +13,7 @@ import { useToast } from "../context/ToastContext";
 import { supabase } from "../services/supabase/client";
 import SEO from "../components/SEO";
 import ScrollReveal from "../components/ScrollReveal";
+import ConfirmDialog from "../components/ConfirmDialog";
 import { useEffect, useState } from "react";
 
 import { money } from "../utils/format";
@@ -25,26 +26,28 @@ export default function Cart() {
   const [shippingBase, setShippingBase] = useState(0);
   const [freeShippingMin, setFreeShippingMin] = useState(0);
   const [gstPercent, setGstPercent] = useState(0);
+  const [confirmClear, setConfirmClear] = useState(false);
+  const [brokenImages, setBrokenImages] = useState(() => new Set());
 
+  // ─── Pricing settings — one round-trip, ignored if we unmount first ───────
   useEffect(() => {
-    supabase.from("app_settings").select("value")
-      .eq("key", "shipping_amount").maybeSingle()
-      .then(({ data }) => {
-        const n = Number(data?.value?.amount);
-        if (Number.isFinite(n) && n >= 0) setShippingBase(n);
+    let cancelled = false;
+    supabase.from("app_settings").select("key,value")
+      .in("key", ["shipping_amount", "free_shipping_min", "gst_percentage"])
+      .then(({ data, error }) => {
+        if (cancelled) return;
+        if (error) { console.error("app_settings load failed:", error); return; }
+        const map = {};
+        (data || []).forEach((row) => { map[row.key] = row.value; });
+
+        const ship = Number(map.shipping_amount?.amount);
+        if (Number.isFinite(ship) && ship >= 0) setShippingBase(ship);
+        const freeMin = Number(map.free_shipping_min?.amount);
+        if (Number.isFinite(freeMin) && freeMin >= 0) setFreeShippingMin(freeMin);
+        const gst = Number(map.gst_percentage?.percentage);
+        if (Number.isFinite(gst) && gst >= 0) setGstPercent(gst);
       });
-    supabase.from("app_settings").select("value")
-      .eq("key", "free_shipping_min").maybeSingle()
-      .then(({ data }) => {
-        const n = Number(data?.value?.amount);
-        if (Number.isFinite(n) && n >= 0) setFreeShippingMin(n);
-      });
-    supabase.from("app_settings").select("value")
-      .eq("key", "gst_percentage").maybeSingle()
-      .then(({ data }) => {
-        const n = Number(data?.value?.percentage);
-        if (Number.isFinite(n) && n >= 0) setGstPercent(n);
-      });
+    return () => { cancelled = true; };
   }, []);
 
   const sub = Number(subtotal || 0);
@@ -94,7 +97,17 @@ export default function Cart() {
                   <div key={item.id} className="card p-5">
                     <div className="flex gap-4">
                       <div className="h-20 w-20 shrink-0 rounded-xl border border-[#E8E4DE] bg-stone-50 overflow-hidden">
-                        <img src={item.image} alt={item.name} className="h-full w-full object-cover" loading="lazy" />
+                        {item.image && !brokenImages.has(item.id) ? (
+                          <img src={item.image} alt={item.name} className="h-full w-full object-cover" loading="lazy"
+                            onError={() => setBrokenImages((prev) => new Set(prev).add(item.id))} />
+                        ) : (
+                          /* Deleted or unreachable image — a neutral tile beats a broken-image glyph */
+                          <div className="h-full w-full flex items-center justify-center">
+                            <svg className="h-7 w-7 text-stone-300" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5">
+                              <rect x="3" y="3" width="18" height="18" rx="2" /><circle cx="8.5" cy="8.5" r="1.5" /><path d="M21 15l-5-5L5 21" />
+                            </svg>
+                          </div>
+                        )}
                       </div>
                       <div className="flex-1 min-w-0">
                         <div className="flex items-start justify-between gap-3">
@@ -111,7 +124,16 @@ export default function Cart() {
                         <div className="mt-3 flex items-center justify-between">
                           {/* Qty stepper */}
                           <div className="inline-flex items-center rounded-xl border border-[#E8E4DE] bg-stone-50">
-                            <button type="button" onClick={() => updateQty(item.id, Math.max(0, item.qty - 1))}
+                            <button type="button" onClick={() => {
+                              // Stepping below 1 drops the line item — say so, otherwise it just vanishes
+                              const next = Number(item.qty) - 1;
+                              if (next < 1) {
+                                removeItem(item.id);
+                                showToast(`${item.name} removed from cart`, "info");
+                              } else {
+                                updateQty(item.id, next);
+                              }
+                            }}
                               className="h-8 w-8 flex items-center justify-center text-stone-600 hover:text-stone-900 hover:bg-stone-100 rounded-l-xl transition">−</button>
                             <span className="w-10 text-center text-sm font-semibold text-stone-900">{item.qty}</span>
                             <button type="button" onClick={() => updateQty(item.id, item.qty + 1)}
@@ -125,7 +147,7 @@ export default function Cart() {
                   </div>
                 );
               })}
-              <button type="button" onClick={clear} className="text-xs text-stone-400 hover:text-red-500 transition-colors pt-1">
+              <button type="button" onClick={() => setConfirmClear(true)} className="text-xs text-stone-400 hover:text-red-500 transition-colors pt-1">
                 Clear entire cart
               </button>
             </div>
@@ -205,6 +227,17 @@ export default function Cart() {
 
           </div>
         </ScrollReveal>
+      )}
+
+      {confirmClear && (
+        <ConfirmDialog
+          title="Clear your cart?"
+          message={`This removes all ${totalItems} item${totalItems !== 1 ? "s" : ""} from your cart. This can't be undone.`}
+          confirmLabel="Clear cart"
+          cancelLabel="Keep them"
+          onConfirm={() => { clear(); setConfirmClear(false); showToast("Cart cleared", "info"); }}
+          onCancel={() => setConfirmClear(false)}
+        />
       )}
     </div>
   );

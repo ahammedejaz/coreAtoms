@@ -17,7 +17,7 @@
  *
  * @module pages/MyOrders
  */
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { Link } from "react-router-dom";
 import { supabase } from "../services/supabase/client";
 import { useAuth } from "../context/AuthContext";
@@ -110,6 +110,8 @@ function InlineReviewForm({ productId, orderId, productName, onDone }) {
   );
 }
 
+const MAX_IMAGE_BYTES = 5 * 1024 * 1024; // 5 MB per damage photo
+
 function InlineReplacementForm({ orderId, userId, onDone }) {
   const { showToast } = useToast();
   const [reason, setReason] = useState("");
@@ -117,20 +119,41 @@ function InlineReplacementForm({ orderId, userId, onDone }) {
   const [files, setFiles] = useState([]);
   const [previews, setPreviews] = useState([]);
   const [submitting, setSubmitting] = useState(false);
+  const previewsRef = useRef([]); // mirrors `previews` so unmount can revoke them
+
+  // Every preview list swap revokes the URLs it replaces — object URLs leak
+  // until revoked, and the form can churn through several.
+  const replacePreviews = (nextFiles) => {
+    previewsRef.current.forEach((url) => URL.revokeObjectURL(url));
+    const next = nextFiles.map((f) => URL.createObjectURL(f));
+    previewsRef.current = next;
+    setPreviews(next);
+  };
+
+  useEffect(() => () => {
+    previewsRef.current.forEach((url) => URL.revokeObjectURL(url));
+    previewsRef.current = [];
+  }, []);
 
   const handleFiles = (e) => {
     const selected = Array.from(e.target.files || []);
-    const allowed = selected.slice(0, 3 - files.length);
-    const newFiles = [...files, ...allowed].slice(0, 3);
+    e.target.value = ""; // let the same file be re-picked after a rejection
+    const accepted = [];
+    for (const f of selected) {
+      if (!f.type.startsWith("image/")) { showToast(`"${f.name}" is not an image.`, "error"); continue; }
+      if (f.size > MAX_IMAGE_BYTES) { showToast(`"${f.name}" is larger than 5 MB.`, "error"); continue; }
+      accepted.push(f);
+    }
+    if (accepted.length === 0) return;
+    const newFiles = [...files, ...accepted].slice(0, 3);
     setFiles(newFiles);
-    setPreviews(newFiles.map((f) => URL.createObjectURL(f)));
+    replacePreviews(newFiles);
   };
 
   const removeFile = (idx) => {
-    previews.forEach((url) => URL.revokeObjectURL(url));
     const nf = files.filter((_, i) => i !== idx);
     setFiles(nf);
-    setPreviews(nf.map((f) => URL.createObjectURL(f)));
+    replacePreviews(nf);
   };
 
   const handleSubmit = async () => {
@@ -287,6 +310,7 @@ export default function MyOrders() {
 
   const [orders, setOrders] = useState([]);
   const [loading, setLoading] = useState(true);
+  const [loadError, setLoadError] = useState("");
   const [statusFilter, setStatusFilter] = useState("all");
   const [search, setSearch] = useState("");
   const [reviewedKeys, setReviewedKeys] = useState(new Set());
@@ -310,65 +334,70 @@ export default function MyOrders() {
   const load = useCallback(async () => {
     if (!userId) return;
     setLoading(true);
-    const { data } = await supabase
-      .from("orders")
-      .select("id,status,created_at,total_amount_inr,total_items,payment_method,razorpay_payment_id,delhivery_waybill,courier_name,tracking_url,shipped_at,delivered_at,coins_credited,coins_used,coins_credit_after,shipping_amount,gst_amount,discount_amount,coupon_code,shipping_address,order_items(id,product_id,product_name,qty,unit_price_inr,line_total_inr,image_url)")
-      .eq("user_id", userId)
-      .order("created_at", { ascending: false });
-    setOrders(data || []);
-    const { data: revData } = await supabase.from("product_reviews").select("product_id,order_id").eq("user_id", userId);
-    setExistingReviews(new Set((revData || []).map((r) => `${r.product_id}_${r.order_id}`)));
+    setLoadError("");
 
-    // Fetch replacements setting
-    const { data: settingData } = await supabase
-      .from("app_settings").select("value")
-      .eq("key", "replacements_enabled").maybeSingle();
-    setReplacementsEnabled(settingData?.value?.enabled === true);
-    if (settingData?.value?.window_days) setReplacementWindowDays(settingData.value.window_days);
-    if (settingData?.value?.window_minutes != null) setReplacementWindowMinutes(Number(settingData.value.window_minutes) || 0);
+    // Orders, reviews, settings and replacements are independent — fetch together
+    const [ordersRes, reviewsRes, settingsRes, replacementsRes] = await Promise.all([
+      supabase
+        .from("orders")
+        .select("id,status,created_at,total_amount_inr,total_items,payment_method,razorpay_payment_id,delhivery_waybill,courier_name,tracking_url,shipped_at,delivered_at,coins_credited,coins_used,coins_credit_after,shipping_amount,gst_amount,discount_amount,coupon_code,shipping_address,order_items(id,product_id,product_name,qty,unit_price_inr,line_total_inr,image_url)")
+        .eq("user_id", userId)
+        .order("created_at", { ascending: false }),
+      supabase.from("product_reviews").select("product_id,order_id").eq("user_id", userId),
+      supabase.from("app_settings").select("key,value")
+        .in("key", ["replacements_enabled", "warehouse_address", "corecoins_enabled", "corecoins_config"]),
+      supabase
+        .from("replacements")
+        .select("id,order_id,status,reason,admin_notes,created_at,replacement_waybill,replacement_tracking_url,reverse_waybill,reverse_tracking_url")
+        .eq("user_id", userId),
+    ]);
 
-    // Fetch warehouse state for GST split display
-    const { data: whData } = await supabase
-      .from("app_settings").select("value")
-      .eq("key", "warehouse_address").maybeSingle();
-    if (whData?.value?.state) setWarehouseState(whData.value.state.trim());
+    // A failed orders query is the one error the page cannot paper over —
+    // rendering "No orders found" would tell the customer their history is gone.
+    if (ordersRes.error) {
+      console.error("orders load failed:", ordersRes.error);
+      setLoadError("We couldn't load your latest orders. Check your connection and try again.");
+      setLoading(false);
+      return;
+    }
+    setOrders(ordersRes.data || []);
 
-    // Fetch existing replacement requests for this user
-    const { data: repData } = await supabase
-      .from("replacements")
-      .select("id,order_id,status,reason,admin_notes,created_at,replacement_waybill,replacement_tracking_url,reverse_waybill,reverse_tracking_url")
-      .eq("user_id", userId);
+    if (reviewsRes.error) console.error("product_reviews load failed:", reviewsRes.error);
+    setExistingReviews(new Set((reviewsRes.data || []).map((r) => `${r.product_id}_${r.order_id}`)));
+
+    if (settingsRes.error) console.error("app_settings load failed:", settingsRes.error);
+    const settings = {};
+    (settingsRes.data || []).forEach((row) => { settings[row.key] = row.value; });
+
+    // Replacement window
+    const repl = settings.replacements_enabled;
+    setReplacementsEnabled(repl?.enabled === true);
+    if (repl?.window_days) setReplacementWindowDays(repl.window_days);
+    if (repl?.window_minutes != null) setReplacementWindowMinutes(Number(repl.window_minutes) || 0);
+
+    // Warehouse state for GST split display
+    if (settings.warehouse_address?.state) setWarehouseState(settings.warehouse_address.state.trim());
+
+    if (replacementsRes.error) console.error("replacements load failed:", replacementsRes.error);
     const map = {};
-    (repData || []).forEach((r) => { map[r.order_id] = r; });
+    (replacementsRes.data || []).forEach((r) => { map[r.order_id] = r; });
     setReplacementMap(map);
 
-    // Fetch CoreCoins balance
-    const { data: ccSetting } = await supabase
-      .from("app_settings").select("value")
-      .eq("key", "corecoins_enabled").maybeSingle();
-    const ccEnabled = ccSetting?.value?.enabled === true;
+    // CoreCoins
+    const ccEnabled = settings.corecoins_enabled?.enabled === true;
     setCorecoinsEnabled(ccEnabled);
     if (ccEnabled) {
-      const { data: walletData } = await supabase
-        .from("corecoins_wallet").select("balance")
-        .eq("user_id", userId).maybeSingle();
-      setCoinBalance(Number(walletData?.balance || 0));
+      if (settings.corecoins_config) setCorecoinsConfig(settings.corecoins_config);
 
-      // Load coins config for pending coins preview
-      const { data: ccConfig } = await supabase
-        .from("app_settings").select("value")
-        .eq("key", "corecoins_config").maybeSingle();
-      if (ccConfig?.value) setCorecoinsConfig(ccConfig.value);
-
-      // Credit any pending CoreCoins whose replacement window has now closed
+      // Credit any pending CoreCoins whose replacement window has now closed,
+      // then read the balance once — after the RPC, so it is already fresh.
       const { error: creditError } = await supabase.rpc("process_pending_corecoins", { p_user_id: userId });
       if (creditError) console.error("process_pending_corecoins error:", creditError);
-      // coins credited silently — no debug logging in production
-      // Re-fetch balance in case coins were just credited
-      const { data: freshWallet } = await supabase
+      const { data: walletData, error: walletError } = await supabase
         .from("corecoins_wallet").select("balance")
         .eq("user_id", userId).maybeSingle();
-      setCoinBalance(Number(freshWallet?.balance || 0));
+      if (walletError) console.error("corecoins_wallet load failed:", walletError);
+      setCoinBalance(Number(walletData?.balance || 0));
     }
 
     setLoading(false);
@@ -376,6 +405,13 @@ export default function MyOrders() {
 
 
   useEffect(() => { load(); }, [load]);
+
+  // Ticks once a minute so the replacement-window countdown actually counts down
+  const [now, setNow] = useState(() => Date.now());
+  useEffect(() => {
+    const id = setInterval(() => setNow(Date.now()), 60000);
+    return () => clearInterval(id);
+  }, []);
 
   // ─── Realtime: auto-refresh when admin changes order status ───
   useEffect(() => {
@@ -523,7 +559,20 @@ export default function MyOrders() {
         </div>
       )}
 
-      {!loading && filtered.length === 0 && (
+      {!loading && loadError && (
+        <div className="card p-12 text-center">
+          <div className="mx-auto mb-3 h-12 w-12 rounded-xl bg-red-50 grid place-items-center">
+            <svg className="h-5 w-5 text-red-400" viewBox="0 0 20 20" fill="currentColor">
+              <path fillRule="evenodd" d="M8.257 3.099c.765-1.36 2.722-1.36 3.486 0l5.58 9.92c.75 1.334-.213 2.98-1.742 2.98H4.42c-1.53 0-2.493-1.646-1.743-2.98l5.58-9.92zM11 13a1 1 0 11-2 0 1 1 0 012 0zm-1-8a1 1 0 00-1 1v3a1 1 0 002 0V6a1 1 0 00-1-1z" clipRule="evenodd" />
+            </svg>
+          </div>
+          <p className="font-semibold text-stone-900">Couldn't load your orders</p>
+          <p className="mt-1 text-sm text-stone-500">{loadError}</p>
+          <button type="button" onClick={load} className="btn-primary mt-5 inline-flex">Try again</button>
+        </div>
+      )}
+
+      {!loading && !loadError && filtered.length === 0 && (
         <div className="card p-12 text-center">
           <div className="mx-auto mb-3 h-12 w-12 rounded-xl bg-stone-100 grid place-items-center">
             <svg className="h-5 w-5 text-stone-400" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5"><path d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2" /></svg>
@@ -544,10 +593,12 @@ export default function MyOrders() {
           const statusCls = STATUS_STYLES[status] || "bg-stone-100 text-stone-600 border border-stone-200";
           const txnId = o.razorpay_payment_id;
 
-          // Build WhatsApp support message with product details
-          const itemsList = items.map((it) => `• ${it.product_name || "Product"} ×${it.qty} — ${money(it.unit_price_inr)}`).join("%0A");
-          const waMsg = `Hi, I need help with my order.%0A%0AOrder ID: ${String(o.id).slice(0, 8).toUpperCase()}%0AStatus: ${o.status}%0APayment: ${isPrepaid ? "Prepaid" : "COD"}${isPrepaid && txnId ? `%0ATransaction ID: ${txnId}` : ""}%0ATotal: ${money(totalAmount)}%0A%0AItems:%0A${itemsList}`;
-          const waUrl = `https://wa.me/918331833102?text=${waMsg}`;
+          // Build WhatsApp support message with product details. Compose it as
+          // plain text and encode once — hand-encoding only the newlines lets a
+          // "&" or "#" in a product name or a ₹ amount truncate the message.
+          const itemsList = items.map((it) => `• ${it.product_name || "Product"} ×${it.qty} — ${money(it.unit_price_inr)}`).join("\n");
+          const waMsg = `Hi, I need help with my order.\n\nOrder ID: ${String(o.id).slice(0, 8).toUpperCase()}\nStatus: ${o.status}\nPayment: ${isPrepaid ? "Prepaid" : "COD"}${isPrepaid && txnId ? `\nTransaction ID: ${txnId}` : ""}\nTotal: ${money(totalAmount)}\n\nItems:\n${itemsList}`;
+          const waUrl = `https://wa.me/918331833102?text=${encodeURIComponent(waMsg)}`;
 
           return (
             <ScrollReveal key={o.id}>
@@ -579,7 +630,7 @@ export default function MyOrders() {
                       <p className="text-sm font-semibold text-red-700">Payment could not be processed</p>
                       <p className="text-xs text-red-500 mt-0.5">Your payment was not captured. No amount has been deducted. Please try placing your order again.</p>
                       <div className="mt-2 flex gap-2">
-                        <a href="/checkout" className="inline-flex items-center gap-1 rounded-lg border border-red-300 bg-white px-3 py-1.5 text-xs font-semibold text-red-700 hover:bg-red-50 transition">Try again →</a>
+                        <Link to="/checkout" className="inline-flex items-center gap-1 rounded-lg border border-red-300 bg-white px-3 py-1.5 text-xs font-semibold text-red-700 hover:bg-red-50 transition">Try again →</Link>
                         <a href={waUrl} target="_blank" rel="noopener noreferrer" className="inline-flex items-center gap-1 rounded-lg border border-stone-200 bg-white px-3 py-1.5 text-xs font-semibold text-stone-600 hover:bg-stone-50 transition">Contact support</a>
                       </div>
                     </div>
@@ -626,10 +677,12 @@ export default function MyOrders() {
                       const gstAmt = Number(o.gst_amount ?? 0);
                       const itemsSubtotal = items.reduce((s, it) => s + Number(it.line_total_inr || 0), 0);
                       const coinsUsedN = Number(o.coins_used || 0);
+                      // coins_used is a coin count — convert to rupees or the bill won't reconcile
+                      const coinVal = Number(corecoinsConfig?.coin_value_inr || 1);
                       // derive shipping+gst for old orders where column is 0
                       const hasStored = shippingAmt > 0 || gstAmt > 0;
                       const derivedExtra = !hasStored && itemsSubtotal > 0 && totalAmount > 0
-                        ? Math.max(0, totalAmount + coinsUsedN - itemsSubtotal)
+                        ? Math.max(0, totalAmount + coinsUsedN * coinVal - itemsSubtotal)
                         : null;
                       return (
                         <>
@@ -681,7 +734,7 @@ export default function MyOrders() {
                                 <svg className="h-3 w-3" viewBox="0 0 20 20" fill="currentColor"><path d="M10 2a8 8 0 100 16A8 8 0 0010 2z" /></svg>
                                 CoreCoins ({coinsUsedN})
                               </span>
-                              <span className="text-amber-700">−{money(coinsUsedN)}</span>
+                              <span className="text-amber-700">−{money(coinsUsedN * coinVal)}</span>
                             </div>
                           )}
                           {Number(o.discount_amount ?? 0) > 0 && (
@@ -803,12 +856,14 @@ export default function MyOrders() {
                             : replacementWindowDays * 24 * 60 * 60 * 1000
                         ))
                         : null;
-                    const windowOpen = windowCloses ? new Date() < windowCloses : true;
+                    // `now` is the 1-minute ticker, so both the open/closed check
+                    // and the countdown below refresh without a page reload.
+                    const windowOpen = windowCloses ? now < windowCloses.getTime() : true;
 
                     // Format countdown
                     const getCountdown = () => {
                       if (!windowCloses) return null;
-                      const diff = windowCloses - new Date();
+                      const diff = windowCloses.getTime() - now;
                       if (diff <= 0) return null;
                       const d = Math.floor(diff / (1000 * 60 * 60 * 24));
                       const h = Math.floor((diff % (1000 * 60 * 60 * 24)) / (1000 * 60 * 60));
@@ -891,7 +946,7 @@ export default function MyOrders() {
                           <div className="flex items-center gap-3 min-w-0">
                             {it.image_url && (
                               <div className="h-12 w-12 rounded-xl border border-[#E8E4DE] bg-stone-50 overflow-hidden shrink-0">
-                                <img src={it.image_url} alt={it.product_name} className="h-full w-full object-cover" />
+                                <img src={it.image_url} alt={it.product_name || "Product"} loading="lazy" className="h-full w-full object-cover" />
                               </div>
                             )}
                             <div className="min-w-0">

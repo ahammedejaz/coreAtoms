@@ -1,33 +1,40 @@
 /**
  * Checkout.jsx — Full checkout flow: address → payment method → pricing → payment → receipt.
  *
- * On mount, fetches in parallel from `app_settings`:
- *   shipping_amount, free_shipping_min, gst_percentage,
- *   razorpay_enabled, cod_enabled, discount_codes,
- *   corecoins_enabled, corecoins_config
+ * On mount, fetches `app_settings` in a single batched query:
+ *   shipping_amount, free_shipping_min, gst_percentage, warehouse_address,
+ *   razorpay_enabled, cod_enabled, corecoins_enabled, corecoins_config
  * Also loads user's saved addresses + CoreCoins wallet balance.
+ * Coupons are validated server-side by the `validate_coupon` RPC — the
+ * `discount_codes` setting itself is admin-only and never read here.
  *
  * Shipping rates:
  *   When admin flat rate = 0, calls `delhivery-pincode-check` Edge Function
  *   which returns separate rates for prepaid (shipping_charge_prepaid) and
  *   COD (shipping_charge_cod, includes COD surcharge via Delhivery `pt=COD`).
  *   User selects payment method first; billing updates reactively.
+ *   If the lookup fails we fall back to the configured flat rate, so checkout
+ *   never deadlocks waiting on a rate that will not arrive.
  *
  * Pricing formula (computed on the client, verified server-side by RPCs):
  *   shipping    = 0 (free) | pincodeRate (COD or prepaid) | flatRate (admin)
- *   gstAmount   = Math.round(subtotal * gstPercent / 100)     (0 if gst = 0)
- *   coinDiscount = coinsUsed * coin_value_inr
- *   total       = subtotal + shipping + gstAmount - coinDiscount
+ *   discount    = Math.round(subtotal * couponPercent / 100)
+ *   taxable     = subtotal - discount            (GST is levied post-discount)
+ *   gstAmount   = Math.round(taxable * gstPercent / 100)      (0 if gst = 0)
+ *   coinDiscount = coinsUsed * coin_value_inr    (capped so prepaid stays ≥ ₹1)
+ *   total       = taxable + shipping + gstAmount - coinDiscount
  *
  * COD path:
  *   supabase.rpc('place_order_cod', { p_shipping, p_gst, p_coins_used, … })
- *   → stores orderReceipt state → shows receipt card for 5 s → navigate('/orders')
+ *   → clears the cart, stores orderReceipt state → receipt card with a
+ *     "View my orders" link → auto-navigates to /orders after 5 s
  *
  * Prepaid (Razorpay) path:
  *   1. Edge fn `create-razorpay-order` → opens Razorpay modal
  *   2. onSuccess → Edge fn `verify-razorpay-payment` (HMAC verify + place_order_prepaid)
  *   3. If verification fails → RPC `log_failed_order` (status = 'payment_failed')
- *   → stores orderReceipt state → shows receipt card for 5 s → navigate('/orders')
+ *   → clears the cart, stores orderReceipt state → receipt card with a
+ *     "View my orders" link → auto-navigates to /orders after 5 s
  *
  * @module pages/Checkout
  */
@@ -88,6 +95,7 @@ export default function Checkout() {
   const [loading, setLoading] = useState(false);
   const [payingOnline, setPayingOnline] = useState(false);
   const [orderReceipt, setOrderReceipt] = useState(null); // captured at placement time
+  const redirectTimer = useRef(null); // post-order navigation timer, cleared on unmount
 
   // Shipping amount (from app_settings)
   const [shippingBase, setShippingBase] = useState(0);
@@ -115,7 +123,6 @@ export default function Checkout() {
     try { const c = sessionStorage.getItem("coreatoms_coupon"); return c ? JSON.parse(c) : null; } catch { return null; }
   });
   const [couponError, setCouponError] = useState("");
-  const [, setDiscountCodes] = useState([]);
   const [validatingCoupon, setValidatingCoupon] = useState(false);
 
   // CoreCoins
@@ -124,90 +131,82 @@ export default function Checkout() {
   const [coinBalance, setCoinBalance] = useState(0);
   const [useCoins, setUseCoins] = useState(false);
 
+  // ─── Load every checkout setting in one round-trip ────────────────────────
   useEffect(() => {
-    // Check if Razorpay is both enabled in admin AND key is configured
-    supabase.from("app_settings").select("value")
-      .eq("key", "razorpay_enabled").maybeSingle()
-      .then(({ data }) => {
-        const enabled = data?.value?.enabled === true;
-        const hasKey = !!getRazorpayKeyId();
-        setRazorpayAvailable(enabled && hasKey);
-      });
+    let cancelled = false;
+    supabase.from("app_settings").select("key,value")
+      .in("key", [
+        "razorpay_enabled",
+        "cod_enabled",
+        "shipping_amount",
+        "free_shipping_min",
+        "gst_percentage",
+        "warehouse_address",
+        "corecoins_enabled",
+        "corecoins_config",
+      ])
+      .then(({ data, error }) => {
+        if (cancelled) return;
+        if (error) { console.error("app_settings load failed:", error); return; }
+        const map = {};
+        (data || []).forEach((row) => { map[row.key] = row.value; });
 
-    // Check if COD is enabled (defaults to true if setting doesn't exist)
-    supabase.from("app_settings").select("value")
-      .eq("key", "cod_enabled").maybeSingle()
-      .then(({ data }) => {
-        setCodAvailable(data?.value?.enabled !== false);
-      });
+        // Razorpay needs both the admin toggle AND a configured key
+        setRazorpayAvailable(map.razorpay_enabled?.enabled === true && !!getRazorpayKeyId());
+        // COD defaults to true if the setting doesn't exist
+        setCodAvailable(map.cod_enabled?.enabled !== false);
 
-    // Load discount codes + re-validate any session-stored coupon
-    supabase.from("app_settings").select("value")
-      .eq("key", "discount_codes").maybeSingle()
-      .then(({ data }) => {
-        const codes = Array.isArray(data?.value) ? data.value : [];
-        setDiscountCodes(codes);
-
-        // Re-validate session-stored coupon against latest DB state
-        try {
-          const stored = sessionStorage.getItem("coreatoms_coupon");
-          if (stored) {
-            const parsed = JSON.parse(stored);
-            const match = codes.find(c => c.code === parsed.code && c.active);
-            let invalid = false;
-            if (!match) {
-              invalid = true;
-            } else {
-              const now = new Date();
-              if (match.startsAt && new Date(match.startsAt) > now) invalid = true;
-              if (match.endsAt && new Date(match.endsAt) < now) invalid = true;
-            }
-            if (invalid) {
-              sessionStorage.removeItem("coreatoms_coupon");
-              setAppliedCoupon(null);
-            }
-          }
-        } catch { /* ignore parse errors */ }
-      });
-
-    // Load shipping amount
-    supabase.from("app_settings").select("value")
-      .eq("key", "shipping_amount").maybeSingle()
-      .then(({ data }) => {
-        const n = Number(data?.value?.amount);
-        if (Number.isFinite(n) && n >= 0) setShippingBase(n);
-      });
-    // Load free-shipping threshold
-    supabase.from("app_settings").select("value")
-      .eq("key", "free_shipping_min").maybeSingle()
-      .then(({ data }) => {
-        const n = Number(data?.value?.amount);
-        if (Number.isFinite(n) && n >= 0) setFreeShippingMin(n);
-      });
-    supabase.from("app_settings").select("value")
-      .eq("key", "gst_percentage").maybeSingle()
-      .then(({ data }) => {
-        const n = Number(data?.value?.percentage);
-        if (Number.isFinite(n) && n >= 0) setGstPercent(n);
-      });
-    // Load warehouse state for GST split
-    supabase.from("app_settings").select("value")
-      .eq("key", "warehouse_address").maybeSingle()
-      .then(({ data }) => {
-        const st = data?.value?.state;
+        const ship = Number(map.shipping_amount?.amount);
+        if (Number.isFinite(ship) && ship >= 0) setShippingBase(ship);
+        const freeMin = Number(map.free_shipping_min?.amount);
+        if (Number.isFinite(freeMin) && freeMin >= 0) setFreeShippingMin(freeMin);
+        const gst = Number(map.gst_percentage?.percentage);
+        if (Number.isFinite(gst) && gst >= 0) setGstPercent(gst);
+        // Warehouse state drives the CGST/SGST vs IGST split
+        const st = map.warehouse_address?.state;
         if (st && typeof st === "string") setWarehouseState(st.trim());
-      });
 
-    // CoreCoins
-    supabase.from("app_settings").select("value")
-      .eq("key", "corecoins_enabled").maybeSingle()
-      .then(({ data }) => setCorecoinsEnabled(data?.value?.enabled === true));
-    supabase.from("app_settings").select("value")
-      .eq("key", "corecoins_config").maybeSingle()
-      .then(({ data }) => {
-        if (data?.value && typeof data.value === "object") setCorecoinsConfig(data.value);
+        setCorecoinsEnabled(map.corecoins_enabled?.enabled === true);
+        if (map.corecoins_config && typeof map.corecoins_config === "object") setCorecoinsConfig(map.corecoins_config);
       });
+    return () => { cancelled = true; };
   }, []);
+
+  // Re-validate a coupon carried over in sessionStorage. Validation is
+  // server-side now, so a stale or revoked code is dropped before checkout.
+  useEffect(() => {
+    let stored;
+    try { stored = JSON.parse(sessionStorage.getItem("coreatoms_coupon") || "null"); } catch { stored = null; }
+    if (!stored?.code) return;
+    let cancelled = false;
+    supabase.rpc("validate_coupon", { p_code: stored.code })
+      .then(({ data, error }) => {
+        if (cancelled || error) return; // RPC unavailable — leave it to the order RPC
+        const res = Array.isArray(data) ? data[0] : data;
+        if (!res?.valid) {
+          sessionStorage.removeItem("coreatoms_coupon");
+          setAppliedCoupon(null);
+        } else {
+          const fresh = { code: stored.code, percentage: Number(res.percentage) || 0 };
+          sessionStorage.setItem("coreatoms_coupon", JSON.stringify(fresh));
+          setAppliedCoupon(fresh);
+        }
+      });
+    return () => { cancelled = true; };
+  }, []);
+
+  // Reconcile the selected payment method once availability loads — otherwise a
+  // store with COD switched off renders no payment button at all.
+  useEffect(() => {
+    if (selectedPaymentMethod === "cod" && !codAvailable && razorpayAvailable) {
+      setSelectedPaymentMethod("prepaid");
+    } else if (selectedPaymentMethod === "prepaid" && !razorpayAvailable && codAvailable) {
+      setSelectedPaymentMethod("cod");
+    }
+  }, [codAvailable, razorpayAvailable, selectedPaymentMethod]);
+
+  // Cancel the post-order redirect if the page unmounts first
+  useEffect(() => () => { if (redirectTimer.current) clearTimeout(redirectTimer.current); }, []);
 
   // Fetch user's CoreCoins balance
   useEffect(() => {
@@ -241,6 +240,21 @@ export default function Checkout() {
     const controller = new AbortController();
     shippingAbort.current = controller;
 
+    // When the lookup fails we apply the configured flat rate rather than
+    // leaving the rate unresolved — an unresolved rate blocks `canPlace`
+    // forever. shippingBase of 0 is a legitimate value meaning free shipping.
+    const applyFlatRateFallback = () => {
+      setPincodeShippingPrepaid(shippingBase);
+      setPincodeShippingCod(shippingBase);
+      setShippingPinLabel(""); // not a pincode-specific rate, don't claim it is
+      showToast(
+        shippingBase > 0
+          ? `Could not fetch a live shipping rate — our standard rate of ${money(shippingBase)} applies.`
+          : "Could not fetch a live shipping rate — standard shipping applies (free on this order).",
+        "warning", 4000
+      );
+    };
+
     setShippingLoading(true);
     supabase.functions.invoke("delhivery-pincode-check", { body: { pincode: pin } })
       .then(({ data, error }) => {
@@ -252,21 +266,15 @@ export default function Checkout() {
           setPincodeShippingCod(codCharge !== null && codCharge !== undefined && Number.isFinite(Number(codCharge)) ? Math.ceil(Number(codCharge)) : Math.ceil(Number(prepaidCharge)));
           setShippingPinLabel(pin);
         } else {
-          // Edge function returned an error or unserviceable pincode — fall back to flat rate
-          setPincodeShippingPrepaid(null);
-          setPincodeShippingCod(null);
-          setShippingPinLabel("");
-          if (error) {
-            showToast("Could not fetch shipping rate for this pincode. A standard rate will apply.", "warning", 4000);
-          }
+          // Edge function errored or returned no rate — fall back to flat rate
+          if (error) console.error("delhivery-pincode-check failed:", error);
+          applyFlatRateFallback();
         }
       })
-      .catch(() => {
+      .catch((e) => {
         if (!controller.signal.aborted) {
-          setPincodeShippingPrepaid(null);
-          setPincodeShippingCod(null);
-          setShippingPinLabel("");
-          showToast("Shipping rate lookup failed. A standard rate will apply.", "warning", 4000);
+          console.error("delhivery-pincode-check threw:", e);
+          applyFlatRateFallback();
         }
       })
       .finally(() => { if (!controller.signal.aborted) setShippingLoading(false); });
@@ -285,77 +293,56 @@ export default function Checkout() {
   const effectiveBase = pincodeShipping !== null ? pincodeShipping : shippingBase;
   const qualifiesFreeShipping = freeShippingMin > 0 && sub >= freeShippingMin;
   const shipping = qualifiesFreeShipping ? 0 : effectiveBase;
-  const gstAmount = gstPercent > 0 ? Math.round((sub * gstPercent) / 100) : 0;
+
+  // Indian GST is levied on the discounted taxable value, so the coupon comes
+  // off first. The order RPCs re-derive the same way server-side.
+  const discountAmount = appliedCoupon ? Math.round((sub * appliedCoupon.percentage) / 100) : 0;
+  const taxableAmount = Math.max(0, sub - discountAmount);
+  const gstAmount = gstPercent > 0 ? Math.round((taxableAmount * gstPercent) / 100) : 0;
 
   // GST split: CGST+SGST for intra-state (Andhra Pradesh), IGST for inter-state
   const deliveryState = (form.state || "").trim();
   const isIntraState = deliveryState.toLowerCase() === warehouseState.toLowerCase();
   const halfGst = gstPercent / 2;  // e.g. 5% → 2.5%
   const halfGstAmount = gstAmount > 0 ? Math.round(gstAmount / 2) : 0;
-  const discountAmount = appliedCoupon ? Math.round((sub * appliedCoupon.percentage) / 100) : 0;
 
   // CoreCoins discount calculation
   const minRedeem = Number(corecoinsConfig?.min_redeem || 0);
   const coinValueInr = Number(corecoinsConfig?.coin_value_inr || 1);
   const canUseCoins = corecoinsEnabled && corecoinsConfig && coinBalance >= minRedeem;
-  const preCoinsTotal = Math.max(0, sub + shipping + gstAmount - discountAmount);
-  const coinsDiscount = (useCoins && canUseCoins) ? Math.min(Math.floor(coinBalance * coinValueInr), preCoinsTotal) : 0;
+  const preCoinsTotal = Math.max(0, taxableAmount + shipping + gstAmount);
+  // Razorpay rejects a ₹0 order, so an online payment must stay at least ₹1.
+  // COD may still be redeemed all the way down to ₹0.
+  const minPayable = selectedPaymentMethod === "prepaid" ? 1 : 0;
+  const maxCoinsDiscount = Math.max(0, preCoinsTotal - minPayable);
+  const coinsDiscount = (useCoins && canUseCoins) ? Math.min(Math.floor(coinBalance * coinValueInr), maxCoinsDiscount) : 0;
   const coinsUsed = coinValueInr > 0 ? Math.ceil(coinsDiscount / coinValueInr) : 0;
   const total = Math.max(0, preCoinsTotal - coinsDiscount);
   const amountToFreeShipping = freeShippingMin > 0 && !qualifiesFreeShipping ? freeShippingMin - sub : 0;
 
-  // Coupon apply handler — fetches fresh from DB to ensure latest codes
+  // Coupon apply handler — validated entirely server-side by `validate_coupon`,
+  // which checks the schedule, email and first-time-customer restrictions.
   const applyCoupon = async () => {
     const code = couponInput.trim().toUpperCase();
     setCouponError("");
     if (!code) { setCouponError("Enter a coupon code"); return; }
     setValidatingCoupon(true);
     try {
-      const { data } = await supabase.from("app_settings").select("value")
-        .eq("key", "discount_codes").maybeSingle();
-      const codes = Array.isArray(data?.value) ? data.value : [];
-      const found = codes.find(c => c.code === code && c.active);
-      if (!found) { setCouponError("Invalid or expired coupon code"); setValidatingCoupon(false); return; }
-
-      // Check schedule
-      const now = new Date();
-      if (found.startsAt && new Date(found.startsAt) > now) {
-        setCouponError("This coupon is not active yet");
-        setValidatingCoupon(false);
+      const { data, error } = await supabase.rpc("validate_coupon", { p_code: code });
+      if (error) throw error;
+      const res = Array.isArray(data) ? data[0] : data;
+      if (!res?.valid) {
+        setCouponError(res?.message || "Invalid or expired coupon code");
         return;
       }
-      if (found.endsAt && new Date(found.endsAt) < now) {
-        setCouponError("This coupon has expired");
-        setValidatingCoupon(false);
-        return;
-      }
-
-      // Check email restriction
-      if (found.emails?.length > 0) {
-        const userEmail = (user?.email || "").toLowerCase();
-        if (!found.emails.map(e => e.toLowerCase()).includes(userEmail)) {
-          setCouponError("This coupon is not available for your account");
-          setValidatingCoupon(false);
-          return;
-        }
-      }
-
-      // Check new-users-only restriction
-      if (found.newUsersOnly) {
-        const { count } = await supabase.from("orders").select("id", { count: "exact", head: true }).eq("user_id", user.id);
-        if (count > 0) {
-          setCouponError("This coupon is only for first-time customers");
-          setValidatingCoupon(false);
-          return;
-        }
-      }
-
-      setAppliedCoupon({ code: found.code, percentage: found.percentage });
-      sessionStorage.setItem("coreatoms_coupon", JSON.stringify({ code: found.code, percentage: found.percentage }));
+      const applied = { code, percentage: Number(res.percentage) || 0 };
+      setAppliedCoupon(applied);
+      sessionStorage.setItem("coreatoms_coupon", JSON.stringify(applied));
       setCouponInput("");
-      showToast(`Coupon "${found.code}" applied — ${found.percentage}% off!`, "success");
-    } catch {
-      setCouponError("Failed to validate coupon. Try again.");
+      showToast(`Coupon "${applied.code}" applied — ${applied.percentage}% off!`, "success");
+    } catch (e) {
+      console.error("validate_coupon failed:", e);
+      setCouponError("Could not check this coupon right now. Please try again.");
     } finally {
       setValidatingCoupon(false);
     }
@@ -502,12 +489,27 @@ export default function Checkout() {
 
   // The active address used to place the order
   const activeAddress = form;
+  const addressComplete = isValidAddress(activeAddress);
   const canPlace =
     !!user &&
     totalItems > 0 &&
-    isValidAddress(activeAddress) &&
+    addressComplete &&
     shippingResolved &&     // must have a confirmed shipping rate
     !shippingLoading;       // not currently fetching
+
+  // Name the actual blocker — `canPlace` is also false while shipping resolves,
+  // and blaming the address form for that is misleading.
+  const blockerMessage = !user
+    ? "Sign in to place this order."
+    : totalItems === 0
+      ? "Your cart is empty — add something before checking out."
+      : !addressComplete
+        ? "Fill all required fields — name, valid 10-digit phone, address, city, state, 6-digit pincode."
+        : shippingLoading
+          ? "Working out shipping for your pincode — one moment…"
+          : !shippingResolved
+            ? "We couldn't work out shipping for this pincode yet. Re-check the pincode and try again."
+            : "";
 
   // Build the items payload (shared between COD and Razorpay)
   const buildPayloadItems = () => (items || []).map((x) => {
@@ -559,13 +561,18 @@ export default function Checkout() {
         paymentMethod: 'cod',
       });
       setPlaced(true);
-      setTimeout(() => { clear(); navigate("/orders"); }, 5000);
+      // Empty the cart immediately — the receipt above renders from the
+      // snapshot, so a shopper who closes the tab can't re-order what they
+      // just bought. Only the redirect stays on a timer.
+      clear();
+      redirectTimer.current = setTimeout(() => navigate("/orders"), 5000);
     } catch (e) {
       const msg = e?.message || "Unknown error";
       if (msg.toLowerCase().includes("insufficient")) {
         showToast("Some items are out of stock. Please reduce quantity and try again.", "warning", 4000);
       } else {
-        showToast(`Order failed: ${msg}`, "error", 4000);
+        console.error("place_order_cod failed:", e);
+        showToast("We couldn't place your order. Please try again in a moment.", "error", 4000);
       }
     } finally {
       setLoading(false);
@@ -667,9 +674,17 @@ export default function Checkout() {
               razorpayPaymentId: response.razorpay_payment_id,
             });
             setPlaced(true);
-            setTimeout(() => { clear(); navigate("/orders"); }, 5000);
+            // Cart is emptied straight away — the receipt renders from the
+            // snapshot above, so closing the tab can't leave paid-for items
+            // sitting in the cart ready to be ordered a second time.
+            clear();
+            redirectTimer.current = setTimeout(() => navigate("/orders"), 5000);
           } catch (vErr) {
-            showToast(`Payment received but order failed: ${vErr.message}. Contact support.`, "error", 6000);
+            console.error("Order creation after payment failed:", vErr);
+            showToast(
+              `Payment received, but we couldn't finalise your order. Please contact support with payment ID ${response.razorpay_payment_id}.`,
+              "error", 6000
+            );
           } finally {
             setPayingOnline(false);
           }
@@ -680,8 +695,8 @@ export default function Checkout() {
         },
       });
     } catch (e) {
-      const msg = e?.message || "Unknown error";
-      showToast(`Payment failed: ${msg}`, "error", 4000);
+      console.error("Razorpay payment could not be started:", e);
+      showToast("We couldn't start the payment. Please try again in a moment.", "error", 4000);
       setPayingOnline(false);
     }
   };
@@ -716,7 +731,7 @@ export default function Checkout() {
               {r.items.map((it, i) => (
                 <div key={i} className="flex justify-between text-sm">
                   <span className="text-stone-700 truncate max-w-[200px]">{it.name} <span className="text-stone-400">×{it.qty}</span></span>
-                  <span className="font-medium text-stone-900 ml-2">₹{(it.unitPrice * it.qty).toLocaleString('en-IN')}</span>
+                  <span className="font-medium text-stone-900 ml-2">{money(it.unitPrice * it.qty)}</span>
                 </div>
               ))}
             </div>
@@ -726,12 +741,12 @@ export default function Checkout() {
             <div className="px-5 py-4 space-y-2">
               <div className="flex justify-between text-sm">
                 <span className="text-stone-500">Items subtotal</span>
-                <span className="text-stone-800">₹{r.itemsTotal.toLocaleString('en-IN')}</span>
+                <span className="text-stone-800">{money(r.itemsTotal)}</span>
               </div>
               {r.shipping > 0 ? (
                 <div className="flex justify-between text-sm">
                   <span className="text-stone-500">Shipping</span>
-                  <span className="text-stone-800">₹{r.shipping.toLocaleString('en-IN')}</span>
+                  <span className="text-stone-800">{money(r.shipping)}</span>
                 </div>
               ) : (
                 <div className="flex justify-between text-sm">
@@ -744,17 +759,17 @@ export default function Checkout() {
                   <>
                     <div className="flex justify-between text-sm">
                       <span className="text-stone-500">CGST ({r.halfGst}%)</span>
-                      <span className="text-stone-800">₹{r.halfGstAmount.toLocaleString('en-IN')}</span>
+                      <span className="text-stone-800">{money(r.halfGstAmount)}</span>
                     </div>
                     <div className="flex justify-between text-sm">
                       <span className="text-stone-500">SGST ({r.halfGst}%)</span>
-                      <span className="text-stone-800">₹{(r.gstAmount - r.halfGstAmount).toLocaleString('en-IN')}</span>
+                      <span className="text-stone-800">{money(r.gstAmount - r.halfGstAmount)}</span>
                     </div>
                   </>
                 ) : (
                   <div className="flex justify-between text-sm">
                     <span className="text-stone-500">IGST ({r.gstPercent}%)</span>
-                    <span className="text-stone-800">₹{r.gstAmount.toLocaleString('en-IN')}</span>
+                    <span className="text-stone-800">{money(r.gstAmount)}</span>
                   </div>
                 )
               )}
@@ -763,7 +778,7 @@ export default function Checkout() {
                   <span className="text-emerald-600 flex items-center gap-1">
                     🎉 Coupon <span className="font-mono font-bold">{r.coupon.code}</span> ({r.coupon.percentage}% off)
                   </span>
-                  <span className="text-emerald-700 font-medium">−₹{r.discountAmount.toLocaleString('en-IN')}</span>
+                  <span className="text-emerald-700 font-medium">−{money(r.discountAmount)}</span>
                 </div>
               )}
               {r.coinsUsed > 0 && (
@@ -772,12 +787,12 @@ export default function Checkout() {
                     <svg className="h-3 w-3" viewBox="0 0 20 20" fill="currentColor"><path d="M10 2a8 8 0 100 16A8 8 0 0010 2z" /></svg>
                     CoreCoins ({r.coinsUsed} coins)
                   </span>
-                  <span className="text-amber-700 font-medium">−₹{r.coinsDiscount.toLocaleString('en-IN')}</span>
+                  <span className="text-amber-700 font-medium">−{money(r.coinsDiscount)}</span>
                 </div>
               )}
               <div className="border-t border-[#E8E4DE] pt-2 flex justify-between">
                 <span className="font-semibold text-stone-800">Total Paid</span>
-                <span className="text-lg font-bold text-stone-900">₹{r.total.toLocaleString('en-IN')}</span>
+                <span className="text-lg font-bold text-stone-900">{money(r.total)}</span>
               </div>
             </div>
 
@@ -790,8 +805,11 @@ export default function Checkout() {
             )}
           </div>
 
-          {/* Redirect note */}
-          <p className="text-center text-xs text-stone-400">Redirecting to My Orders in a few seconds…</p>
+          {/* Navigation — never rely on the redirect timer alone */}
+          <Link to="/orders" className="btn-primary w-full py-3 text-[14px] flex items-center justify-center">
+            View my orders
+          </Link>
+          <p className="text-center text-xs text-stone-400">Taking you there automatically in a few seconds…</p>
         </div>
       </div>
     );
@@ -821,7 +839,9 @@ export default function Checkout() {
       <div className="mb-8">
         <Link to="/cart" className="text-sm text-stone-500 hover:text-stone-900 transition-colors">← Back to Cart</Link>
         <h1 className="mt-3 text-2xl font-semibold tracking-tight text-stone-900">Checkout</h1>
-        <p className="text-sm text-stone-500 mt-1">Cash on Delivery · India only</p>
+        <p className="text-sm text-stone-500 mt-1">
+          {selectedPaymentMethod === "prepaid" ? "Secure online payment · India only" : "Cash on Delivery · India only"}
+        </p>
       </div>
 
       <div className="grid gap-6 lg:grid-cols-5">
@@ -839,9 +859,17 @@ export default function Checkout() {
           ) : savedAddresses.length > 0 && (
             <div className="card p-5 space-y-3">
               <p className="text-xs font-semibold text-stone-500 uppercase tracking-wide">Saved</p>
-              {savedAddresses.map((addr) => (
-                <div key={addr.id} onClick={() => selectSavedAddress(addr)}
-                  className={`flex items-start gap-3 rounded-xl border p-4 cursor-pointer transition-all ${selectedAddressId === addr.id
+              <div role="radiogroup" aria-label="Saved addresses" className="space-y-3">
+                {savedAddresses.map((addr) => (
+                <div key={addr.id}
+                  role="radio"
+                  aria-checked={selectedAddressId === addr.id}
+                  tabIndex={0}
+                  onClick={() => selectSavedAddress(addr)}
+                  onKeyDown={(e) => {
+                    if (e.key === "Enter" || e.key === " ") { e.preventDefault(); selectSavedAddress(addr); }
+                  }}
+                  className={`flex items-start gap-3 rounded-xl border p-4 cursor-pointer transition-all outline-none focus-visible:ring-2 focus-visible:ring-[#1e3a5f]/30 ${selectedAddressId === addr.id
                     ? "border-[#1e3a5f] bg-[#EFF6FF]"
                     : "border-[#E8E4DE] hover:border-stone-300"
                     }`}
@@ -876,7 +904,8 @@ export default function Checkout() {
                     )}
                   </div>
                 </div>
-              ))}
+                ))}
+              </div>
               <button type="button" onClick={startNewAddress}
                 className={`w-full rounded-xl border-2 border-dashed px-4 py-3 text-sm font-medium transition-all ${selectedAddressId === null
                   ? "border-[#1e3a5f] text-[#1e3a5f] bg-[#EFF6FF]"
@@ -896,37 +925,46 @@ export default function Checkout() {
                   {editingAddressId ? "Edit address" : savedAddresses.length > 0 ? "New address" : ""}
                 </p>
                 {editingAddressId && (
-                  <button type="button" onClick={() => { setEditingAddressId(null); selectSavedAddress(savedAddresses.find(a => a.id === editingAddressId)); }}
+                  <button type="button" onClick={() => {
+                    // The address may have been deleted from under us — fall
+                    // back to a blank form rather than blowing up on undefined.
+                    const original = savedAddresses.find(a => a.id === editingAddressId);
+                    setEditingAddressId(null);
+                    if (original) selectSavedAddress(original); else startNewAddress();
+                  }}
                     className="text-xs text-stone-400 hover:text-stone-600 transition-colors">Cancel editing</button>
                 )}
               </div>
 
               <div className="grid gap-4 sm:grid-cols-2">
                 <div>
-                  <label className="text-xs font-semibold text-stone-500 block mb-1.5">Full name *</label>
-                  <input value={form.fullName} onChange={(e) => setForm(a => ({ ...a, fullName: e.target.value }))} placeholder="Your name" className={inputCls} />
+                  <label htmlFor="addr-fullname" className="text-xs font-semibold text-stone-500 block mb-1.5">Full name *</label>
+                  <input id="addr-fullname" value={form.fullName} onChange={(e) => setForm(a => ({ ...a, fullName: e.target.value }))} placeholder="Your name" className={inputCls} />
                 </div>
                 <div>
-                  <label className="text-xs font-semibold text-stone-500 block mb-1.5">Phone (India) *</label>
-                  <input value={form.phone} onChange={(e) => setForm(a => ({ ...a, phone: e.target.value }))} placeholder="10-digit mobile" className={inputCls} />
+                  <label htmlFor="addr-phone" className="text-xs font-semibold text-stone-500 block mb-1.5">Phone (India) *</label>
+                  <input id="addr-phone" type="text" inputMode="numeric" maxLength={10}
+                    value={form.phone}
+                    onChange={(e) => setForm(a => ({ ...a, phone: e.target.value.replace(/\D/g, "").slice(0, 10) }))}
+                    placeholder="10-digit mobile" className={inputCls} />
                 </div>
               </div>
               <div>
-                <label className="text-xs font-semibold text-stone-500 block mb-1.5">Address line 1 *</label>
-                <input value={form.line1} onChange={(e) => setForm(a => ({ ...a, line1: e.target.value }))} placeholder="House / Flat, Street" className={inputCls} />
+                <label htmlFor="addr-line1" className="text-xs font-semibold text-stone-500 block mb-1.5">Address line 1 *</label>
+                <input id="addr-line1" value={form.line1} onChange={(e) => setForm(a => ({ ...a, line1: e.target.value }))} placeholder="House / Flat, Street" className={inputCls} />
               </div>
               <div>
-                <label className="text-xs font-semibold text-stone-500 block mb-1.5">Address line 2 (optional)</label>
-                <input value={form.line2} onChange={(e) => setForm(a => ({ ...a, line2: e.target.value }))} placeholder="Landmark, Area" className={inputCls} />
+                <label htmlFor="addr-line2" className="text-xs font-semibold text-stone-500 block mb-1.5">Address line 2 (optional)</label>
+                <input id="addr-line2" value={form.line2} onChange={(e) => setForm(a => ({ ...a, line2: e.target.value }))} placeholder="Landmark, Area" className={inputCls} />
               </div>
               <div className="grid gap-4 sm:grid-cols-3">
                 <div>
-                  <label className="text-xs font-semibold text-stone-500 block mb-1.5">City *</label>
-                  <input value={form.city} onChange={(e) => setForm(a => ({ ...a, city: e.target.value }))} placeholder="City" className={inputCls} />
+                  <label htmlFor="addr-city" className="text-xs font-semibold text-stone-500 block mb-1.5">City *</label>
+                  <input id="addr-city" value={form.city} onChange={(e) => setForm(a => ({ ...a, city: e.target.value }))} placeholder="City" className={inputCls} />
                 </div>
                 <div>
-                  <label className="text-xs font-semibold text-stone-500 block mb-1.5">State *</label>
-                  <select value={form.state} onChange={(e) => setForm(a => ({ ...a, state: e.target.value }))} className={inputCls}>
+                  <label htmlFor="addr-state" className="text-xs font-semibold text-stone-500 block mb-1.5">State *</label>
+                  <select id="addr-state" value={form.state} onChange={(e) => setForm(a => ({ ...a, state: e.target.value }))} className={inputCls}>
                     <option value="">Select state</option>
                     <option value="Andhra Pradesh">Andhra Pradesh</option>
                     <option value="Arunachal Pradesh">Arunachal Pradesh</option>
@@ -967,8 +1005,11 @@ export default function Checkout() {
                   </select>
                 </div>
                 <div>
-                  <label className="text-xs font-semibold text-stone-500 block mb-1.5">Pincode *</label>
-                  <input value={form.pincode} onChange={(e) => setForm(a => ({ ...a, pincode: e.target.value }))} placeholder="6 digits" className={inputCls} />
+                  <label htmlFor="addr-pincode" className="text-xs font-semibold text-stone-500 block mb-1.5">Pincode *</label>
+                  <input id="addr-pincode" type="text" inputMode="numeric" maxLength={6}
+                    value={form.pincode}
+                    onChange={(e) => setForm(a => ({ ...a, pincode: e.target.value.replace(/\D/g, "").slice(0, 6) }))}
+                    placeholder="6 digits" className={inputCls} />
                 </div>
               </div>
 
@@ -982,9 +1023,9 @@ export default function Checkout() {
             </div>
           )}
 
-          {!canPlace && (form.fullName || form.line1) && (
+          {!canPlace && blockerMessage && (form.fullName || form.line1) && (
             <div className="rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-xs text-amber-700">
-              Fill all required fields — name, valid 10-digit phone, address, city, state, 6-digit pincode.
+              {blockerMessage}
             </div>
           )}
         </div>

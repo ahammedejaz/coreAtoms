@@ -65,11 +65,18 @@ Edge Functions (Deno, in `frontend/supabase/functions/`):
 - `delhivery-track` — live tracking (mobile only currently)
 - `send-order-notification` — push notification after order events (in root `supabase/`)
 
-**SQL lives in two trees.** `frontend/supabase/migrations/master_schema.sql` is the big idempotent file
-covering tables, RLS policies, triggers and RPCs, but it has drifted from production: the newer objects
-(`push_tokens`, the push trigger, the realtime publication, the RPC grant hardening) were added as timestamped
-migrations in the **root** `supabase/migrations/`, which is the tree the Supabase CLI is linked to and where
-`npx supabase db push` applies from. Read both, and confirm against the live database before trusting either.
+**SQL lives in two trees, and they no longer overlap.**
+`frontend/supabase/migrations/master_schema.sql` holds the **tables, indexes, RLS policies and seed data** —
+and it is the only record of the pre-March 2026 base schema, because the root tree starts from an empty
+baseline marker. The root `supabase/migrations/` holds the **functions, RPCs and hardening** as timestamped
+migrations; that is the tree the Supabase CLI is linked to and what `npx supabase db push` applies.
+
+`master_schema.sql` used to carry a second copy of every RPC as well, and that copy drifted until it described
+a variant-oversell bug and a pre-discount GST calculation as if they were the schema. Those bodies have been
+removed and replaced with pointers to the migration that owns each one, so there is nothing left to drift.
+**Do not paste function bodies back into it.** Standing up a fresh project is two steps: run `master_schema.sql`
+for the tables, then `npx supabase db push` for the functions.
+
 `supabase/migrations/20260304_existing.sql` is empty on purpose — it is the baseline marker matching the remote
 migration record, so do not delete it.
 
@@ -145,6 +152,21 @@ table is in the `supabase_realtime` publication — `orders` and `products` are.
 Edge Function over `pg_net`; it looks up the user's `push_tokens` rows and sends via the Expo Push API. Mobile
 registers tokens in `mobile/src/services/notifications.js` (physical devices only) and drops them on sign-out.
 
+**A notification must never be able to abort the thing it is notifying about.** The dispatch inside
+`notify_order_status_change` is wrapped in its own `BEGIN ... EXCEPTION WHEN OTHERS` block, and skips out early
+if `to_regnamespace('net')` is NULL. That is not defensive padding — the original trigger called
+`net.http_post` without ever installing `pg_net`, so every `orders.status` UPDATE raised
+`schema "net" does not exist` and rolled back. Order fulfilment was frozen from 2026-03-13 to 2026-08-31:
+no confirming, shipping, delivering or cancelling, and `delhivery-create-shipment` silently failed to record
+waybills it had already paid for. Keep any future outbound call in the same shape.
+
+The endpoint is authenticated by the `order_notify_secret` **Vault** secret: the trigger sends it as
+`x-notify-secret`, and the function checks it through `verify_notify_secret()` (granted to `service_role` only),
+so the secret never leaves the database and no dashboard-managed env var is involved. The function also re-reads
+the order and uses the *stored* owner and status, so the request body only ever supplies identifiers. Do not
+restore the old `current_setting('supabase.service_role_key', true)` header — that GUC does not exist on
+Supabase, so the header was literally null and the endpoint was open.
+
 ### Security Model
 
 - Order RPCs are `SECURITY DEFINER` and re-derive price, GST, shipping and coupon discount server-side. The
@@ -186,15 +208,29 @@ registers tokens in `mobile/src/services/notifications.js` (physical devices onl
   caller-supplied, so reading it let anyone defeat every limit with a random header per request.
 - Never expose `SUPABASE_SERVICE_ROLE_KEY` or `RAZORPAY_KEY_SECRET` to a client; they belong in Edge Function
   secrets only.
+- **`is_admin()` reads `admin_users`, not `profiles.role`.** Every RLS policy in the schema calls `is_admin()`,
+  which checks for a row in `public.admin_users` — but `AuthContext.isAdmin` and `delhivery-create-shipment`
+  both check `profiles.role = 'admin'`. They agree today (one admin, present in both). Promoting someone by
+  setting `profiles.role` alone gives them the dashboard UI and then permission errors on every query. Write
+  both, or unify them deliberately.
+- **Shared Edge Function modules are bundled at deploy time, not resolved at run time.** Editing
+  `_shared/cors.ts` or `_shared/rate-limit.ts` changes nothing in production until *every* function that imports
+  them is redeployed. `delhivery-create-shipment` and `delhivery-pincode-check` ran the pre-audit rate limiter
+  and the wildcard `*.vercel.app` CORS rule for a day after those files were fixed, purely because they were not
+  redeployed. After touching `_shared/`, redeploy all five importers.
+- `delhivery-create-shipment` reads the COD amount and declared value from the `orders` row, never from the
+  request body — `cod_amount` is real cash a courier collects at the customer's door. It also refuses to create
+  a COD shipment for an order that is not COD, returns the existing waybill instead of buying a second one, and
+  only advances status from `placed`/`confirmed`.
 
 ## Key Design Decisions
 
 - **No TypeScript** — entire codebase is `.js`/`.jsx`. JSDoc is used in some files for documentation.
 - **Tailwind v4** — CSS-first configuration. There is no `tailwind.config.js`; all customization lives in
   `frontend/src/index.css`.
-- **Two Supabase trees** — `master_schema.sql` describes the bulk of the schema, but it is no longer the whole
-  truth (see Backend above). New schema changes go in the root `supabase/migrations/` as timestamped files,
-  because that is what the CLI applies.
+- **Two Supabase trees, split by responsibility** — `master_schema.sql` owns tables/RLS/seed data, the root
+  `supabase/migrations/` owns functions and RPCs (see Backend above). New schema changes go in the root tree as
+  timestamped files, because that is what the CLI applies.
 - **Mobile mirrors web services** — `mobile/src/services/` and `frontend/src/services/` share the same Supabase queries and `mapDbProduct()` shape. Changes to data models must be reflected in both.
 - **Admin in same app** — the admin dashboard is not a separate Vite project; it shares the customer app's build, router, and contexts.
 

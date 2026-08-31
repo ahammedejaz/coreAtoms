@@ -1,53 +1,44 @@
 -- ╔══════════════════════════════════════════════════════════════════════════╗
--- ║              CORE ATOMS — MASTER DATABASE SCHEMA                        ║
+-- ║              CORE ATOMS — BASE DATABASE SCHEMA                           ║
 -- ║                                                                          ║
--- ║  ⚠ DO NOT REPLAY THIS FILE OVER THE LIVE DATABASE. ⚠                    ║
+-- ║  WHAT THIS FILE IS                                                       ║
+-- ║  ─────────────────                                                       ║
+-- ║  The tables, indexes, RLS policies and seed data for a FRESH project.    ║
+-- ║  It is the only record of the pre-March 2026 schema: the root            ║
+-- ║  `supabase/migrations/` tree starts from an empty baseline marker        ║
+-- ║  (`20260304_existing.sql`), so it cannot stand a project up on its own.  ║
 -- ║                                                                          ║
--- ║  It is a REFERENCE SNAPSHOT and it is STALE as of 2026-08-30. The root   ║
--- ║  `supabase/migrations/` tree is authoritative — that is what             ║
--- ║  `npx supabase db push` applies. Running this file against production    ║
--- ║  would silently REVERT security and correctness fixes, because:          ║
+-- ║  WHAT THIS FILE IS NOT                                                   ║
+-- ║  ─────────────────────                                                   ║
+-- ║  It no longer defines the order RPCs, the CoreCoins functions or the     ║
+-- ║  notification trigger. It used to hold a second copy of each, and that   ║
+-- ║  copy drifted until it described a variant-oversell bug and a            ║
+-- ║  pre-discount GST calculation as if they were the schema. Those bodies   ║
+-- ║  have been removed and replaced with pointers to the migration that      ║
+-- ║  owns each one, so there is nothing left here to drift.                  ║
 -- ║                                                                          ║
--- ║   • `CREATE OR REPLACE FUNCTION` DISCARDS a function's SET clause, so    ║
--- ║     every SECURITY DEFINER function here that lacks an inline            ║
--- ║     `SET search_path = public, pg_temp` loses that hardening.            ║
--- ║   • The `place_order_cod` / `place_order_prepaid` bodies below are the   ║
--- ║     OLD ones: they check variant stock but decrement `products`, which   ║
--- ║     allows unlimited oversell of variants, and they tax the              ║
--- ║     pre-discount subtotal.                                               ║
--- ║   • `cancel_order` below neither restores stock nor refunds CoreCoins.   ║
--- ║   • The `profiles` UPDATE policy below is missing the WITH CHECK that    ║
--- ║     stops a customer promoting themselves to admin.                      ║
--- ║   • `place_order_prepaid` below lacks the idempotency and paid-amount    ║
--- ║     checks that stop duplicate and underpaid orders.                     ║
+-- ║  STANDING UP A FRESH PROJECT                                             ║
+-- ║  ───────────────────────────                                             ║
+-- ║    1. Supabase Dashboard → SQL Editor → run this file (tables + RLS).    ║
+-- ║    2. `npx supabase db push` (functions, RPCs, and the security          ║
+-- ║       hardening that comes with them).                                   ║
 -- ║                                                                          ║
--- ║  The current definitions live in                                         ║
--- ║    supabase/migrations/20260830183910_security_and_order_integrity.sql   ║
--- ║    supabase/migrations/20260830184145_order_rpcs_prepaid_cancel_...sql   ║
--- ║  Read those before trusting anything below, and reconcile this file      ║
--- ║  before using it to stand up a new project.                              ║
+-- ║  DO NOT REPLAY THIS FILE OVER THE LIVE DATABASE. `CREATE OR REPLACE      ║
+-- ║  FUNCTION` DISCARDS a function's SET clause, so any SECURITY DEFINER     ║
+-- ║  function here that lacks an inline `SET search_path = public, pg_temp`  ║
+-- ║  would silently lose that hardening.                                     ║
 -- ║                                                                          ║
--- ║  Full schema for the Core Atoms Supabase database, safe to run          ║
--- ║  repeatedly against a FRESH project                                      ║
--- ║  (all statements use IF NOT EXISTS / OR REPLACE / ON CONFLICT).         ║
--- ║                                                                          ║
--- ║  Pre-requisites (do in Supabase Dashboard before running this file):    ║
+-- ║  Pre-requisites (in the Supabase Dashboard, before running this file):   ║
 -- ║    1. Enable Supabase Auth                                               ║
 -- ║    2. Create storage buckets:                                            ║
--- ║         - hero-images      (public)                                      ║
--- ║         - product-images   (public)                                      ║
--- ║         - replacement-images (public, 5 MB limit, jpg/png/webp)         ║
--- ║    3. Set up storage polices: SELECT public, INSERT authenticated        ║
+-- ║         - hero-images        (public)                                    ║
+-- ║         - product-images     (public)                                    ║
+-- ║         - replacement-images (public, 5 MB limit, jpg/png/webp)          ║
+-- ║    3. Storage policies: SELECT public, INSERT authenticated              ║
 -- ║                                                                          ║
--- ║  How to run: Supabase Dashboard → SQL Editor → paste & run              ║
+-- ║  When this file and the live database disagree, the live database wins.  ║
 -- ║                                                                          ║
--- ║  Last updated: 2026-08-30                                                ║
--- ║                                                                          ║
--- ║  NOTE: incremental changes are applied as timestamped migrations in the  ║
--- ║  repo-root supabase/migrations/, which is the tree the Supabase CLI is   ║
--- ║  linked to. This file is kept in sync with them by hand — when they      ║
--- ║  diverge, the live database is the authority. `pg_net` must be enabled   ║
--- ║  for the order-status push trigger.                                      ║
+-- ║  Last updated: 2026-08-31                                                ║
 -- ╚══════════════════════════════════════════════════════════════════════════╝
 
 
@@ -103,9 +94,17 @@ DROP POLICY IF EXISTS "Users can update own profile" ON public.profiles;
 DROP POLICY IF EXISTS "Admins can view all profiles" ON public.profiles;
 
 CREATE POLICY "Users can view own profile"   ON public.profiles FOR SELECT USING (auth.uid() = id);
+-- The WITH CHECK is load-bearing: for UPDATE, Postgres falls back to the USING
+-- expression when a policy has none, and a duplicate policy without one let any
+-- customer promote themselves to admin. Never add a second permissive UPDATE
+-- policy on this table — permissive policies OR together.
 CREATE POLICY "Users can update own profile" ON public.profiles FOR UPDATE
-  USING (auth.uid() = id)
-  WITH CHECK (auth.uid() = id AND role = 'customer');  -- cannot self-promote to admin
+  TO authenticated
+  USING (id = (SELECT auth.uid()))
+  WITH CHECK (
+    id = (SELECT auth.uid())
+    AND (COALESCE(role, 'customer') = 'customer' OR (SELECT public.is_admin()))
+  );
 CREATE POLICY "Admins can view all profiles" ON public.profiles FOR SELECT USING (public.is_admin());
 
 -- Auto-create profile on signup
@@ -572,177 +571,16 @@ CREATE POLICY "Admins can update replacements"   ON public.replacements FOR UPDA
 -- ──────────────────────────────────────────────────────────────────────────
 DROP FUNCTION IF EXISTS public.place_order_cod(UUID, JSONB, JSONB, INT);
 
-CREATE OR REPLACE FUNCTION public.place_order_cod(
-    p_user_id    UUID,
-    p_address    JSONB,
-    p_items      JSONB,
-    p_coins_used  INT     DEFAULT 0,
-    p_shipping    NUMERIC DEFAULT 0,  -- used only when flat rate = 0 (pincode mode)
-    p_gst         NUMERIC DEFAULT 0, -- IGNORED — GST is recalculated server-side
-    p_discount    NUMERIC DEFAULT 0, -- IGNORED — discount is recalculated server-side from coupon
-    p_coupon_code TEXT    DEFAULT NULL
-) RETURNS UUID
-LANGUAGE plpgsql SECURITY DEFINER
-AS $$
-DECLARE
-    v_order_id       UUID;
-    v_item           JSONB;
-    v_product_id     UUID;
-    v_variant_id     UUID;
-    v_qty            INT;
-    v_unit_price     NUMERIC;  -- always fetched from DB, never from client
-    v_stock          INT;
-    v_subtotal       NUMERIC := 0;
-    v_count          INT := 0;
-    v_coin_value     NUMERIC;
-    v_coin_disc      NUMERIC;
-    v_total          NUMERIC;
-    -- Authoritative server-side values
-    v_flat_shipping  NUMERIC := 0;
-    v_free_ship_min  NUMERIC := 0;
-    v_gst_pct        NUMERIC := 0;
-    v_gst_amount     NUMERIC := 0;
-    v_shipping_final NUMERIC := 0;
-    -- Server-side coupon validation
-    v_discount_codes JSONB;
-    v_coupon         JSONB;
-    v_coupon_pct     NUMERIC := 0;
-    v_discount       NUMERIC := 0;
-BEGIN
-    -- ── 0. Auth + input sanity guards ─────────────────────────────────────
-    IF p_user_id <> auth.uid() THEN
-        RAISE EXCEPTION 'Unauthorized: cannot place order for another user';
-    END IF;
-    IF p_coins_used < 0 THEN RAISE EXCEPTION 'Invalid coins_used value'; END IF;
-    IF p_shipping < 0 OR p_shipping > 2000 THEN
-        RAISE EXCEPTION 'Shipping amount out of valid range (0–2000)';
-    END IF;
-
-    -- ── 1. Load authoritative pricing from app_settings ──────────────────
-    SELECT COALESCE((value->>'amount')::numeric, 0)
-      INTO v_flat_shipping FROM app_settings WHERE key = 'shipping_amount';
-    SELECT COALESCE((value->>'amount')::numeric, 0)
-      INTO v_free_ship_min FROM app_settings WHERE key = 'free_shipping_min';
-    SELECT COALESCE((value->>'percentage')::numeric, 0)
-      INTO v_gst_pct FROM app_settings WHERE key = 'gst_percentage';
-
-    -- ── 2. Deduct CoreCoins if used ───────────────────────────────────────
-    IF p_coins_used > 0 THEN
-        UPDATE corecoins_wallet
-          SET balance    = balance - p_coins_used,
-              updated_at = now()
-          WHERE user_id = p_user_id
-            AND balance >= p_coins_used;
-        IF NOT FOUND THEN
-            RAISE EXCEPTION 'Insufficient CoreCoins balance';
-        END IF;
-    END IF;
-
-    -- ── 3. Server-side coupon validation ───────────────────────────────────
-    IF p_coupon_code IS NOT NULL AND p_coupon_code <> '' THEN
-        SELECT value INTO v_discount_codes FROM app_settings WHERE key = 'discount_codes';
-        -- Find matching active coupon in JSONB array
-        SELECT elem INTO v_coupon FROM jsonb_array_elements(COALESCE(v_discount_codes, '[]'::jsonb)) AS elem
-          WHERE elem->>'code' = UPPER(p_coupon_code) AND (elem->>'active')::boolean = true
-          LIMIT 1;
-        IF v_coupon IS NOT NULL THEN
-            -- Validate schedule (startsAt / endsAt)
-            IF v_coupon->>'startsAt' IS NOT NULL AND (v_coupon->>'startsAt')::timestamptz > now() THEN
-                v_coupon := NULL;  -- not active yet
-            END IF;
-            IF v_coupon IS NOT NULL AND v_coupon->>'endsAt' IS NOT NULL AND (v_coupon->>'endsAt')::timestamptz < now() THEN
-                v_coupon := NULL;  -- expired
-            END IF;
-        END IF;
-        IF v_coupon IS NOT NULL THEN
-            v_coupon_pct := COALESCE((v_coupon->>'percentage')::numeric, 0);
-        END IF;
-    END IF;
-
-    -- ── 4. Insert order shell (totals updated after item loop) ────────────
-    INSERT INTO orders (
-        user_id, status, shipping_address, payment_method,
-        total_amount_inr, subtotal, shipping, shipping_amount, gst_amount,
-        total_items, coins_used, discount_amount, coupon_code
-    ) VALUES (
-        p_user_id, 'placed', p_address, 'cod',
-        0, 0, 0, 0, 0,
-        0, p_coins_used, 0, CASE WHEN v_coupon IS NOT NULL THEN p_coupon_code ELSE NULL END
-    ) RETURNING id INTO v_order_id;
-
-    -- ── 5. Loop items: fetch DB price → check stock → deduct → insert ─────
-    FOR v_item IN SELECT * FROM jsonb_array_elements(p_items) LOOP
-        v_product_id := (v_item->>'product_id')::UUID;
-        v_variant_id := CASE WHEN (v_item->>'variant_id') IS NOT NULL AND (v_item->>'variant_id') <> ''
-                             THEN (v_item->>'variant_id')::UUID ELSE NULL END;
-        v_qty        := (v_item->>'qty')::INT;
-
-        -- Fetch authoritative price from DB (variant preferred, else product)
-        IF v_variant_id IS NOT NULL THEN
-            SELECT price_inr, stock_qty INTO v_unit_price, v_stock
-              FROM product_variants WHERE id = v_variant_id AND product_id = v_product_id FOR UPDATE;
-        ELSE
-            SELECT price_inr, stock_qty INTO v_unit_price, v_stock
-              FROM products WHERE id = v_product_id FOR UPDATE;
-        END IF;
-
-        IF v_unit_price IS NULL THEN RAISE EXCEPTION 'Product or variant % not found', v_product_id; END IF;
-        IF v_stock < v_qty THEN RAISE EXCEPTION 'Insufficient stock for product %', v_product_id; END IF;
-
-        -- Deduct stock from products table
-        UPDATE products SET stock_qty = stock_qty - v_qty WHERE id = v_product_id;
-
-        INSERT INTO order_items (
-            order_id, product_id, variant_id,
-            product_name, qty, unit_price_inr, line_total_inr, image_url
-        ) VALUES (
-            v_order_id, v_product_id, v_variant_id,
-            v_item->>'product_name', v_qty, v_unit_price,
-            v_unit_price * v_qty, v_item->>'image_url'
-        );
-
-        v_subtotal := v_subtotal + (v_unit_price * v_qty);
-        v_count    := v_count + v_qty;
-    END LOOP;
-
-    -- ── 6. Server-side shipping and GST calculation ───────────────────────
-    -- Shipping: use flat rate if configured; otherwise accept client's pincode rate
-    IF v_flat_shipping > 0 THEN
-        v_shipping_final := v_flat_shipping;
-    ELSE
-        v_shipping_final := GREATEST(0, p_shipping);  -- pincode-based, client-provided
-    END IF;
-    -- Apply free-shipping threshold
-    IF v_free_ship_min > 0 AND v_subtotal >= v_free_ship_min THEN
-        v_shipping_final := 0;
-    END IF;
-
-    -- GST: always recalculated server-side — client value is ignored
-    v_gst_amount := CASE WHEN v_gst_pct > 0
-                         THEN ROUND(v_subtotal * v_gst_pct / 100)
-                         ELSE 0 END;
-
-    -- ── 7. Coupon discount (server-calculated), coin discount, final total ─
-    v_discount := CASE WHEN v_coupon_pct > 0 THEN ROUND(v_subtotal * v_coupon_pct / 100) ELSE 0 END;
-
-    SELECT COALESCE((value->>'coin_value_inr')::numeric, 1) INTO v_coin_value
-      FROM app_settings WHERE key = 'corecoins_config';
-    v_coin_disc := COALESCE(p_coins_used, 0) * COALESCE(v_coin_value, 1);
-    v_total     := GREATEST(0, v_subtotal + v_shipping_final + v_gst_amount - v_coin_disc - v_discount);
-
-    UPDATE orders
-      SET subtotal         = v_subtotal,
-          shipping_amount  = v_shipping_final,
-          shipping         = v_shipping_final,
-          gst_amount       = v_gst_amount,
-          discount_amount  = v_discount,
-          total_amount_inr = v_total,
-          total_items      = v_count
-      WHERE id = v_order_id;
-
-    RETURN v_order_id;
-END;
-$$;
+-- ⚠ place_order_cod() IS NOT DEFINED HERE ANY MORE.
+--
+--   Authoritative definition: supabase/migrations/20260830183910_security_and_order_integrity.sql
+--   The live version decrements product_variants for variant lines, and taxes the discounted subtotal.
+--
+--   The body was removed rather than refreshed. Keeping a second copy is
+--   what let this file drift far enough to describe an oversell bug as if
+--   it were the schema. To stand up a fresh project: run this file for the
+--   tables, then `npx supabase db push` for the functions and the
+--   hardening that comes with them.
 
 
 -- ──────────────────────────────────────────────────────────────────────────
@@ -753,178 +591,16 @@ $$;
 -- ──────────────────────────────────────────────────────────────────────────
 DROP FUNCTION IF EXISTS public.place_order_prepaid(UUID, JSONB, JSONB, TEXT, TEXT, TEXT, INT);
 
-CREATE OR REPLACE FUNCTION public.place_order_prepaid(
-    p_user_id             UUID,
-    p_address             JSONB,
-    p_items               JSONB,
-    p_payment_method      TEXT    DEFAULT 'prepaid',
-    p_razorpay_payment_id TEXT    DEFAULT NULL,
-    p_razorpay_order_id   TEXT    DEFAULT NULL,
-    p_coins_used          INT     DEFAULT 0,
-    p_shipping            NUMERIC DEFAULT 0,  -- used only when flat rate = 0 (pincode mode)
-    p_gst                 NUMERIC DEFAULT 0,  -- IGNORED — GST is recalculated server-side
-    p_discount            NUMERIC DEFAULT 0,  -- IGNORED — discount is recalculated server-side from coupon
-    p_coupon_code         TEXT    DEFAULT NULL
-) RETURNS UUID
-LANGUAGE plpgsql SECURITY DEFINER
-AS $$
-DECLARE
-    v_order_id       UUID;
-    v_item           JSONB;
-    v_product_id     UUID;
-    v_variant_id     UUID;
-    v_qty            INT;
-    v_unit_price     NUMERIC;  -- always fetched from DB
-    v_stock          INT;
-    v_subtotal       NUMERIC := 0;
-    v_count          INT := 0;
-    v_coin_value     NUMERIC;
-    v_coin_disc      NUMERIC;
-    v_total          NUMERIC;
-    -- Authoritative server-side values
-    v_flat_shipping  NUMERIC := 0;
-    v_free_ship_min  NUMERIC := 0;
-    v_gst_pct        NUMERIC := 0;
-    v_gst_amount     NUMERIC := 0;
-    v_shipping_final NUMERIC := 0;
-    -- Server-side coupon validation
-    v_discount_codes JSONB;
-    v_coupon         JSONB;
-    v_coupon_pct     NUMERIC := 0;
-    v_discount       NUMERIC := 0;
-BEGIN
-    -- ── 0. Auth + input sanity guards ─────────────────────────────────────
-    -- Allow both direct user calls (auth.uid check) and service-role calls
-    -- (auth.uid() is NULL for service-role, so skip check in that case)
-    IF auth.uid() IS NOT NULL AND p_user_id <> auth.uid() THEN
-        RAISE EXCEPTION 'Unauthorized: cannot place order for another user';
-    END IF;
-    IF p_coins_used < 0 THEN RAISE EXCEPTION 'Invalid coins_used value'; END IF;
-    IF p_shipping < 0 OR p_shipping > 2000 THEN
-        RAISE EXCEPTION 'Shipping amount out of valid range (0–2000)';
-    END IF;
-
-    -- ── 1. Load authoritative pricing from app_settings ──────────────────
-    SELECT COALESCE((value->>'amount')::numeric, 0)
-      INTO v_flat_shipping FROM app_settings WHERE key = 'shipping_amount';
-    SELECT COALESCE((value->>'amount')::numeric, 0)
-      INTO v_free_ship_min FROM app_settings WHERE key = 'free_shipping_min';
-    SELECT COALESCE((value->>'percentage')::numeric, 0)
-      INTO v_gst_pct FROM app_settings WHERE key = 'gst_percentage';
-
-    -- ── 2. Deduct CoreCoins if used ───────────────────────────────────────
-    IF p_coins_used > 0 THEN
-        UPDATE corecoins_wallet
-          SET balance    = balance - p_coins_used,
-              updated_at = now()
-          WHERE user_id = p_user_id
-            AND balance >= p_coins_used;
-        IF NOT FOUND THEN
-            RAISE EXCEPTION 'Insufficient CoreCoins balance';
-        END IF;
-    END IF;
-
-    -- ── 3. Server-side coupon validation ───────────────────────────────────
-    IF p_coupon_code IS NOT NULL AND p_coupon_code <> '' THEN
-        SELECT value INTO v_discount_codes FROM app_settings WHERE key = 'discount_codes';
-        SELECT elem INTO v_coupon FROM jsonb_array_elements(COALESCE(v_discount_codes, '[]'::jsonb)) AS elem
-          WHERE elem->>'code' = UPPER(p_coupon_code) AND (elem->>'active')::boolean = true
-          LIMIT 1;
-        IF v_coupon IS NOT NULL THEN
-            IF v_coupon->>'startsAt' IS NOT NULL AND (v_coupon->>'startsAt')::timestamptz > now() THEN
-                v_coupon := NULL;
-            END IF;
-            IF v_coupon IS NOT NULL AND v_coupon->>'endsAt' IS NOT NULL AND (v_coupon->>'endsAt')::timestamptz < now() THEN
-                v_coupon := NULL;
-            END IF;
-        END IF;
-        IF v_coupon IS NOT NULL THEN
-            v_coupon_pct := COALESCE((v_coupon->>'percentage')::numeric, 0);
-        END IF;
-    END IF;
-
-    -- ── 4. Insert order shell ──────────────────────────────────────────
-    INSERT INTO orders (
-        user_id, status, shipping_address, payment_method,
-        razorpay_payment_id, razorpay_order_id,
-        total_amount_inr, subtotal, shipping, shipping_amount, gst_amount,
-        total_items, coins_used, discount_amount, coupon_code
-    ) VALUES (
-        p_user_id, 'placed', p_address, p_payment_method,
-        p_razorpay_payment_id, p_razorpay_order_id,
-        0, 0, 0, 0, 0,
-        0, p_coins_used, 0, CASE WHEN v_coupon IS NOT NULL THEN p_coupon_code ELSE NULL END
-    ) RETURNING id INTO v_order_id;
-
-    -- ── 5. Loop items: fetch DB price → check stock → deduct → insert ─────
-    FOR v_item IN SELECT * FROM jsonb_array_elements(p_items) LOOP
-        v_product_id := (v_item->>'product_id')::UUID;
-        v_variant_id := CASE WHEN (v_item->>'variant_id') IS NOT NULL AND (v_item->>'variant_id') <> ''
-                             THEN (v_item->>'variant_id')::UUID ELSE NULL END;
-        v_qty        := (v_item->>'qty')::INT;
-
-        -- Fetch authoritative price from DB (variant preferred, else product)
-        IF v_variant_id IS NOT NULL THEN
-            SELECT price_inr, stock_qty INTO v_unit_price, v_stock
-              FROM product_variants WHERE id = v_variant_id AND product_id = v_product_id FOR UPDATE;
-        ELSE
-            SELECT price_inr, stock_qty INTO v_unit_price, v_stock
-              FROM products WHERE id = v_product_id FOR UPDATE;
-        END IF;
-
-        IF v_unit_price IS NULL THEN RAISE EXCEPTION 'Product or variant % not found', v_product_id; END IF;
-        IF v_stock < v_qty THEN RAISE EXCEPTION 'Insufficient stock for product %', v_product_id; END IF;
-
-        UPDATE products SET stock_qty = stock_qty - v_qty WHERE id = v_product_id;
-
-        INSERT INTO order_items (
-            order_id, product_id, variant_id,
-            product_name, qty, unit_price_inr, line_total_inr, image_url
-        ) VALUES (
-            v_order_id, v_product_id, v_variant_id,
-            v_item->>'product_name', v_qty, v_unit_price,
-            v_unit_price * v_qty, v_item->>'image_url'
-        );
-
-        v_subtotal := v_subtotal + (v_unit_price * v_qty);
-        v_count    := v_count + v_qty;
-    END LOOP;
-
-    -- ── 6. Server-side shipping and GST ──────────────────────────────────
-    IF v_flat_shipping > 0 THEN
-        v_shipping_final := v_flat_shipping;
-    ELSE
-        v_shipping_final := GREATEST(0, p_shipping);  -- pincode-based
-    END IF;
-    IF v_free_ship_min > 0 AND v_subtotal >= v_free_ship_min THEN
-        v_shipping_final := 0;
-    END IF;
-
-    v_gst_amount := CASE WHEN v_gst_pct > 0
-                         THEN ROUND(v_subtotal * v_gst_pct / 100)
-                         ELSE 0 END;
-
-    -- ── 7. Coupon discount (server-calculated), coin discount, final total ─
-    v_discount := CASE WHEN v_coupon_pct > 0 THEN ROUND(v_subtotal * v_coupon_pct / 100) ELSE 0 END;
-
-    SELECT COALESCE((value->>'coin_value_inr')::numeric, 1) INTO v_coin_value
-      FROM app_settings WHERE key = 'corecoins_config';
-    v_coin_disc := COALESCE(p_coins_used, 0) * COALESCE(v_coin_value, 1);
-    v_total     := GREATEST(0, v_subtotal + v_shipping_final + v_gst_amount - v_coin_disc - v_discount);
-
-    UPDATE orders
-      SET subtotal         = v_subtotal,
-          shipping_amount  = v_shipping_final,
-          shipping         = v_shipping_final,
-          gst_amount       = v_gst_amount,
-          discount_amount  = v_discount,
-          total_amount_inr = v_total,
-          total_items      = v_count
-      WHERE id = v_order_id;
-
-    RETURN v_order_id;
-END;
-$$;
+-- ⚠ place_order_prepaid() IS NOT DEFINED HERE ANY MORE.
+--
+--   Authoritative definition: supabase/migrations/20260830184145_order_rpcs_prepaid_cancel_corecoins.sql
+--   The live version adds p_amount_paid_paise, is idempotent on razorpay_payment_id, and fixes variant stock and GST ordering.
+--
+--   The body was removed rather than refreshed. Keeping a second copy is
+--   what let this file drift far enough to describe an oversell bug as if
+--   it were the schema. To stand up a fresh project: run this file for the
+--   tables, then `npx supabase db push` for the functions and the
+--   hardening that comes with them.
 
 
 -- ──────────────────────────────────────────────────────────────────────────
@@ -1006,66 +682,23 @@ $$;
 --    If window_minutes > 0, uses minutes (for testing). Otherwise uses window_days.
 --    (frontend calls process_pending_corecoins() on load to pick these up)
 -- ──────────────────────────────────────────────────────────────────────────
-CREATE OR REPLACE FUNCTION public.credit_corecoins()
-RETURNS TRIGGER AS $$
-DECLARE
-  v_cc_enabled    BOOLEAN;
-  v_rep_enabled   BOOLEAN;
-  v_window_days   INT;
-  v_window_mins   INT;
-  v_config        JSONB;
-  v_earn_rate     NUMERIC;
-  v_earn_per      NUMERIC;
-  v_coin_value    NUMERIC;
-  v_net_paid      NUMERIC;
-  v_coins         INTEGER;
-BEGIN
-  -- Only fire when status changes TO 'delivered'
-  IF NEW.status <> 'delivered' OR OLD.status = 'delivered' THEN RETURN NEW; END IF;
-  IF COALESCE(NEW.coins_credited, false) THEN RETURN NEW; END IF;
-
-  SELECT (value->>'enabled')::boolean INTO v_cc_enabled
-    FROM app_settings WHERE key = 'corecoins_enabled';
-  IF NOT COALESCE(v_cc_enabled, false) THEN RETURN NEW; END IF;
-
-  SELECT (value->>'enabled')::boolean, COALESCE((value->>'window_days')::int, 1), COALESCE((value->>'window_minutes')::int, 0)
-    INTO v_rep_enabled, v_window_days, v_window_mins
-    FROM app_settings WHERE key = 'replacements_enabled';
-
-  SELECT value INTO v_config FROM app_settings WHERE key = 'corecoins_config';
-  v_earn_rate  := COALESCE((v_config->>'earn_rate')::numeric,  2);
-  v_earn_per   := COALESCE((v_config->>'earn_per_rupees')::numeric, 100);
-  v_coin_value := COALESCE((v_config->>'coin_value_inr')::numeric, 1);
-
-  -- Net amount paid = total paid by customer + coin value they 'spent' from wallet
-  v_net_paid := COALESCE(NEW.total_amount_inr, 0) + COALESCE(NEW.coins_used, 0) * v_coin_value;
-  v_coins    := FLOOR((v_net_paid / v_earn_per) * v_earn_rate)::integer;
-
-  IF v_coins <= 0 THEN RETURN NEW; END IF;
-
-  IF COALESCE(v_rep_enabled, false) AND (v_window_days > 0 OR v_window_mins > 0) THEN
-    -- Defer crediting until after replacement window
-    -- Modify NEW directly (BEFORE trigger) — no separate UPDATE needed
-    NEW.coins_credit_after := COALESCE(NEW.delivered_at, now()) +
-          CASE WHEN v_window_mins > 0 THEN (v_window_mins || ' minutes')::interval
-               ELSE (v_window_days || ' days')::interval END;
-    NEW.coins_credited := false;
-  ELSE
-    -- Credit immediately
-    INSERT INTO corecoins_wallet (user_id, balance)
-      VALUES (NEW.user_id, v_coins)
-      ON CONFLICT (user_id) DO UPDATE SET balance = corecoins_wallet.balance + v_coins, updated_at = now();
-    NEW.coins_credited := true;
-  END IF;
-
-  RETURN NEW;
-END;
-$$ LANGUAGE plpgsql SECURITY DEFINER;
+-- ⚠ credit_corecoins() IS NOT DEFINED HERE ANY MORE.
+--
+--   Authoritative definition: supabase/migrations/20260830184145_order_rpcs_prepaid_cancel_corecoins.sql
+--   The live version records coins_credited_amount.
+--
+--   The body was removed rather than refreshed. Keeping a second copy is
+--   what let this file drift far enough to describe an oversell bug as if
+--   it were the schema. To stand up a fresh project: run this file for the
+--   tables, then `npx supabase db push` for the functions and the
+--   hardening that comes with them.
 
 DROP TRIGGER IF EXISTS trg_credit_corecoins ON public.orders;
 CREATE TRIGGER trg_credit_corecoins
   BEFORE UPDATE ON public.orders
-  FOR EACH ROW EXECUTE FUNCTION public.credit_corecoins();
+  FOR EACH ROW
+  WHEN (OLD.status IS DISTINCT FROM NEW.status)
+  EXECUTE FUNCTION public.credit_corecoins();
 
 
 -- ──────────────────────────────────────────────────────────────────────────
@@ -1074,57 +707,16 @@ CREATE TRIGGER trg_credit_corecoins
 --  user. Credits any orders where coins_credit_after <= now().
 --  This pattern avoids the need for pg_cron.
 -- ──────────────────────────────────────────────────────────────────────────
-CREATE OR REPLACE FUNCTION public.process_pending_corecoins(p_user_id UUID)
-RETURNS INTEGER
-LANGUAGE plpgsql SECURITY DEFINER
-AS $$
-DECLARE
-    v_order    RECORD;
-    v_config   JSONB;
-    v_earn_rate  NUMERIC;
-    v_earn_per   NUMERIC;
-    v_coin_value NUMERIC;
-    v_net_paid   NUMERIC;
-    v_coins      INTEGER;
-    v_total      INTEGER := 0;
-BEGIN
-    -- Auth guard: only allow crediting your own orders
-    IF p_user_id <> auth.uid() THEN
-        RAISE EXCEPTION 'Unauthorized';
-    END IF;
-
-    SELECT value INTO v_config FROM app_settings WHERE key = 'corecoins_config';
-    v_earn_rate  := COALESCE((v_config->>'earn_rate')::numeric,  2);
-    v_earn_per   := COALESCE((v_config->>'earn_per_rupees')::numeric, 100);
-    v_coin_value := COALESCE((v_config->>'coin_value_inr')::numeric, 1);
-
-    FOR v_order IN
-        SELECT * FROM orders
-        WHERE user_id = p_user_id
-          AND status = 'delivered'
-          AND coins_credited = false
-          AND coins_credit_after IS NOT NULL
-          AND coins_credit_after <= now()
-        FOR UPDATE SKIP LOCKED
-    LOOP
-        v_net_paid := COALESCE(v_order.total_amount_inr, 0) +
-                      COALESCE(v_order.coins_used, 0) * v_coin_value;
-        v_coins    := FLOOR((v_net_paid / v_earn_per) * v_earn_rate)::integer;
-
-        IF v_coins > 0 THEN
-            INSERT INTO corecoins_wallet (user_id, balance)
-              VALUES (v_order.user_id, v_coins)
-              ON CONFLICT (user_id) DO UPDATE
-                SET balance = corecoins_wallet.balance + v_coins, updated_at = now();
-        END IF;
-
-        UPDATE orders SET coins_credited = true WHERE id = v_order.id;
-        v_total := v_total + 1;
-    END LOOP;
-
-    RETURN v_total;
-END;
-$$;
+-- ⚠ process_pending_corecoins() IS NOT DEFINED HERE ANY MORE.
+--
+--   Authoritative definition: supabase/migrations/20260830184145_order_rpcs_prepaid_cancel_corecoins.sql
+--   The live version records coins_credited_amount.
+--
+--   The body was removed rather than refreshed. Keeping a second copy is
+--   what let this file drift far enough to describe an oversell bug as if
+--   it were the schema. To stand up a fresh project: run this file for the
+--   tables, then `npx supabase db push` for the functions and the
+--   hardening that comes with them.
 
 
 -- ──────────────────────────────────────────────────────────────────────────
@@ -1132,82 +724,16 @@ $$;
 --  Lets a customer cancel their own order if it is still in
 --  'placed' or 'processing' status. Called via supabase.rpc().
 -- ──────────────────────────────────────────────────────────────────────────
-CREATE OR REPLACE FUNCTION public.cancel_order(p_order_id UUID, p_user_id UUID)
-RETURNS void LANGUAGE plpgsql SECURITY DEFINER AS $$
-BEGIN
-    IF p_user_id <> auth.uid() THEN
-        RAISE EXCEPTION 'Unauthorized';
-    END IF;
-    UPDATE orders
-    SET status = 'cancelled', updated_at = now()
-    WHERE id = p_order_id
-      AND user_id = auth.uid()
-      AND status IN ('placed', 'processing');
-    IF NOT FOUND THEN
-        RAISE EXCEPTION 'Order cannot be cancelled (not found, not yours, or already shipped)';
-    END IF;
-END; $$;
-
-
--- ══════════════════════════════════════════════════════════════════════════
---  12. wa_notifications
---     Tracks WhatsApp notification sends to customers.
---     One row per order-status notification sent.
--- ══════════════════════════════════════════════════════════════════════════
-CREATE TABLE IF NOT EXISTS public.wa_notifications (
-    id              bigint GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
-    order_id        uuid NOT NULL REFERENCES public.orders(id) ON DELETE CASCADE,
-    status          text NOT NULL,
-    phone           text,
-    customer_name   text,
-    sent_by         text,
-    sent_at         timestamp NOT NULL DEFAULT (now() AT TIME ZONE 'Asia/Kolkata')
-);
-
-ALTER TABLE public.wa_notifications ENABLE ROW LEVEL SECURITY;
-CREATE POLICY "Admins can manage wa_notifications" ON public.wa_notifications FOR ALL USING (public.is_admin());
-
-
--- ══════════════════════════════════════════════════════════════════════════
---  13. store_settings
---     Legacy settings table. Similar shape to app_settings but may hold
---     older configuration or be used by a different code path.
--- ══════════════════════════════════════════════════════════════════════════
-CREATE TABLE IF NOT EXISTS public.store_settings (
-    key         text PRIMARY KEY,
-    value       jsonb NOT NULL,
-    updated_at  timestamptz NOT NULL DEFAULT now(),
-    updated_by  uuid
-);
-
-ALTER TABLE public.store_settings ENABLE ROW LEVEL SECURITY;
-CREATE POLICY "Public can read store_settings" ON public.store_settings FOR SELECT USING (true);
-CREATE POLICY "Only admins can write store_settings" ON public.store_settings FOR ALL USING (public.is_admin());
-
-
--- ══════════════════════════════════════════════════════════════════════════
---  14. rate_limits
---     Tracks per-IP / per-user request counts for Edge Function rate limiting.
---     Used by _shared/rate-limit.ts via service role (no user access).
--- ══════════════════════════════════════════════════════════════════════════
-CREATE TABLE IF NOT EXISTS public.rate_limits (
-    id         BIGINT GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
-    identifier TEXT NOT NULL,
-    endpoint   TEXT NOT NULL,
-    created_at TIMESTAMPTZ NOT NULL DEFAULT now()
-);
-
-CREATE INDEX IF NOT EXISTS idx_rate_limits_lookup
-    ON public.rate_limits (identifier, endpoint, created_at DESC);
-
-ALTER TABLE public.rate_limits ENABLE ROW LEVEL SECURITY;
--- No user-level policies — only service role can read/write
-
--- Cleanup function: call periodically to purge entries older than 1 hour
-CREATE OR REPLACE FUNCTION public.cleanup_rate_limits()
-RETURNS void LANGUAGE sql SECURITY DEFINER AS $$
-    DELETE FROM public.rate_limits WHERE created_at < now() - interval '1 hour';
-$$;
+-- ⚠ cancel_order() IS NOT DEFINED HERE ANY MORE.
+--
+--   Authoritative definition: supabase/migrations/20260830184145_order_rpcs_prepaid_cancel_corecoins.sql
+--   The live version restores stock to the right table and refunds redeemed CoreCoins.
+--
+--   The body was removed rather than refreshed. Keeping a second copy is
+--   what let this file drift far enough to describe an oversell bug as if
+--   it were the schema. To stand up a fresh project: run this file for the
+--   tables, then `npx supabase db push` for the functions and the
+--   hardening that comes with them.
 
 
 
@@ -1252,32 +778,23 @@ CREATE TRIGGER trg_push_tokens_updated_at
     FOR EACH ROW EXECUTE FUNCTION public.update_push_token_timestamp();
 
 -- Fires the send-order-notification Edge Function whenever orders.status changes.
-CREATE OR REPLACE FUNCTION public.notify_order_status_change()
-RETURNS TRIGGER LANGUAGE plpgsql SECURITY DEFINER
-SET search_path = public, pg_temp AS $$
-BEGIN
-    IF OLD.status IS DISTINCT FROM NEW.status THEN
-        PERFORM net.http_post(
-            url := 'https://yghqsrcmqvcwazksrxlk.supabase.co/functions/v1/send-order-notification',
-            headers := jsonb_build_object(
-                'Content-Type', 'application/json',
-                'Authorization', 'Bearer ' || current_setting('supabase.service_role_key', true)
-            ),
-            body := jsonb_build_object(
-                'type', 'UPDATE', 'table', 'orders', 'schema', 'public',
-                'record', row_to_json(NEW)::jsonb,
-                'old_record', row_to_json(OLD)::jsonb
-            )
-        );
-    END IF;
-    RETURN NEW;
-END;
-$$;
+-- ⚠ notify_order_status_change() IS NOT DEFINED HERE ANY MORE.
+--
+--   Authoritative definition: supabase/migrations/20260831120000_restore_order_status_updates.sql
+--   The live version cannot abort the order status change any more, and authenticates with a Vault secret.
+--
+--   The body was removed rather than refreshed. Keeping a second copy is
+--   what let this file drift far enough to describe an oversell bug as if
+--   it were the schema. To stand up a fresh project: run this file for the
+--   tables, then `npx supabase db push` for the functions and the
+--   hardening that comes with them.
 
 DROP TRIGGER IF EXISTS trg_order_status_push_notification ON public.orders;
 CREATE TRIGGER trg_order_status_push_notification
     AFTER UPDATE ON public.orders
-    FOR EACH ROW EXECUTE FUNCTION public.notify_order_status_change();
+    FOR EACH ROW
+    WHEN (OLD.status IS DISTINCT FROM NEW.status)
+    EXECUTE FUNCTION public.notify_order_status_change();
 
 
 -- ══════════════════════════════════════════════════════════════════════════
@@ -1343,3 +860,29 @@ GRANT  EXECUTE ON FUNCTION public.cleanup_rate_limits()         TO service_role;
 --  Reload PostgREST schema cache
 -- ══════════════════════════════════════════════════════════════════════════
 NOTIFY pgrst, 'reload schema';
+
+
+-- ══════════════════════════════════════════════════════════════════════════
+--  FUNCTIONS THAT LIVE ONLY IN THE MIGRATIONS TREE
+--
+--  These have never been defined in this file. They are listed so that reading
+--  it does not leave you believing the schema is smaller than it is.
+--
+--    resolve_coupon_percentage(code, user_id)  — the single source of truth for
+--        coupon validity: active, date window, email whitelist, new-users-only.
+--        20260830183910_security_and_order_integrity.sql
+--
+--    validate_coupon(code)                     — the customer-facing wrapper.
+--        20260830183910_security_and_order_integrity.sql
+--
+--    handle_replacement_coins()                — trigger on `replacements`.
+--        Predates the audit; see the live database for its definition.
+--
+--    verify_notify_secret(secret)              — checks the Vault secret that
+--        proves a send-order-notification call came from the orders trigger.
+--        20260831120000_restore_order_status_updates.sql
+--
+--    prune_rate_limits()                       — keeps `rate_limits` bounded
+--        without pg_cron.
+--        20260831130000_prune_rate_limits_and_hide_internal_tables.sql
+-- ══════════════════════════════════════════════════════════════════════════

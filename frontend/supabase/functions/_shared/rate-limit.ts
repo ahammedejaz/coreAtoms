@@ -24,12 +24,18 @@ interface RateLimitConfig {
 
 /**
  * Extracts the client IP from request headers.
- * Supabase Edge Functions set x-forwarded-for; falls back to
- * x-real-ip or a generic default.
+ *
+ * Takes the RIGHT-most x-forwarded-for entry, not the left-most. The left-most
+ * entry is whatever the caller put there, so reading it let anyone defeat every
+ * rate limit by sending a random X-Forwarded-For per request. The right-most
+ * entry is the one appended by the closest trusted proxy.
  */
 export function getClientIp(req: Request): string {
     const forwarded = req.headers.get("x-forwarded-for");
-    if (forwarded) return forwarded.split(",")[0].trim();
+    if (forwarded) {
+        const hops = forwarded.split(",").map((h) => h.trim()).filter(Boolean);
+        if (hops.length > 0) return hops[hops.length - 1];
+    }
     return req.headers.get("x-real-ip") || "unknown";
 }
 
@@ -90,12 +96,13 @@ export async function checkRateLimit(
             );
         }
 
-        // Record this request (fire-and-forget — don't block on insert)
-        sb.from("rate_limits")
-            .insert({ identifier, endpoint })
-            .then(({ error }) => {
-                if (error) console.warn("Rate limit insert failed:", error.message);
-            });
+        // Await the insert: a fire-and-forget write can be dropped when the
+        // isolate is torn down after the response returns, which silently
+        // under-counts and lets the limit be exceeded.
+        const { error: insertErr } = await sb
+            .from("rate_limits")
+            .insert({ identifier, endpoint });
+        if (insertErr) console.warn("Rate limit insert failed:", insertErr.message);
 
         return null; // allowed
     } catch (err) {

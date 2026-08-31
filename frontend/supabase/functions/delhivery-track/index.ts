@@ -11,6 +11,7 @@
 // Query params: ?waybill=<WAYBILL_NUMBER>
 // Response: { tracking data from Delhivery }
 
+import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 import { getCorsHeaders, handleCorsPreflightRequest } from "../_shared/cors.ts";
 import { checkRateLimit, getClientIp } from "../_shared/rate-limit.ts";
 
@@ -20,21 +21,14 @@ Deno.serve(async (req) => {
     }
     const corsHeaders = getCorsHeaders(req);
 
-    // Rate limit: 15 requests per 60 seconds per IP
-    const limited = await checkRateLimit(req, corsHeaders, {
-        endpoint: "delhivery-track",
-        maxRequests: 15,
-        windowSeconds: 60,
-        identifier: getClientIp(req),
-    });
-    if (limited) return limited;
-
     try {
         const DELHIVERY_TOKEN = Deno.env.get("DELHIVERY_API_TOKEN");
         const DELHIVERY_BASE = (
             Deno.env.get("DELHIVERY_BASE_URL") ||
             "https://track.delhivery.com"
         ).replace(/\/$/, "");
+        const SUPABASE_URL = Deno.env.get("SUPABASE_URL");
+        const SUPABASE_SERVICE_ROLE_KEY = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY");
 
         if (!DELHIVERY_TOKEN) {
             return new Response(
@@ -45,6 +39,52 @@ Deno.serve(async (req) => {
                 }
             );
         }
+        if (!SUPABASE_URL || !SUPABASE_SERVICE_ROLE_KEY) {
+            return new Response(
+                JSON.stringify({ error: "Server not configured" }),
+                {
+                    status: 500,
+                    headers: { ...corsHeaders, "Content-Type": "application/json" },
+                }
+            );
+        }
+
+        // ── Caller identity ────────────────────────────────────────────────
+        // This endpoint used to be completely unauthenticated: anyone could POST
+        // any waybill and read that customer's origin, destination and full
+        // scan history.
+        const authHeader = req.headers.get("Authorization");
+        if (!authHeader?.startsWith("Bearer ")) {
+            return new Response(
+                JSON.stringify({ error: "Missing Authorization header" }),
+                {
+                    status: 401,
+                    headers: { ...corsHeaders, "Content-Type": "application/json" },
+                }
+            );
+        }
+        const supabase = createClient(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY);
+        const { data: userData, error: userErr } = await supabase.auth.getUser(
+            authHeader.slice("Bearer ".length)
+        );
+        if (userErr || !userData?.user?.id) {
+            return new Response(
+                JSON.stringify({ error: "Unauthorized" }),
+                {
+                    status: 401,
+                    headers: { ...corsHeaders, "Content-Type": "application/json" },
+                }
+            );
+        }
+        const userId = userData.user.id;
+
+        const limited = await checkRateLimit(req, corsHeaders, {
+            endpoint: "delhivery-track",
+            maxRequests: 30,
+            windowSeconds: 60,
+            identifier: userId || getClientIp(req),
+        });
+        if (limited) return limited;
 
         // Extract waybill from POST body or query params
         const url = new URL(req.url);
@@ -68,12 +108,43 @@ Deno.serve(async (req) => {
             );
         }
 
-        // Fetch tracking from Delhivery
+        // ── Ownership ──────────────────────────────────────────────────────
+        // Admins may track anything; everyone else only their own shipments,
+        // whether that waybill belongs to an order or to a replacement.
+        const { data: profile } = await supabase
+            .from("profiles").select("role").eq("id", userId).maybeSingle();
+
+        if (profile?.role !== "admin") {
+            const [orderMatch, replacementMatch] = await Promise.all([
+                supabase.from("orders").select("id")
+                    .eq("user_id", userId).eq("delhivery_waybill", waybill).limit(1),
+                supabase.from("replacements").select("id")
+                    .eq("user_id", userId)
+                    .or(`replacement_waybill.eq.${waybill},reverse_waybill.eq.${waybill}`)
+                    .limit(1),
+            ]);
+            const owns =
+                (orderMatch.data?.length ?? 0) > 0 ||
+                (replacementMatch.data?.length ?? 0) > 0;
+            if (!owns) {
+                return new Response(
+                    JSON.stringify({ error: "Shipment not found" }),
+                    {
+                        status: 404,
+                        headers: { ...corsHeaders, "Content-Type": "application/json" },
+                    }
+                );
+            }
+        }
+
+        // Fetch tracking from Delhivery. The token goes in a header, not the
+        // query string, so it does not land in proxy/CDN access logs.
         const trackRes = await fetch(
-            `${DELHIVERY_BASE}/api/v1/packages/json/?waybill=${encodeURIComponent(waybill)}&token=${DELHIVERY_TOKEN}`,
+            `${DELHIVERY_BASE}/api/v1/packages/json/?waybill=${encodeURIComponent(waybill)}`,
             {
                 headers: {
                     Accept: "application/json",
+                    Authorization: `Token ${DELHIVERY_TOKEN}`,
                 },
             }
         );

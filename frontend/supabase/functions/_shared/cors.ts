@@ -4,7 +4,7 @@
 // Allows requests from:
 //   - https://coreatoms.in / https://www.coreatoms.in (production)
 //   - https://core-atoms.vercel.app (Vercel main deployment)
-//   - https://*.vercel.app (Vercel preview/branch deployments)
+//   - https://core-atoms*.vercel.app (this project's preview/branch deployments)
 //   - http://localhost:* (local development)
 
 const ALLOWED_ORIGINS = [
@@ -15,11 +15,14 @@ const ALLOWED_ORIGINS = [
 
 /**
  * Checks if the given origin is allowed.
- * Matches exact production domains, any *.vercel.app subdomain, and localhost.
+ *
+ * The preview pattern is scoped to this project's own deployments. It used to
+ * match any `*.vercel.app` host, which allowlisted every Vercel project on the
+ * internet — including one an attacker had just deployed.
  */
 function isAllowedOrigin(origin: string): boolean {
     if (ALLOWED_ORIGINS.includes(origin)) return true;
-    if (/^https:\/\/[\w-]+\.vercel\.app$/.test(origin)) return true;
+    if (/^https:\/\/core-atoms[\w-]*\.vercel\.app$/.test(origin)) return true;
     if (/^http:\/\/localhost(:\d+)?$/.test(origin)) return true;
     return false;
 }
@@ -34,6 +37,10 @@ export function getCorsHeaders(req: Request): Record<string, string> {
         "Access-Control-Allow-Headers":
             "authorization, x-client-info, apikey, content-type",
         "Access-Control-Allow-Methods": "GET, POST, OPTIONS",
+        "Access-Control-Max-Age": "86400",
+        // The Allow-Origin value is reflected per request, so any shared cache
+        // must key on Origin or it can hand one site's header to another.
+        Vary: "Origin",
     };
     if (isAllowedOrigin(origin)) {
         headers["Access-Control-Allow-Origin"] = origin;

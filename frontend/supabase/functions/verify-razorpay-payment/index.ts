@@ -1,93 +1,109 @@
 /**
  * verify-razorpay-payment/index.ts — Supabase Edge Function (Deno)
  *
- * Verifies a Razorpay payment signature and, if valid, creates the order
- * in the database by calling the `place_order_prepaid` RPC.
+ * Verifies a Razorpay payment and, if it checks out, creates the order by
+ * calling the `place_order_prepaid` RPC.
+ *
+ * Three things are verified, and all three matter:
+ *   1. the HMAC signature   — proves the payment belongs to that Razorpay order
+ *   2. the caller's JWT     — proves who is asking (verified, not just decoded)
+ *   3. the captured AMOUNT  — read from Razorpay's own API and passed to the
+ *                             RPC, which compares it against a total recomputed
+ *                             from server-side prices.
+ *
+ * (3) is what stops a client from paying ₹1 for a ₹50,000 cart: the signature
+ * says nothing at all about how much money changed hands.
  *
  * Environment secrets required:
- *   RAZORPAY_KEY_SECRET          — used to verify HMAC SHA256 signature
+ *   RAZORPAY_KEY_ID              — used to read the payment back from Razorpay
+ *   RAZORPAY_KEY_SECRET          — used to verify the HMAC SHA256 signature
  *   SUPABASE_URL                 — Supabase project URL
  *   SUPABASE_SERVICE_ROLE_KEY    — admin key (bypasses RLS for order creation)
  *
  * Expected POST body:
  * {
- *   razorpay_order_id    : string   — from Razorpay
- *   razorpay_payment_id  : string   — from Razorpay
- *   razorpay_signature   : string   — HMAC to verify
- *   user_id              : string   — Supabase user UUID
+ *   razorpay_order_id    : string
+ *   razorpay_payment_id  : string
+ *   razorpay_signature   : string
+ *   user_id              : string   — must match the JWT's sub
  *   address              : object   — shipping address snapshot
- *   items                : array    — [{product_id, variant_id, qty, unit_price_inr, ...}]
- *   coins_used           : number   — CoreCoins redeemed (0 if none)
- *   shipping             : number   — shipping amount in INR
- *   gst                  : number   — GST amount in INR
+ *   items                : array    — [{product_id, variant_id, qty, ...}]
+ *   coins_used           : number
+ *   shipping             : number
+ *   coupon_code          : string | null
  * }
  *
- * Returns:
- *   200 { success: true, order_id }
- *   400 { error: 'Invalid signature' }
- *   500 { error: message }
+ * Returns 200 { success: true, order }, or 4xx/5xx { error }.
  *
- * Note: The calling client (Checkout.jsx) should call `log_failed_order` RPC
- * if this function returns an error, to ensure the failed attempt is recorded.
+ * Note: the client (Checkout.jsx) should call the `log_failed_order` RPC when
+ * this returns an error, so a captured-but-unfulfilled payment is recorded.
  */
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 import { getCorsHeaders, handleCorsPreflightRequest } from "../_shared/cors.ts";
 import { checkRateLimit, getClientIp } from "../_shared/rate-limit.ts";
+
+/** Constant-time comparison of two lowercase hex strings. */
+function timingSafeEqualHex(a: string, b: string): boolean {
+    if (typeof a !== "string" || typeof b !== "string") return false;
+    if (a.length !== b.length) return false;
+    let diff = 0;
+    for (let i = 0; i < a.length; i++) {
+        diff |= a.charCodeAt(i) ^ b.charCodeAt(i);
+    }
+    return diff === 0;
+}
 
 Deno.serve(async (req) => {
     if (req.method === "OPTIONS") {
         return handleCorsPreflightRequest(req);
     }
     const corsHeaders = getCorsHeaders(req);
+    const json = (body: unknown, status: number) =>
+        new Response(JSON.stringify(body), {
+            status,
+            headers: { ...corsHeaders, "Content-Type": "application/json" },
+        });
 
-    // Rate limit: 5 requests per 60 seconds per IP
-    const limited = await checkRateLimit(req, corsHeaders, {
-        endpoint: "verify-razorpay-payment",
-        maxRequests: 5,
-        windowSeconds: 60,
-        identifier: getClientIp(req),
-    });
-    if (limited) return limited;
+    if (req.method !== "POST") {
+        return json({ error: "Method not allowed" }, 405);
+    }
 
     try {
+        const RAZORPAY_KEY_ID = Deno.env.get("RAZORPAY_KEY_ID");
         const RAZORPAY_KEY_SECRET = Deno.env.get("RAZORPAY_KEY_SECRET");
         const SUPABASE_URL = Deno.env.get("SUPABASE_URL");
         const SUPABASE_SERVICE_ROLE_KEY = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY");
 
         if (!RAZORPAY_KEY_SECRET) {
-            return new Response(
-                JSON.stringify({ error: "Razorpay secret not configured" }),
-                { status: 500, headers: { ...corsHeaders, "Content-Type": "application/json" } }
-            );
+            return json({ error: "Razorpay secret not configured" }, 500);
+        }
+        if (!SUPABASE_URL || !SUPABASE_SERVICE_ROLE_KEY) {
+            return json({ error: "Server not configured" }, 500);
         }
 
+        const supabase = createClient(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY);
 
-        // ── 0. JWT user_id verification ────────────────────────────────────────
-        // "Verify JWT" is enabled at the gateway — the token is already validated.
-        // We just decode the payload to extract the sub (user ID) claim.
-        const authHeader = req.headers.get('Authorization');
-        if (!authHeader?.startsWith('Bearer ')) {
-            return new Response(
-                JSON.stringify({ error: 'Missing Authorization header' }),
-                { status: 401, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
-            );
+        // ── 1. Verify the caller ───────────────────────────────────────────
+        // Previously the JWT was merely base64-decoded and its `sub` trusted,
+        // which also broke on base64url payloads containing '-' or '_'.
+        const authHeader = req.headers.get("Authorization");
+        if (!authHeader?.startsWith("Bearer ")) {
+            return json({ error: "Missing Authorization header" }, 401);
         }
-        const token = authHeader.replace('Bearer ', '');
-        let callerUserId: string;
+        const token = authHeader.slice("Bearer ".length);
+        const { data: userData, error: userErr } = await supabase.auth.getUser(token);
+        if (userErr || !userData?.user?.id) {
+            return json({ error: "Unauthorized" }, 401);
+        }
+        const callerUserId = userData.user.id;
+
+        let body: Record<string, any>;
         try {
-            const payloadBase64 = token.split('.')[1];
-            const payload = JSON.parse(atob(payloadBase64));
-            callerUserId = payload.sub;
-            if (!callerUserId) throw new Error('No sub in JWT');
+            body = await req.json();
         } catch {
-            return new Response(
-                JSON.stringify({ error: 'Unauthorized: could not decode token' }),
-                { status: 401, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
-            );
+            return json({ error: "Invalid request body" }, 400);
         }
-        // ───────────────────────────────────────────────────────────────────────
 
-        const body = await req.json();
         const {
             razorpay_order_id,
             razorpay_payment_id,
@@ -97,18 +113,36 @@ Deno.serve(async (req) => {
             items,
             coins_used,
             shipping,
-            gst,
         } = body;
 
-        // Verify the claimed user_id in the body matches the JWT's sub
+        if (
+            typeof razorpay_order_id !== "string" ||
+            typeof razorpay_payment_id !== "string" ||
+            typeof razorpay_signature !== "string"
+        ) {
+            return json({ error: "Missing payment details" }, 400);
+        }
         if (!user_id || user_id !== callerUserId) {
-            return new Response(
-                JSON.stringify({ error: 'Unauthorized: user_id mismatch' }),
-                { status: 401, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
-            );
+            return json({ error: "Unauthorized: user_id mismatch" }, 401);
+        }
+        if (!Array.isArray(items) || items.length === 0) {
+            return json({ error: "No items supplied" }, 400);
+        }
+        if (!address || typeof address !== "object") {
+            return json({ error: "Missing address" }, 400);
         }
 
-        // 1. Verify the payment signature using Web Crypto API
+        // Rate limited per user, and only AFTER identity is established, so a
+        // shared IP cannot lock a paying customer out of their own order.
+        const limited = await checkRateLimit(req, corsHeaders, {
+            endpoint: "verify-razorpay-payment",
+            maxRequests: 10,
+            windowSeconds: 60,
+            identifier: callerUserId || getClientIp(req),
+        });
+        if (limited) return limited;
+
+        // ── 2. Verify the signature ────────────────────────────────────────
         const encoder = new TextEncoder();
         const key = await crypto.subtle.importKey(
             "raw",
@@ -123,18 +157,58 @@ Deno.serve(async (req) => {
             .map((b) => b.toString(16).padStart(2, "0"))
             .join("");
 
-        if (expectedSignature !== razorpay_signature) {
-            console.error("Signature mismatch!", { expectedSignature, razorpay_signature });
-            return new Response(
-                JSON.stringify({ error: "Payment verification failed — invalid signature" }),
-                { status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+        if (!timingSafeEqualHex(expectedSignature, String(razorpay_signature).toLowerCase())) {
+            // Never log the expected signature — it is a valid credential for
+            // this (order_id, payment_id) pair.
+            console.error("Signature mismatch for payment", razorpay_payment_id);
+            return json({ error: "Payment verification failed — invalid signature" }, 400);
+        }
+
+        // ── 3. Read the amount actually captured, from Razorpay ────────────
+        let amountPaidPaise: number | null = null;
+        if (RAZORPAY_KEY_ID) {
+            try {
+                const credentials = btoa(`${RAZORPAY_KEY_ID}:${RAZORPAY_KEY_SECRET}`);
+                const payRes = await fetch(
+                    `https://api.razorpay.com/v1/payments/${encodeURIComponent(razorpay_payment_id)}`,
+                    { headers: { Authorization: `Basic ${credentials}` } }
+                );
+                if (payRes.ok) {
+                    const payment = await payRes.json();
+                    if (payment?.order_id && payment.order_id !== razorpay_order_id) {
+                        console.error("Payment/order mismatch for", razorpay_payment_id);
+                        return json({ error: "Payment verification failed" }, 400);
+                    }
+                    if (payment?.status !== "captured" && payment?.status !== "authorized") {
+                        console.error("Unexpected payment status:", payment?.status);
+                        return json({ error: "Payment has not been completed" }, 400);
+                    }
+                    if (Number.isFinite(Number(payment?.amount))) {
+                        amountPaidPaise = Number(payment.amount);
+                    }
+                } else {
+                    console.error("Razorpay payment lookup failed:", payRes.status);
+                }
+            } catch (lookupErr) {
+                console.error("Razorpay payment lookup threw:", lookupErr);
+            }
+        } else {
+            console.error("RAZORPAY_KEY_ID not set — amount cannot be verified");
+        }
+
+        // If the lookup failed we still place the order: the customer has paid
+        // and must not be stranded. The RPC treats a null amount as "unchecked"
+        // and the failure is logged loudly above.
+        if (amountPaidPaise === null) {
+            console.error(
+                "Placing order WITHOUT amount verification for payment",
+                razorpay_payment_id
             );
         }
 
-        // 2. Signature valid — create the order in Supabase
-        const supabase = createClient(SUPABASE_URL!, SUPABASE_SERVICE_ROLE_KEY!);
-
-        // Use the same RPC as COD but with prepaid payment details
+        // ── 4. Create the order ────────────────────────────────────────────
+        // place_order_prepaid is idempotent on razorpay_payment_id, so a retry
+        // returns the existing order instead of duplicating stock and coins.
         const { data, error } = await supabase.rpc("place_order_prepaid", {
             p_user_id: user_id,
             p_address: address,
@@ -142,30 +216,33 @@ Deno.serve(async (req) => {
             p_payment_method: "prepaid",
             p_razorpay_payment_id: razorpay_payment_id,
             p_razorpay_order_id: razorpay_order_id,
-            p_coins_used: coins_used || 0,
-            p_shipping: shipping || 0,
-            p_gst: gst || 0,
-            p_discount: (body.discount || 0),
+            p_coins_used: Number(coins_used) || 0,
+            p_shipping: Number(shipping) || 0,
+            p_gst: 0,
+            p_discount: 0,
             p_coupon_code: body.coupon_code || null,
+            p_amount_paid_paise: amountPaidPaise,
         });
 
         if (error) {
-            console.error("Order creation error:", error);
-            return new Response(
-                JSON.stringify({ error: `Order creation failed: ${error.message}` }),
-                { status: 500, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+            // Postgres exception text can carry internal detail; keep it in the
+            // logs and give the customer something actionable instead.
+            console.error("Order creation error:", error, "payment:", razorpay_payment_id);
+            const isAmountMismatch = String(error.message || "").includes("Payment amount mismatch");
+            return json(
+                {
+                    error: isAmountMismatch
+                        ? "The amount paid does not match this order. Your payment is safe — please contact support with your payment reference."
+                        : "Payment received but the order could not be created. Please contact support with your payment reference.",
+                    payment_reference: razorpay_payment_id,
+                },
+                500
             );
         }
 
-        return new Response(
-            JSON.stringify({ success: true, order: data }),
-            { status: 200, headers: { ...corsHeaders, "Content-Type": "application/json" } }
-        );
+        return json({ success: true, order: data }, 200);
     } catch (err) {
-        console.error("Error:", err);
-        return new Response(
-            JSON.stringify({ error: err.message || "Internal server error" }),
-            { status: 500, headers: { ...corsHeaders, "Content-Type": "application/json" } }
-        );
+        console.error("verify-razorpay-payment error:", err);
+        return json({ error: "Internal server error" }, 500);
     }
 });

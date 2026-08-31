@@ -1,8 +1,34 @@
 -- ╔══════════════════════════════════════════════════════════════════════════╗
 -- ║              CORE ATOMS — MASTER DATABASE SCHEMA                        ║
 -- ║                                                                          ║
+-- ║  ⚠ DO NOT REPLAY THIS FILE OVER THE LIVE DATABASE. ⚠                    ║
+-- ║                                                                          ║
+-- ║  It is a REFERENCE SNAPSHOT and it is STALE as of 2026-08-30. The root   ║
+-- ║  `supabase/migrations/` tree is authoritative — that is what             ║
+-- ║  `npx supabase db push` applies. Running this file against production    ║
+-- ║  would silently REVERT security and correctness fixes, because:          ║
+-- ║                                                                          ║
+-- ║   • `CREATE OR REPLACE FUNCTION` DISCARDS a function's SET clause, so    ║
+-- ║     every SECURITY DEFINER function here that lacks an inline            ║
+-- ║     `SET search_path = public, pg_temp` loses that hardening.            ║
+-- ║   • The `place_order_cod` / `place_order_prepaid` bodies below are the   ║
+-- ║     OLD ones: they check variant stock but decrement `products`, which   ║
+-- ║     allows unlimited oversell of variants, and they tax the              ║
+-- ║     pre-discount subtotal.                                               ║
+-- ║   • `cancel_order` below neither restores stock nor refunds CoreCoins.   ║
+-- ║   • The `profiles` UPDATE policy below is missing the WITH CHECK that    ║
+-- ║     stops a customer promoting themselves to admin.                      ║
+-- ║   • `place_order_prepaid` below lacks the idempotency and paid-amount    ║
+-- ║     checks that stop duplicate and underpaid orders.                     ║
+-- ║                                                                          ║
+-- ║  The current definitions live in                                         ║
+-- ║    supabase/migrations/20260830183910_security_and_order_integrity.sql   ║
+-- ║    supabase/migrations/20260830184145_order_rpcs_prepaid_cancel_...sql   ║
+-- ║  Read those before trusting anything below, and reconcile this file      ║
+-- ║  before using it to stand up a new project.                              ║
+-- ║                                                                          ║
 -- ║  Full schema for the Core Atoms Supabase database, safe to run          ║
--- ║  repeatedly against a fresh project                                     ║
+-- ║  repeatedly against a FRESH project                                      ║
 -- ║  (all statements use IF NOT EXISTS / OR REPLACE / ON CONFLICT).         ║
 -- ║                                                                          ║
 -- ║  Pre-requisites (do in Supabase Dashboard before running this file):    ║

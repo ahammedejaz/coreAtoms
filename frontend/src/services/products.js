@@ -74,6 +74,7 @@ export function mapDbProduct(p) {
         id: v.id,
         label: v.label,
         price: Number(v.price_inr ?? 0),
+        mrp: v.mrp_inr != null ? Number(v.mrp_inr) : null,
         stockQty: Number(v.stock_qty ?? 0),
         sku: v.sku ?? "",
         sortOrder: v.sort_order ?? 0,
@@ -85,9 +86,15 @@ export function mapDbProduct(p) {
   //   - if variants exist → lowest variant price (shop card shows "From ₹X")
   //   - otherwise → base product price
   const basePrice = Number(p.price_inr ?? 0);
-  const displayPrice = variants.length > 0
-    ? Math.min(...variants.map((v) => v.price))
-    : basePrice;
+  const baseMrp = p.mrp_inr != null ? Number(p.mrp_inr) : null;
+  // The card price for variant products is the cheapest variant's, so the MRP
+  // shown beside it must come from that same variant — a different variant's
+  // MRP would overstate the discount.
+  const cheapestVariant = variants.length > 0
+    ? variants.reduce((min, v) => (v.price < min.price ? v : min), variants[0])
+    : null;
+  const displayPrice = cheapestVariant ? cheapestVariant.price : basePrice;
+  const displayMrp = cheapestVariant ? cheapestVariant.mrp : baseMrp;
 
   return {
     id: p.id,
@@ -96,7 +103,9 @@ export function mapDbProduct(p) {
     category: p.category ?? "",
     description: p.description ?? "",
     price: displayPrice,
+    mrp: displayMrp,
     basePrice,
+    baseMrp,
     stockQty: Number(p.stock_qty ?? 0),
     image: primaryImage,
     imagePosition: p.image_position ?? "50% 50%",
@@ -117,7 +126,7 @@ export function mapDbProduct(p) {
 }
 
 const PRODUCT_FIELDS =
-  "id,name,sku,category,description,price_inr,stock_qty,image_url,image_position,is_active,created_at,updated_at,about_text,best_for,pairs_well_with,recommended_stack,highlights,details,product_images(id,image_url,sort_order),product_reviews(rating),product_variants(id,label,price_inr,stock_qty,sku,sort_order,is_active)";
+  "id,name,sku,category,description,price_inr,mrp_inr,stock_qty,image_url,image_position,is_active,created_at,updated_at,about_text,best_for,pairs_well_with,recommended_stack,highlights,details,product_images(id,image_url,sort_order),product_reviews(rating),product_variants(id,label,price_inr,mrp_inr,stock_qty,sku,sort_order,is_active)";
 
 export async function fetchProducts() {
   const { data, error } = await supabase
@@ -134,7 +143,7 @@ export async function fetchProductById(id) {
   const { data, error } = await supabase
     .from("products")
     .select(
-      "id,name,sku,category,description,price_inr,stock_qty,image_url,image_position,is_active,created_at,updated_at,about_text,best_for,pairs_well_with,recommended_stack,highlights,details,product_images(id,image_url,sort_order),product_reviews(id,rating,title,body,created_at,user_id,order_id,reviewer_name),product_variants(id,label,price_inr,stock_qty,sku,sort_order,is_active)"
+      "id,name,sku,category,description,price_inr,mrp_inr,stock_qty,image_url,image_position,is_active,created_at,updated_at,about_text,best_for,pairs_well_with,recommended_stack,highlights,details,product_images(id,image_url,sort_order),product_reviews(id,rating,title,body,created_at,user_id,order_id,reviewer_name),product_variants(id,label,price_inr,mrp_inr,stock_qty,sku,sort_order,is_active)"
     )
     .eq("id", id)
     .maybeSingle();

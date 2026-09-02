@@ -10,7 +10,7 @@
  */
 import React, { useState } from "react";
 import { Link } from "react-router-dom";
-import { money } from "../utils/format";
+import { money, discountPercent } from "../utils/format";
 
 export function Stars({ rating, count }) {
   if (!count) return null;
@@ -41,6 +41,10 @@ const ProductCard = React.memo(function ProductCard({ p, onAdd, justAdded, gstPe
   // realtime product update with a fresh image retries automatically.
   const [failedSrc, setFailedSrc] = useState(null);
   const imageBroken = !p.image || failedSrc === p.image;
+
+  // Strikethrough MRP renders only for a genuine discount (mrp > price); the
+  // percent is derived, never stored, so it can't drift from the two prices.
+  const offPct = discountPercent(p.mrp, p.price);
 
   return (
     <div className="group flex flex-col rounded-2xl border border-[#E8E4DE] bg-white overflow-hidden shadow-[0_2px_12px_rgba(0,0,0,0.06)] hover:shadow-[0_4px_20px_rgba(30,58,95,0.12),0_0_0_1px_rgba(30,58,95,0.08)] hover:border-[#1e3a5f]/20 hover:scale-[1.02] transition-all duration-300 ease-out">
@@ -122,8 +126,16 @@ const ProductCard = React.memo(function ProductCard({ p, onAdd, justAdded, gstPe
               <span className="text-[11px] text-stone-400 block mb-0.5">
                 {hasVariants ? "Starting from" : "Price"}
               </span>
-              <span className="text-lg font-semibold text-stone-900">
-                {money(p.price)}
+              <span className="inline-flex items-baseline gap-1.5 flex-wrap">
+                <span className="text-lg font-semibold text-stone-900">
+                  {money(p.price)}
+                </span>
+                {offPct && (
+                  <>
+                    <s className="text-[12px] text-stone-400 font-normal">{money(p.mrp)}</s>
+                    <span className="text-[11px] font-semibold text-emerald-600">{offPct}% off</span>
+                  </>
+                )}
               </span>
               <span className="text-[10px] text-stone-400 block mt-0.5">
                 {Number(gstPercent) > 0 ? "Excl. GST & Shipping" : "Excl. Shipping"}

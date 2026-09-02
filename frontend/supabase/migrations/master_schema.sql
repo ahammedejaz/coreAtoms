@@ -159,12 +159,15 @@ CREATE TABLE IF NOT EXISTS public.products (
     recommended_stack   text,
     highlights          jsonb,                       -- e.g. ["Clean label","Lab-tested"]
     details             jsonb,                       -- Structured PDP content: benefits, ingredients, howToUse, faqs, safetyInfo
+    mrp_inr             integer CHECK (mrp_inr IS NULL OR mrp_inr >= 0), -- display-only strikethrough price
     created_at          timestamptz NOT NULL DEFAULT now(),
     updated_at          timestamptz NOT NULL DEFAULT now()
 );
 
--- Idempotent add for databases created before the details column existed
+-- Idempotent adds for databases created before these columns existed
 ALTER TABLE public.products ADD COLUMN IF NOT EXISTS details jsonb;
+ALTER TABLE public.products ADD COLUMN IF NOT EXISTS mrp_inr integer
+    CHECK (mrp_inr IS NULL OR mrp_inr >= 0);
 
 ALTER TABLE public.products ENABLE ROW LEVEL SECURITY;
 
@@ -213,6 +216,7 @@ CREATE TABLE IF NOT EXISTS public.product_variants (
     product_id  uuid NOT NULL REFERENCES public.products(id) ON DELETE CASCADE,
     label       text NOT NULL,
     price_inr   numeric(10,2) NOT NULL DEFAULT 0,
+    mrp_inr     integer CHECK (mrp_inr IS NULL OR mrp_inr >= 0), -- display-only strikethrough price
     stock_qty   integer NOT NULL DEFAULT 0,
     sku         text,
     sort_order  integer NOT NULL DEFAULT 0,
@@ -220,6 +224,9 @@ CREATE TABLE IF NOT EXISTS public.product_variants (
     created_at  timestamptz NOT NULL DEFAULT now(),
     updated_at  timestamptz NOT NULL DEFAULT now()
 );
+
+ALTER TABLE public.product_variants ADD COLUMN IF NOT EXISTS mrp_inr integer
+    CHECK (mrp_inr IS NULL OR mrp_inr >= 0);
 
 ALTER TABLE public.product_variants ENABLE ROW LEVEL SECURITY;
 CREATE POLICY "Variants publicly readable"      ON public.product_variants FOR SELECT USING (true);

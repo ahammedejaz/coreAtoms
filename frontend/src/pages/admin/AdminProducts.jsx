@@ -68,6 +68,7 @@ export default function AdminProducts({ onProductsChange, isActive = true }) {
     const [pSku, setPSku] = useState("");
     const [pCategory, setPCategory] = useState("");
     const [pPrice, setPPrice] = useState("");
+    const [pMrp, setPMrp] = useState("");
     const [pStock, setPStock] = useState("");
     const [pDesc, setPDesc] = useState("");
     const [pActive, setPActive] = useState(true);
@@ -168,6 +169,7 @@ export default function AdminProducts({ onProductsChange, isActive = true }) {
         category,
         description,
         price_inr,
+        mrp_inr,
         stock_qty,
         image_url,
         image_position,
@@ -226,6 +228,7 @@ export default function AdminProducts({ onProductsChange, isActive = true }) {
         setPSku("");
         setPCategory("");
         setPPrice("");
+        setPMrp("");
         setPStock("");
         setPDesc("");
         setPActive(true);
@@ -255,7 +258,7 @@ export default function AdminProducts({ onProductsChange, isActive = true }) {
         setShowProductForm(true);
         // Set empty baseline so isDirty starts false and tracks from here
         initialFormState.current = {
-            name: "", sku: "", category: "", price: "", stock: "", desc: "",
+            name: "", sku: "", category: "", price: "", mrp: "", stock: "", desc: "",
             active: true, imagePosition: "50% 50%", aboutText: "", bestFor: "",
             pairsWellWith: "", recommendedStack: "", highlights: [],
             detailsJson: JSON.stringify(normalizeProductDetails(null)),
@@ -275,6 +278,7 @@ export default function AdminProducts({ onProductsChange, isActive = true }) {
         setPSku(p.sku || "");
         setPCategory(p.category || "");
         setPPrice(String(p.price_inr ?? ""));
+        setPMrp(p.mrp_inr != null ? String(p.mrp_inr) : "");
         setPStock(String(p.stock_qty ?? ""));
         setPDesc(p.description || "");
         setPActive(p.is_active !== false);
@@ -306,6 +310,7 @@ export default function AdminProducts({ onProductsChange, isActive = true }) {
             sku: p.sku || "",
             category: p.category || "",
             price: String(p.price_inr ?? ""),
+            mrp: p.mrp_inr != null ? String(p.mrp_inr) : "",
             stock: String(p.stock_qty ?? ""),
             desc: p.description || "",
             active: p.is_active !== false,
@@ -323,7 +328,7 @@ export default function AdminProducts({ onProductsChange, isActive = true }) {
         (async () => {
             const { data: vData, error } = await supabase
                 .from("product_variants")
-                .select("id,label,price_inr,stock_qty,sku,sort_order,is_active")
+                .select("id,label,price_inr,mrp_inr,stock_qty,sku,sort_order,is_active")
                 .eq("product_id", p.id)
                 .order("sort_order", { ascending: true });
             if (reqId !== editRequestRef.current) return; // a newer form is open
@@ -442,10 +447,27 @@ export default function AdminProducts({ onProductsChange, isActive = true }) {
             const stock = Number(v.stock_qty ?? 0);
             if (!Number.isFinite(price) || price < 0) continue;
 
+            // MRP is optional, but a nonsense value must refuse the save loudly
+            // rather than being silently dropped — customers see this number.
+            const mrpRaw = String(v.mrp_inr ?? "").trim();
+            let mrp = null;
+            if (mrpRaw !== "") {
+                mrp = Number(mrpRaw);
+                if (!Number.isFinite(mrp) || mrp < 0) {
+                    setVariantErr(`Variant "${label}": enter a valid MRP`);
+                    throw new Error(`Variant "${label}": enter a valid MRP`);
+                }
+                if (mrp < price) {
+                    setVariantErr(`Variant "${label}": MRP can't be less than the selling price`);
+                    throw new Error(`Variant "${label}": MRP can't be less than the selling price`);
+                }
+            }
+
             const payload = {
                 product_id: productId,
                 label,
                 price_inr: price,
+                mrp_inr: mrp,
                 stock_qty: stock,
                 sku: String(v.sku || "").trim() || null,
                 sort_order: i,
@@ -480,6 +502,7 @@ export default function AdminProducts({ onProductsChange, isActive = true }) {
             const category = String(pCategory || "").trim();
             const description = String(pDesc || "").trim();
             const priceRaw = String(pPrice ?? "").trim();
+            const mrpRaw = String(pMrp ?? "").trim();
             const stockRaw = String(pStock ?? "").trim();
 
             // Number("") is 0, so a blank field would otherwise publish a ₹0
@@ -504,6 +527,18 @@ export default function AdminProducts({ onProductsChange, isActive = true }) {
                 throw new Error("Enter a valid price");
             if (!Number.isFinite(stock) || stock < 0)
                 throw new Error("Enter a valid stock quantity");
+
+            // Base MRP is display-only and optional. For variant products the
+            // per-variant MRPs are what customers see, so the base value is
+            // simply stored as entered (usually blank, the input is disabled).
+            let mrp = null;
+            if (mrpRaw !== "") {
+                mrp = Number(mrpRaw);
+                if (!Number.isFinite(mrp) || mrp < 0)
+                    throw new Error("Enter a valid MRP");
+                if (variants.length === 0 && mrp < price)
+                    throw new Error("MRP can't be less than the selling price");
+            }
 
             // Upload new image if selected
             let image_url = pImageUrl || "";
@@ -538,6 +573,7 @@ export default function AdminProducts({ onProductsChange, isActive = true }) {
                 category: category || null,
                 description: description || null,
                 price_inr: price,
+                mrp_inr: mrp,
                 stock_qty: stock,
                 image_url: image_url || null,
                 image_position: cleanImagePosition(pImagePosition),
@@ -579,6 +615,7 @@ export default function AdminProducts({ onProductsChange, isActive = true }) {
             // Reflect any value the save derived (price/stock from variants) back
             // into the form so the snapshot below matches what is on screen.
             setPPrice(String(price));
+            setPMrp(mrp != null ? String(mrp) : "");
             setPStock(String(stock));
 
             // Sync snapshot so isDirty resets to false
@@ -587,6 +624,7 @@ export default function AdminProducts({ onProductsChange, isActive = true }) {
                 sku: String(pSku || "").trim(),
                 category: category,
                 price: String(price),
+                mrp: mrp != null ? String(mrp) : "",
                 stock: String(stock),
                 desc: description,
                 active: !!pActive,
@@ -669,6 +707,7 @@ export default function AdminProducts({ onProductsChange, isActive = true }) {
         if (pSku !== init.sku) return true;
         if (pCategory !== init.category) return true;
         if (pPrice !== init.price) return true;
+        if (pMrp !== init.mrp) return true;
         if (pStock !== init.stock) return true;
         if (pDesc !== init.desc) return true;
         if (pActive !== init.active) return true;
@@ -690,12 +729,13 @@ export default function AdminProducts({ onProductsChange, isActive = true }) {
             if (!iv) return true;
             if (String(v.label || "") !== String(iv.label || "")) return true;
             if (String(v.price_inr ?? "") !== String(iv.price_inr ?? "")) return true;
+            if (String(v.mrp_inr ?? "") !== String(iv.mrp_inr ?? "")) return true;
             if (String(v.stock_qty ?? "") !== String(iv.stock_qty ?? "")) return true;
             if (String(v.sku || "") !== String(iv.sku || "")) return true;
             if ((v.is_active !== false) !== (iv.is_active !== false)) return true;
         }
         return false;
-    }, [editingId, pName, pSku, pCategory, pPrice, pStock, pDesc, pActive, pImagePosition, pAboutText, pBestFor, pPairsWellWith, pRecommendedStack, pHighlights, pDetails, pFile, extraImageFiles, variants]);
+    }, [editingId, pName, pSku, pCategory, pPrice, pMrp, pStock, pDesc, pActive, pImagePosition, pAboutText, pBestFor, pPairsWellWith, pRecommendedStack, pHighlights, pDetails, pFile, extraImageFiles, variants]);
 
     // One save entry point so the header button, the sticky bar and Ctrl+S all
     // share the same confirmation, dirty check and re-entrancy guard.
@@ -1067,11 +1107,11 @@ export default function AdminProducts({ onProductsChange, isActive = true }) {
                                     {variants.length > 0 && (
                                         <div className="space-y-2">
                                             {/* Header */}
-                                            <div className="hidden sm:grid grid-cols-[1fr_100px_80px_90px_32px] gap-2 text-[10px] font-semibold uppercase tracking-wide text-stone-400 px-1">
-                                                <span>Label</span><span>Price (₹)</span><span>Stock</span><span>SKU</span><span />
+                                            <div className="hidden sm:grid grid-cols-[1fr_90px_90px_70px_85px_32px] gap-2 text-[10px] font-semibold uppercase tracking-wide text-stone-400 px-1">
+                                                <span>Label</span><span>Price (₹)</span><span>MRP (₹)</span><span>Stock</span><span>SKU</span><span />
                                             </div>
                                             {variants.map((v, i) => (
-                                                <div key={v.id || i} className="grid grid-cols-2 sm:grid-cols-[1fr_100px_80px_90px_32px] gap-2 items-center bg-white rounded-xl border border-[#E8E4DE] px-3 py-2.5">
+                                                <div key={v.id || i} className="grid grid-cols-2 sm:grid-cols-[1fr_90px_90px_70px_85px_32px] gap-2 items-center bg-white rounded-xl border border-[#E8E4DE] px-3 py-2.5">
                                                     {/* Label */}
                                                     <input
                                                         value={v.label || ""}
@@ -1086,6 +1126,16 @@ export default function AdminProducts({ onProductsChange, isActive = true }) {
                                                         onChange={(e) => setVariants(prev => prev.map((x, j) => j === i ? { ...x, price_inr: e.target.value } : x))}
                                                         placeholder="Price"
                                                         min={0}
+                                                        className="w-full rounded-lg border border-[#E8E4DE] bg-stone-50 px-2.5 py-1.5 text-sm text-stone-900 focus:ring-1 focus:ring-[#1e3a5f]/20 focus:border-[#1e3a5f] outline-none"
+                                                    />
+                                                    {/* MRP — optional strikethrough price */}
+                                                    <input
+                                                        type="number"
+                                                        value={v.mrp_inr ?? ""}
+                                                        onChange={(e) => setVariants(prev => prev.map((x, j) => j === i ? { ...x, mrp_inr: e.target.value } : x))}
+                                                        placeholder="MRP"
+                                                        min={0}
+                                                        title="Optional. Shown struck through when higher than the price."
                                                         className="w-full rounded-lg border border-[#E8E4DE] bg-stone-50 px-2.5 py-1.5 text-sm text-stone-900 focus:ring-1 focus:ring-[#1e3a5f]/20 focus:border-[#1e3a5f] outline-none"
                                                     />
                                                     {/* Stock */}
@@ -1145,7 +1195,7 @@ export default function AdminProducts({ onProductsChange, isActive = true }) {
                                         type="button"
                                         onClick={() => setVariants(prev => [
                                             ...prev,
-                                            { label: "", price_inr: "", stock_qty: "", sku: "", sort_order: prev.length, is_active: true }
+                                            { label: "", price_inr: "", mrp_inr: "", stock_qty: "", sku: "", sort_order: prev.length, is_active: true }
                                         ])}
                                         className="flex items-center gap-2 rounded-xl border-2 border-dashed border-stone-300 px-4 py-2.5 text-sm font-medium text-stone-500 hover:border-[#1e3a5f] hover:text-[#1e3a5f] transition w-full justify-center"
                                     >
@@ -1165,8 +1215,8 @@ export default function AdminProducts({ onProductsChange, isActive = true }) {
                                     )}
                                 </div>
 
-                                {/* Price / Stock — disabled when variants handle pricing */}
-                                <div className="grid gap-3 md:grid-cols-3">
+                                {/* Price / MRP / Stock — disabled when variants handle pricing */}
+                                <div className="grid gap-3 sm:grid-cols-2 md:grid-cols-4">
                                     <div>
                                         <div className={`text-xs flex items-center gap-1.5 ${variants.length > 0 ? "text-stone-300" : "text-stone-400"}`}>
                                             Price (₹) *
@@ -1186,6 +1236,30 @@ export default function AdminProducts({ onProductsChange, isActive = true }) {
                                             min={0}
                                             placeholder={variants.length > 0 ? "Set per variant ↑" : ""}
                                         />
+                                    </div>
+
+                                    <div>
+                                        <div className={`text-xs flex items-center gap-1.5 ${variants.length > 0 ? "text-stone-300" : "text-stone-400"}`}>
+                                            MRP (₹)
+                                            {variants.length > 0 && (
+                                                <span className="text-[10px] bg-amber-50 border border-amber-200 text-amber-600 rounded-full px-2 py-0.5">managed by variants</span>
+                                            )}
+                                        </div>
+                                        <input
+                                            type="number"
+                                            value={pMrp}
+                                            onChange={(e) => setPMrp(e.target.value)}
+                                            disabled={variants.length > 0}
+                                            className={`mt-1 w-full rounded-xl border px-3 py-2 text-sm outline-none transition-colors ${variants.length > 0
+                                                ? "border-stone-200 bg-stone-100 text-stone-300 cursor-not-allowed"
+                                                : "border-[#E8E4DE] bg-white text-stone-900 focus:ring-2 focus:ring-[#1e3a5f]/20"
+                                                }`}
+                                            min={0}
+                                            placeholder={variants.length > 0 ? "Set per variant ↑" : "Optional"}
+                                        />
+                                        {variants.length === 0 && (
+                                            <p className="text-[10px] text-stone-400 mt-1">Shown struck through when higher than the price.</p>
+                                        )}
                                     </div>
 
                                     <div>

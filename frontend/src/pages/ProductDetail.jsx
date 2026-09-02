@@ -29,7 +29,7 @@ import { SkeletonProductDetail } from "../components/Skeleton";
 import RelatedProducts from "../components/RelatedProducts";
 import { useToast } from "../context/ToastContext";
 
-import { money } from "../utils/format";
+import { money, discountPercent } from "../utils/format";
 
 const BRAND_NAME = "Core Atoms";
 
@@ -126,6 +126,11 @@ export default function ProductDetail() {
 
   const hasVariants = (product?.variants?.length ?? 0) > 0;
   const activePrice = selectedVariant ? selectedVariant.price : (product?.price ?? 0);
+  // MRP follows the selected variant so the strikethrough always belongs to
+  // the price on screen. baseMrp is the product's own column — `product.mrp`
+  // is the card-level display value and may come from a different variant.
+  const activeMrp = selectedVariant ? selectedVariant.mrp : (product?.baseMrp ?? null);
+  const activeOffPct = discountPercent(activeMrp, activePrice);
   const activeStock = selectedVariant ? selectedVariant.stockQty : (product?.stockQty ?? 0);
   const activeKey = cartKey(id, selectedVariant?.id);
 
@@ -459,8 +464,18 @@ export default function ProductDetail() {
                 <p className="text-xs text-stone-400 mb-1">
                   {hasVariants && selectedVariant ? `Price · ${selectedVariant.label}` : "Price"}
                 </p>
-                <div className="text-3xl font-semibold tracking-tight text-stone-900">
-                  {money(activePrice)}
+                <div className="flex items-baseline gap-2 flex-wrap">
+                  <span className="text-3xl font-semibold tracking-tight text-stone-900">
+                    {money(activePrice)}
+                  </span>
+                  {activeOffPct && (
+                    <>
+                      <s className="text-base text-stone-400 font-normal">{money(activeMrp)}</s>
+                      <span className="rounded-full bg-emerald-50 border border-emerald-200 px-2 py-0.5 text-[11px] font-semibold text-emerald-700">
+                        {activeOffPct}% off
+                      </span>
+                    </>
+                  )}
                 </div>
                 <p className="text-xs text-stone-400 mt-1">
                   {Number(gstPercent) > 0 ? "Excl. GST & Shipping" : "Excl. Shipping"}

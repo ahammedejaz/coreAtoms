@@ -101,7 +101,7 @@ export const router = createBrowserRouter([
     element: <MainLayout />,
     errorElement: <ErrorPage />,
     children: [
-      { index: true, element: <HomeRoute /> },
+      { index: true, element: <HomeRoute />, handle: { fullBleed: true } },
       { path: "shop", element: <Shop /> },
       { path: "cart", element: <Cart /> },
       { path: "product/:id", element: <ProductDetail /> },

@@ -1,16 +1,25 @@
 /**
- * Home.jsx — Admin-customisable marketing landing page.
+ * Home.jsx — Admin-customisable brand landing page.
+ *
+ * Rendered full-bleed (see `handle.fullBleed` on the index route and
+ * `layouts/MainLayout.jsx`), unlike every other page which sits in a centred
+ * `max-w-6xl` container.
  *
  * Fetches the following from `app_settings` on mount (parallel requests):
  *   homepage_hero_images, homepage_hero_copy, homepage_pillars,
  *   homepage_categories, homepage_philosophy, homepage_featured_products,
- *   gst_percentage (to conditionally show 'Excl. GST & Shipping' on cards)
+ *   homepage_why_us, gst_percentage (to conditionally show 'Excl. GST &
+ *   Shipping' on cards). Testimonials are read separately from
+ *   `product_reviews` (rating >= 4, non-empty body) via
+ *   `services/homepage.fetchHomepageReviews()`, which never throws.
  *
  * All visible text, images, and links are admin-controlled via AdminHomepage.
  * The hero carousel auto-advances every 3.5 s; when no hero images are
  * configured (or every configured URL is dead) it falls back to a branded
  * gradient panel rather than a permanent shimmer.
- * Featured products strip reuses the shared `ProductCard` component.
+ *
+ * Section order: hero, trust strip, shop by need, best sellers, why-us proof
+ * band, testimonials (hidden when there are none), philosophy.
  *
  * @module pages/Home
  */
@@ -25,6 +34,8 @@ import { SkeletonGrid } from "../components/Skeleton";
 import { useToast } from "../context/ToastContext";
 import ScrollReveal from "../components/ScrollReveal";
 import PromoBanner from "../components/PromoBanner";
+import Testimonials from "../components/Testimonials";
+import { DEFAULT_HOME_CATEGORIES, DEFAULT_WHY_US, fetchHomepageReviews } from "../services/homepage";
 
 // ── Defaults (shown if admin hasn't saved yet) ────────────────────────────────
 /** Hero auto-advance interval, ms. */
@@ -53,21 +64,17 @@ const DEFAULT_PILLARS = [
   { icon: "⌖", title: "Fast Fulfilment", desc: "Orders dispatched within 24 hours from our facility." },
 ];
 
-const DEFAULT_CATEGORIES = [
-  { label: "Multivitamins", emoji: "💊", category: "General Wellness" },
-  { label: "Joint Support", emoji: "🦴", category: "Joint Support" },
-  { label: "Bone Health", emoji: "🧬", category: "Bone Health" },
-  { label: "Hair & Skin", emoji: "✨", category: "HSN" },
-  { label: "Gut Health", emoji: "🌿", category: "Gut Health" },
-  { label: "Collagen", emoji: "🔬", category: "Collagen" },
-];
-
 const DEFAULT_PHILOSOPHY = {
   label: "Our Philosophy",
   heading: "Built like a system,\nnot a trend.",
   body: "Each Core Atoms formulation is designed around consistency — functional ingredients, simplified stacks, and structured support for real-world routines. No inflated claims. No unnecessary fillers. Just premium precision and daily reliability.",
   cta: "Explore the range",
 };
+
+/** Centres and pads section content to match the rest of the site's container width. */
+function Container({ children, className = "" }) {
+  return <div className={`mx-auto max-w-6xl px-6 ${className}`}>{children}</div>;
+}
 
 export default function Home() {
   const { addItem } = useCart();
@@ -90,8 +97,10 @@ export default function Home() {
   const [heroTick, setHeroTick] = useState(0);
   const [heroCopy, setHeroCopy] = useState(DEFAULT_HERO_COPY);
   const [pillars, setPillars] = useState(DEFAULT_PILLARS);
-  const [categories, setCategories] = useState(DEFAULT_CATEGORIES);
+  const [categories, setCategories] = useState(DEFAULT_HOME_CATEGORIES);
   const [philosophy, setPhilosophy] = useState(DEFAULT_PHILOSOPHY);
+  const [whyUs, setWhyUs] = useState(DEFAULT_WHY_US);
+  const [reviews, setReviews] = useState([]);
   const [gstPercent, setGstPercent] = useState(0);
 
   // ── Load all settings + products in parallel ─────────────────────────────
@@ -99,7 +108,7 @@ export default function Home() {
     setLoadingProducts(true);
     setFetchError("");
     try {
-      const [settingsRes, productList] = await Promise.all([
+      const [settingsRes, productList, reviewList] = await Promise.all([
         supabase
           .from("app_settings")
           .select("key,value")
@@ -110,9 +119,12 @@ export default function Home() {
             "homepage_pillars",
             "homepage_categories",
             "homepage_philosophy",
+            "homepage_why_us",
             "gst_percentage",
           ]),
         fetchProducts(),
+        // Testimonials must never fail the page.
+        fetchHomepageReviews().catch(() => []),
       ]);
 
       const map = {};
@@ -148,6 +160,17 @@ export default function Home() {
         setPhilosophy({ ...DEFAULT_PHILOSOPHY, ...map.homepage_philosophy });
       }
 
+      // Why us
+      if (map.homepage_why_us && typeof map.homepage_why_us === "object") {
+        setWhyUs({
+          ...DEFAULT_WHY_US,
+          ...map.homepage_why_us,
+          stats: Array.isArray(map.homepage_why_us.stats) && map.homepage_why_us.stats.length > 0
+            ? map.homepage_why_us.stats
+            : DEFAULT_WHY_US.stats,
+        });
+      }
+
       // GST
       setGstPercent(Number(map.gst_percentage?.percentage ?? 0));
 
@@ -160,6 +183,8 @@ export default function Home() {
       } else {
         setProducts(productList.slice(0, 6));
       }
+
+      setReviews(reviewList);
     } catch (e) {
       console.error("Home load error:", e);
       setHeroImages((prev) => prev ?? []);
@@ -255,7 +280,7 @@ export default function Home() {
   const trust = heroCopy.trustIcons || DEFAULT_HERO_COPY.trustIcons;
 
   return (
-    <div className="space-y-24">
+    <div>
       <SEO
         title="Core Atoms | Nutraceuticals"
         description="Modern nutraceuticals designed for real routines. Clean formulas, structured stacks, COD available across India."
@@ -266,13 +291,14 @@ export default function Home() {
       <PromoBanner />
 
       {/* ── HERO ──────────────────────────────────────────────────────────── */}
-      <section className="rounded-3xl bg-white overflow-hidden relative" style={{ boxShadow: '0 4px 20px rgba(0,0,0,0.06), 0 12px 48px rgba(30,58,95,0.08), inset 0 1px 0 rgba(255,255,255,0.9)', border: '1px solid rgba(232,228,222,0.5)' }}>
-        {/* Subtle gradient mesh overlay */}
-        <div className="absolute inset-0 pointer-events-none z-0 opacity-30" style={{ background: 'radial-gradient(ellipse at 80% 20%, rgba(30,58,95,0.06), transparent 50%), radial-gradient(ellipse at 20% 80%, rgba(30,58,95,0.04), transparent 50%)' }} />
-        <div className="grid lg:grid-cols-2 gap-0">
+      <section className="bg-white border-b border-line">
+        <Container className="grid gap-10 lg:grid-cols-2 lg:items-center py-10 lg:py-16">
 
-          {/* LEFT — carousel: aspect-ratio on mobile, stretch to full card height on desktop */}
-          <div className="relative overflow-hidden aspect-[4/3] lg:aspect-auto" role="region" aria-roledescription="carousel" aria-label="Featured imagery">
+          {/* Carousel column — first on mobile so the visual leads */}
+          <div
+            className="order-first lg:order-none rounded-3xl overflow-hidden aspect-[4/3] relative"
+            role="region" aria-roledescription="carousel" aria-label="Featured imagery"
+          >
             {/* Shimmer skeleton — only while there is something still to load.
                 Released by the first onLoad *or* onError, so a dead URL can no
                 longer freeze the hero as a permanent grey block. */}
@@ -370,12 +396,12 @@ export default function Home() {
             )}
           </div>
 
-          {/* RIGHT — copy */}
-          <div className="flex flex-col justify-center px-10 py-12 lg:px-14 lg:py-16">
-            <div className="section-label mb-4">Core Atoms — Nutraceuticals</div>
-            <h1 className="text-4xl lg:text-5xl font-semibold tracking-tight text-stone-900 leading-[1.12]">
+          {/* Copy column */}
+          <div className="min-w-0">
+            <p className="section-label mb-4">Core Atoms — Nutraceuticals</p>
+            <h1 className="text-4xl sm:text-5xl lg:text-6xl font-semibold tracking-tight leading-[1.08] text-stone-900">
               {heroCopy.headline}<br />
-              <span className="text-[#1e3a5f]">{heroCopy.headlineAccent}</span>
+              <span className="text-brand">{heroCopy.headlineAccent}</span>
             </h1>
             <p className="mt-6 text-[15px] text-stone-500 leading-relaxed max-w-sm">{heroCopy.body}</p>
             <div className="mt-8 flex flex-wrap gap-3">
@@ -383,11 +409,11 @@ export default function Home() {
                 <svg className="h-4 w-4" viewBox="0 0 20 20" fill="currentColor"><path d="M3 3a1 1 0 000 2h1.22l.305 1.222a.997.997 0 00.01.042l1.358 5.43-.893.892C3.74 13.846 4.632 15 6.414 15H15a1 1 0 000-2H6.414l1-1H14a1 1 0 00.894-.553l3-6A1 1 0 0017 5H6.28l-.31-1.243A1 1 0 005 3H3zM16 16.5a1.5 1.5 0 11-3 0 1.5 1.5 0 013 0zM6.5 18a1.5 1.5 0 100-3 1.5 1.5 0 000 3z" /></svg>
                 {heroCopy.primaryCta || "Shop all products"}
               </Link>
-              <Link to="/shop" className="btn-ghost px-6 py-3 text-[14px]">
+              <a href="#best-sellers" className="btn-ghost px-6 py-3 text-[14px]">
                 {heroCopy.secondaryCta || "View best sellers"} →
-              </Link>
+              </a>
             </div>
-            <div className="mt-10 grid grid-cols-3 gap-3 pt-8" style={{ borderTop: '1px solid rgba(232,228,222,0.5)' }}>
+            <div className="mt-10 grid grid-cols-3 gap-3 pt-8 border-t border-line">
               {trust.slice(0, 3).map((t) => (
                 <div key={t.label} className="text-center group">
                   <div className="text-xl mb-1 group-hover:scale-110 transition-transform duration-300">{t.icon}</div>
@@ -396,102 +422,144 @@ export default function Home() {
               ))}
             </div>
           </div>
-        </div>
+        </Container>
       </section>
 
-      {/* ── PILLARS ───────────────────────────────────────────────────────── */}
+      {/* ── TRUST STRIP (pillars) ────────────────────────────────────────── */}
       <ScrollReveal>
-        <section>
-          <div className="grid gap-5 sm:grid-cols-2 lg:grid-cols-4">
+        <section className="bg-canvas border-b border-line">
+          <Container className="grid grid-cols-2 lg:grid-cols-4 gap-6 py-6">
             {pillars.map((p, i) => (
-              <div key={i} className="card-shine group rounded-2xl bg-white/80 p-6 relative overflow-hidden transition-all duration-500 hover:-translate-y-1" style={{ border: '1px solid rgba(232,228,222,0.6)', boxShadow: '0 2px 8px rgba(0,0,0,0.03), 0 4px 16px rgba(0,0,0,0.02), inset 0 1px 0 rgba(255,255,255,0.8)', backdropFilter: 'blur(8px)' }}
-                onMouseEnter={(e) => { e.currentTarget.style.boxShadow = '0 8px 24px rgba(0,0,0,0.06), 0 16px 40px rgba(30,58,95,0.06), inset 0 1px 0 rgba(255,255,255,0.9)'; }}
-                onMouseLeave={(e) => { e.currentTarget.style.boxShadow = '0 2px 8px rgba(0,0,0,0.03), 0 4px 16px rgba(0,0,0,0.02), inset 0 1px 0 rgba(255,255,255,0.8)'; }}>
-                <div className="h-10 w-10 rounded-xl bg-gradient-to-br from-[#EFF6FF] to-[#1e3a5f]/10 flex items-center justify-center text-[#1e3a5f] text-xl mb-4 group-hover:scale-110 transition-transform duration-300" style={{ boxShadow: '0 2px 8px rgba(30,58,95,0.1)' }}>{p.icon}</div>
-                <div className="text-sm font-semibold text-stone-900">{p.title}</div>
-                <div className="mt-1.5 text-[13px] text-stone-500 leading-relaxed">{p.desc}</div>
+              <div key={i} className="flex items-start gap-3">
+                <span className="text-2xl text-brand">{p.icon}</span>
+                <div>
+                  <div className="text-sm font-semibold text-ink">{p.title}</div>
+                  <div className="text-xs text-stone-500 hidden sm:block">{p.desc}</div>
+                </div>
               </div>
             ))}
-          </div>
+          </Container>
         </section>
       </ScrollReveal>
 
-      {/* ── FEATURED PRODUCTS ─────────────────────────────────────────────── */}
+      {/* ── SHOP BY NEED ──────────────────────────────────────────────────── */}
       <ScrollReveal>
-        <section>
-          <div className="flex items-end justify-between mb-8">
-            <div>
-              <p className="section-label">Top Picks</p>
-              <h2 className="mt-1.5 text-2xl font-semibold tracking-tight text-stone-900">Featured Products</h2>
+        <section className="py-16">
+          <Container>
+            <div className="mb-8">
+              <p className="section-label">Shop by need</p>
+              <h2 className="mt-1.5 text-2xl font-semibold tracking-tight text-stone-900">Find your formula</h2>
             </div>
-            <Link to="/shop" className="text-sm font-semibold text-[#1e3a5f] hover:underline underline-offset-2">View all →</Link>
-          </div>
-          {loadingProducts ? (
-            <SkeletonGrid count={6} />
-          ) : fetchError ? (
-            <div className="card p-12 text-center">
-              <div className="mx-auto mb-3 h-12 w-12 rounded-xl bg-red-50 border border-red-200 grid place-items-center">
-                <svg className="h-5 w-5 text-red-400" viewBox="0 0 20 20" fill="currentColor"><path fillRule="evenodd" d="M18 10a8 8 0 11-16 0 8 8 0 0116 0zm-7 4a1 1 0 11-2 0 1 1 0 012 0zm-1-9a1 1 0 00-1 1v4a1 1 0 102 0V6a1 1 0 00-1-1z" clipRule="evenodd" /></svg>
-              </div>
-              <p className="font-semibold text-stone-900">Unable to load products</p>
-              <p className="mt-1 text-sm text-stone-500">{fetchError}</p>
-              <button type="button" onClick={loadData} className="btn-primary mt-5 inline-flex">Try again</button>
-            </div>
-          ) : (
-            <div className="grid gap-5 sm:grid-cols-2 lg:grid-cols-3">
-              {products.map((p) => (
-                <ProductCard key={p.id} p={p} onAdd={handleAdd} justAdded={justAddedId === p.id} gstPercent={gstPercent} />
+            <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-4">
+              {categories.map((cat, i) => (
+                <Link
+                  key={i}
+                  to={`/shop?category=${encodeURIComponent(cat.category)}`}
+                  className="group relative block aspect-square overflow-hidden rounded-2xl border border-line bg-white transition hover:border-brand/30 hover:shadow-md"
+                >
+                  {cat.image ? (
+                    <>
+                      <img src={cat.image} alt="" loading="lazy" className="h-full w-full object-cover" />
+                      <div className="absolute inset-x-0 bottom-0 bg-white/90 px-3 py-2 text-xs font-semibold text-ink">
+                        {cat.label}
+                      </div>
+                    </>
+                  ) : (
+                    <div className="absolute inset-0 flex flex-col items-center justify-center gap-2">
+                      <div className="h-14 w-14 rounded-full bg-brand-soft grid place-items-center text-2xl">{cat.emoji}</div>
+                      <span className="text-xs font-semibold text-stone-700 group-hover:text-brand">{cat.label}</span>
+                    </div>
+                  )}
+                </Link>
               ))}
             </div>
-          )}
+          </Container>
         </section>
       </ScrollReveal>
 
-      {/* ── SHOP BY CATEGORY ──────────────────────────────────────────────── */}
+      {/* ── BEST SELLERS ──────────────────────────────────────────────────── */}
       <ScrollReveal>
-        < section >
-          <div className="text-center mb-10">
-            <p className="section-label">Browse by Goal</p>
-            <h2 className="mt-2 text-2xl font-semibold tracking-tight text-stone-900">Shop by Category</h2>
-          </div>
-          <div className="grid grid-cols-2 gap-4 sm:grid-cols-3 lg:grid-cols-6">
-            {categories.map((cat, i) => (
-              <div key={i} style={{ perspective: '600px' }}>
-                <Link to={`/shop?category=${encodeURIComponent(cat.category)}`}
-                  className="group flex flex-col items-center gap-3 rounded-2xl bg-white/80 p-5 text-center transition-all duration-500"
-                  style={{ border: '1px solid rgba(232,228,222,0.5)', boxShadow: '0 2px 8px rgba(0,0,0,0.03), inset 0 1px 0 rgba(255,255,255,0.8)', backdropFilter: 'blur(8px)', transformStyle: 'preserve-3d' }}
-                  onMouseEnter={(e) => { e.currentTarget.style.transform = 'rotateY(8deg) translateY(-4px)'; e.currentTarget.style.boxShadow = '0 6px 20px rgba(30,58,95,0.08), 0 0 0 1px rgba(30,58,95,0.08)'; e.currentTarget.style.borderColor = 'rgba(30,58,95,0.15)'; }}
-                  onMouseLeave={(e) => { e.currentTarget.style.transform = 'rotateY(0deg) translateY(0px)'; e.currentTarget.style.boxShadow = '0 2px 8px rgba(0,0,0,0.03), inset 0 1px 0 rgba(255,255,255,0.8)'; e.currentTarget.style.borderColor = 'rgba(232,228,222,0.5)'; }}>
-                  <div className="h-12 w-12 rounded-xl bg-gradient-to-br from-[#EFF6FF] to-[#1e3a5f]/8 flex items-center justify-center text-2xl group-hover:scale-110 group-hover:shadow-[0_4px_12px_rgba(30,58,95,0.12)] transition-all duration-300">{cat.emoji}</div>
-                  <span className="text-[12px] font-semibold text-stone-700 group-hover:text-[#1e3a5f] leading-snug transition-colors">{cat.label}</span>
-                </Link>
+        <section id="best-sellers" className="bg-white border-y border-line py-16">
+          <Container>
+            <div className="flex items-end justify-between mb-8">
+              <div>
+                <p className="section-label">Top picks</p>
+                <h2 className="mt-1.5 text-2xl font-semibold tracking-tight text-stone-900">Best sellers</h2>
               </div>
-            ))}
-          </div>
-        </section >
+              <Link to="/shop" className="text-sm font-semibold text-brand hover:underline underline-offset-2">View all →</Link>
+            </div>
+            {loadingProducts ? (
+              <SkeletonGrid count={6} />
+            ) : fetchError ? (
+              <div className="card p-12 text-center">
+                <div className="mx-auto mb-3 h-12 w-12 rounded-xl bg-red-50 border border-red-200 grid place-items-center">
+                  <svg className="h-5 w-5 text-red-400" viewBox="0 0 20 20" fill="currentColor"><path fillRule="evenodd" d="M18 10a8 8 0 11-16 0 8 8 0 0116 0zm-7 4a1 1 0 11-2 0 1 1 0 012 0zm-1-9a1 1 0 00-1 1v4a1 1 0 102 0V6a1 1 0 00-1-1z" clipRule="evenodd" /></svg>
+                </div>
+                <p className="font-semibold text-stone-900">Unable to load products</p>
+                <p className="mt-1 text-sm text-stone-500">{fetchError}</p>
+                <button type="button" onClick={loadData} className="btn-primary mt-5 inline-flex">Try again</button>
+              </div>
+            ) : (
+              <div className="grid gap-5 sm:grid-cols-2 lg:grid-cols-3">
+                {products.map((p) => (
+                  <ProductCard key={p.id} p={p} onAdd={handleAdd} justAdded={justAddedId === p.id} gstPercent={gstPercent} />
+                ))}
+              </div>
+            )}
+          </Container>
+        </section>
+      </ScrollReveal>
+
+      {/* ── WHY US (proof band) ──────────────────────────────────────────── */}
+      <ScrollReveal>
+        <section className="bg-brand text-white py-16 lg:py-20">
+          <Container className="grid gap-12 lg:grid-cols-2 lg:items-center">
+            <div>
+              <p className="text-xs font-semibold uppercase tracking-[0.12em] text-white/60">{whyUs.label}</p>
+              <h2 className="mt-3 text-3xl lg:text-4xl font-semibold tracking-tight">{whyUs.heading}</h2>
+              <p className="mt-4 text-white/80 leading-relaxed">{whyUs.body}</p>
+              <Link to="/shop" className="mt-8 inline-flex rounded-xl bg-white px-6 py-3 text-sm font-semibold text-brand">
+                {whyUs.cta}
+              </Link>
+            </div>
+            <div className="grid grid-cols-2 gap-4">
+              {whyUs.stats.slice(0, 4).map((s, i) => (
+                <div key={i} className="rounded-2xl border border-white/15 bg-white/10 p-6">
+                  <div className="text-3xl font-semibold">{s.value}</div>
+                  <div className="mt-1 text-sm text-white/75">{s.label}</div>
+                </div>
+              ))}
+            </div>
+          </Container>
+        </section>
+      </ScrollReveal>
+
+      {/* ── TESTIMONIALS ─────────────────────────────────────────────────── */}
+      <ScrollReveal>
+        <Testimonials reviews={reviews} />
       </ScrollReveal>
 
       {/* ── PHILOSOPHY ────────────────────────────────────────────────────── */}
       <ScrollReveal variant="scale">
-        < section className="rounded-3xl bg-white p-12 lg:p-16 text-center relative overflow-hidden" style={{ border: '1px solid rgba(232,228,222,0.5)', boxShadow: '0 4px 20px rgba(0,0,0,0.04), 0 12px 48px rgba(30,58,95,0.06), inset 0 1px 0 rgba(255,255,255,0.9)' }}>
-          {/* Mesh background */}
-          <div className="absolute inset-0 pointer-events-none" style={{ background: 'radial-gradient(ellipse at 30% 0%, rgba(30,58,95,0.04), transparent 50%), radial-gradient(ellipse at 70% 100%, rgba(30,58,95,0.03), transparent 50%)' }} />
-          <div className="mx-auto max-w-2xl">
-            <p className="section-label mb-4">{philosophy.label || "Our Philosophy"}</p>
-            <h2 className="text-2xl lg:text-3xl font-semibold tracking-tight text-stone-900 leading-snug whitespace-pre-line">
-              {philosophy.heading || DEFAULT_PHILOSOPHY.heading}
-            </h2>
-            <p className="mt-5 text-[15px] text-stone-500 leading-relaxed">
-              {philosophy.body || DEFAULT_PHILOSOPHY.body}
-            </p>
-            <Link to="/shop" className="btn-primary mt-8 inline-flex px-8 py-3">
-              {philosophy.cta || "Explore the range"}
-            </Link>
-          </div>
-        </section >
+        <section className="py-16">
+          <Container>
+            <div className="rounded-3xl border border-line bg-white p-12 lg:p-16 text-center">
+              <div className="mx-auto max-w-2xl">
+                <p className="section-label mb-4">{philosophy.label || "Our Philosophy"}</p>
+                <h2 className="text-2xl lg:text-3xl font-semibold tracking-tight text-stone-900 leading-snug whitespace-pre-line">
+                  {philosophy.heading || DEFAULT_PHILOSOPHY.heading}
+                </h2>
+                <p className="mt-5 text-[15px] text-stone-500 leading-relaxed">
+                  {philosophy.body || DEFAULT_PHILOSOPHY.body}
+                </p>
+                <Link to="/shop" className="btn-primary mt-8 inline-flex px-8 py-3">
+                  {philosophy.cta || "Explore the range"}
+                </Link>
+              </div>
+            </div>
+          </Container>
+        </section>
       </ScrollReveal>
-
-
-    </div >
+    </div>
   );
 }

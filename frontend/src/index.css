@@ -1,5 +1,13 @@
 @import "tailwindcss";
 
+@theme {
+  --color-brand: #1e3a5f;
+  --color-brand-soft: #EFF6FF;
+  --color-line: #E8E4DE;
+  --color-canvas: #FAFAF8;
+  --color-ink: #1C1917;
+}
+
 /* ─── Core Atoms Design System — Premium 3D Edition ────────────────────────
    Palette:
    - Background:  #FAFAF8  (warm off-white)
@@ -13,7 +21,7 @@
 
 @layer base {
   html {
-    font-family: 'Inter', system-ui, -apple-system, sans-serif;
+    font-family: 'Inter Variable', 'Inter', system-ui, -apple-system, sans-serif;
   }
 
   body {

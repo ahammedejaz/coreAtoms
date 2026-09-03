@@ -17,6 +17,7 @@ import { router } from "./routes/AppRoutes";
 import { CartProvider } from "./context/CartContext";
 import { AuthProvider } from "./context/AuthContext";
 import { ToastProvider } from "./context/ToastContext";
+import '@fontsource-variable/inter';
 import './index.css'
 
 ReactDOM.createRoot(document.getElementById('root')).render(

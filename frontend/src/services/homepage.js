@@ -17,6 +17,17 @@ const HOMEPAGE_KEYS = [
     "homepage_philosophy",
 ];
 
+/** The six-entry default category set — also the Navbar's category-row fallback
+ *  when `homepage_categories` hasn't been saved yet. */
+export const DEFAULT_HOME_CATEGORIES = [
+    { label: "Multivitamins", emoji: "💊", category: "General Wellness" },
+    { label: "Joint Support", emoji: "🦴", category: "Joint Support" },
+    { label: "Bone Health", emoji: "🧬", category: "Bone Health" },
+    { label: "Hair & Skin", emoji: "✨", category: "HSN" },
+    { label: "Gut Health", emoji: "🌿", category: "Gut Health" },
+    { label: "Collagen", emoji: "🔬", category: "Collagen" },
+];
+
 /**
  * Fetches all homepage settings from the `app_settings` table.
  * @returns {Promise<Record<string, any>>} Key-value map of homepage settings.

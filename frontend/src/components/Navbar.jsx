@@ -1,9 +1,13 @@
 /**
- * Navbar.jsx — Sticky navigation bar with mobile drawer.
+ * Navbar.jsx — Sticky navigation bar with global search and a category row.
  *
  * Features:
  * - Dynamic logo (fetched from `app_settings.site_logo` or fallback "CA" monogram)
- * - Role-aware nav links (admin sees Admin link, customers see Home/Shop/Orders)
+ * - Global product search: submits to `/shop?q=<term>`. The header owns search —
+ *   Shop no longer has its own search input.
+ * - A category row (desktop) / drawer section (mobile) sourced from
+ *   `app_settings.homepage_categories`, falling back to `DEFAULT_HOME_CATEGORIES`.
+ * - Role-aware nav links (admin sees Admin link, customers see My Orders/Login)
  * - Cart badge with bounce animation on add
  * - Inline toast for cart notifications (driven by `lastAction` from CartContext)
  * - Responsive mobile hamburger menu with backdrop overlay
@@ -11,11 +15,12 @@
  *
  * @module components/Navbar
  */
-import { Link, NavLink, useLocation } from "react-router-dom";
+import { Link, NavLink, useLocation, useNavigate, useSearchParams } from "react-router-dom";
 import { useEffect, useMemo, useState } from "react";
 import { useCart } from "../context/CartContext";
 import { useAuth } from "../context/AuthContext";
 import { supabase } from "../services/supabase/client";
+import { DEFAULT_HOME_CATEGORIES } from "../services/homepage";
 
 const navLinkClass = ({ isActive }) =>
   `nav-shine text-sm transition ${isActive ? "text-neutral-950 font-semibold" : "text-neutral-600 hover:text-neutral-950"}`;
@@ -26,16 +31,49 @@ const mobileNavLinkClass = ({ isActive }) =>
     : "text-neutral-700 hover:bg-neutral-50 hover:text-neutral-950"
   }`;
 
+const categoryLinkActiveClass = "text-brand font-semibold border-b-2 border-brand h-full inline-flex items-center";
+const categoryLinkInactiveClass = "text-stone-600 hover:text-brand nav-shine";
+
+/** Local search form used in both the desktop and mobile header rows. Keyed by
+ *  `location.key` from the parent so it resets to the URL's `q` on every
+ *  navigation without a sync effect. */
+function SearchForm({ id, className, initialQuery, onSubmit }) {
+  const [term, setTerm] = useState(initialQuery);
+  return (
+    <form role="search" className={className} onSubmit={(e) => { e.preventDefault(); onSubmit(term.trim()); }}>
+      <label htmlFor={id} className="sr-only">Search products</label>
+      <div className="relative">
+        <svg className="absolute left-3.5 top-1/2 -translate-y-1/2 h-4 w-4 text-stone-400 pointer-events-none" viewBox="0 0 20 20" fill="currentColor" aria-hidden="true">
+          <path fillRule="evenodd" d="M8 4a4 4 0 100 8 4 4 0 000-8zM2 8a6 6 0 1110.89 3.476l4.817 4.817a1 1 0 01-1.414 1.414l-4.816-4.816A6 6 0 012 8z" clipRule="evenodd" />
+        </svg>
+        <input
+          id={id}
+          type="search"
+          value={term}
+          onChange={(e) => setTerm(e.target.value)}
+          placeholder="Search supplements, e.g. collagen"
+          className="h-10 w-full rounded-full border border-line bg-white pl-10 pr-4 text-sm text-ink placeholder:text-stone-400 outline-none focus:border-brand/40 focus:ring-[3px] focus:ring-brand/10"
+        />
+        <button type="submit" className="sr-only">Search</button>
+      </div>
+    </form>
+  );
+}
+
 export default function Navbar() {
   const { totalItems, lastAction, maxItems } = useCart();
   const { isAuthenticated, user, isAdmin, signOut } = useAuth();
   const homePath = isAdmin ? "/admin" : "/";
   const location = useLocation();
+  const navigate = useNavigate();
+  const [searchParams] = useSearchParams();
+  const initialQuery = searchParams.get("q") || "";
 
   const [bump, setBump] = useState(false);
   const [toast, setToast] = useState(null);
   const [menuOpen, setMenuOpen] = useState(false);
   const [logoUrl, setLogoUrl] = useState("");
+  const [categories, setCategories] = useState(DEFAULT_HOME_CATEGORIES);
 
   // Close mobile menu on route change
   useEffect(() => { setMenuOpen(false); }, [location.pathname]);
@@ -47,17 +85,23 @@ export default function Navbar() {
     return () => document.removeEventListener("keydown", onKey);
   }, [menuOpen]);
 
-  // Load site logo
+  // Load site logo + category row content
   useEffect(() => {
     supabase
       .from("app_settings")
-      .select("value")
-      .eq("key", "site_logo")
-      .maybeSingle()
+      .select("key,value")
+      .in("key", ["site_logo", "homepage_categories"])
       .then(({ data }) => {
-        if (data?.value && typeof data.value === "string" && data.value.startsWith("http")) {
-          setLogoUrl(data.value);
+        const map = {};
+        (data || []).forEach((row) => { map[row.key] = row.value; });
+        if (map.site_logo && typeof map.site_logo === "string" && map.site_logo.startsWith("http")) {
+          setLogoUrl(map.site_logo);
         }
+        setCategories(
+          Array.isArray(map.homepage_categories) && map.homepage_categories.length > 0
+            ? map.homepage_categories
+            : DEFAULT_HOME_CATEGORIES
+        );
       });
   }, []);
 
@@ -84,76 +128,134 @@ export default function Navbar() {
     return () => { document.body.style.overflow = ""; };
   }, [menuOpen]);
 
+  // A global search always lands on /shop with a fresh q — category/other
+  // filters intentionally reset, since search looks across the whole catalogue.
+  // `replace` while already on /shop so retyping a search doesn't pile up history.
+  const submitSearch = (q) => {
+    navigate(
+      { pathname: "/shop", search: q ? `?q=${encodeURIComponent(q)}` : "" },
+      { replace: location.pathname === "/shop" }
+    );
+  };
+
+  const isShopPath = location.pathname === "/shop";
+  const activeCategoryParam = searchParams.get("category");
+
   return (
     <>
       <header className="sticky top-0 z-50 bg-white/70 backdrop-blur-xl backdrop-saturate-[180%] shadow-[0_1px_3px_rgba(0,0,0,0.05),0_8px_30px_-12px_rgba(30,58,95,0.15)]" style={{ borderBottom: '1px solid rgba(232,228,222,0.6)' }}>
         {/* Subtle gradient glow line at bottom */}
         <div className="absolute bottom-0 left-0 right-0 h-px bg-gradient-to-r from-transparent via-[#1e3a5f]/15 to-transparent" />
-        <div className="mx-auto flex max-w-6xl items-center justify-between px-4 py-3">
+        <div className="mx-auto max-w-6xl px-4">
+          <div className="flex items-center gap-4 py-3">
 
-          {/* Logo */}
-          <Link to={homePath} className="flex items-center gap-2.5">
-            <img src={logoUrl || "/logo.png"} alt="Core Atoms" className="h-8 w-auto max-w-[140px] object-contain" />
-          </Link>
+            {/* Logo */}
+            <Link to={homePath} className="flex shrink-0 items-center gap-2.5">
+              <img src={logoUrl || "/logo.png"} alt="Core Atoms" className="h-8 w-auto max-w-[140px] object-contain" />
+            </Link>
 
-          {/* Desktop nav */}
-          <nav className="hidden md:flex items-center gap-5">
+            {/* Desktop search */}
             {!isAdmin && (
-              <>
-                <NavLink to="/" className={navLinkClass}>Home</NavLink>
-                <NavLink to="/shop" className={navLinkClass}>Shop</NavLink>
-              </>
-            )}
-            {isAuthenticated ? (
-              <>
-                {!isAdmin && <NavLink to="/orders" className={navLinkClass}>My Orders</NavLink>}
-                {isAdmin && <NavLink to="/admin" className={navLinkClass}>Admin</NavLink>}
-                <button onClick={signOut} className="nav-shine text-sm text-neutral-600 hover:text-neutral-950 transition">Logout</button>
-                <span className="hidden lg:inline text-xs text-neutral-400 max-w-[140px] truncate">{user?.email}</span>
-              </>
-            ) : (
-              <NavLink to="/login" className={navLinkClass}>Login</NavLink>
+              <SearchForm
+                key={`desktop-${location.key}`}
+                id="navbar-search-desktop"
+                className="hidden md:block flex-1 max-w-xl"
+                initialQuery={initialQuery}
+                onSubmit={submitSearch}
+              />
             )}
 
-            {!isAdmin && (
-              <Link to="/cart"
-                className={`cart-shine ml-1 inline-flex items-center gap-2 rounded-full border border-neutral-200 bg-white px-3 py-1.5 text-xs font-medium text-neutral-900 relative overflow-hidden transition-all duration-300 hover:border-[#1e3a5f]/20 hover:shadow-[0_2px_12px_rgba(30,58,95,0.12)] hover:-translate-y-px active:translate-y-0.5 active:scale-[0.97] ${bump ? "scale-[1.06]" : "scale-100"}`}
-                title="Cart">
-                <svg className="h-3.5 w-3.5" viewBox="0 0 20 20" fill="currentColor"><path d="M3 3a1 1 0 000 2h1.22l.305 1.222a.997.997 0 00.01.042l1.358 5.43-.893.892C3.74 13.846 4.632 15 6.414 15H15a1 1 0 000-2H6.414l1-1H14a1 1 0 00.894-.553l3-6A1 1 0 0017 5H6.28l-.31-1.243A1 1 0 005 3H3zM16 16.5a1.5 1.5 0 11-3 0 1.5 1.5 0 013 0zM6.5 18a1.5 1.5 0 100-3 1.5 1.5 0 000 3z" /></svg>
-                Cart
-                <span className="grid h-5 min-w-5 place-items-center rounded-full bg-neutral-900 text-white px-1 text-[10px]">{totalItems}</span>
-              </Link>
-            )}
-          </nav>
-
-          {/* Mobile right-side: cart + hamburger */}
-          <div className="flex md:hidden items-center gap-2">
-            {!isAdmin && (
-              <Link to="/cart"
-                aria-label={`Cart, ${totalItems} ${totalItems === 1 ? "item" : "items"}`}
-                className={`inline-flex items-center gap-1.5 rounded-full border border-neutral-200 bg-white px-3 py-1.5 text-xs text-neutral-900 shadow-sm transition ${bump ? "scale-[1.06]" : "scale-100"}`}>
-                <svg className="h-3.5 w-3.5" viewBox="0 0 20 20" fill="currentColor"><path d="M3 3a1 1 0 000 2h1.22l.305 1.222a.997.997 0 00.01.042l1.358 5.43-.893.892C3.74 13.846 4.632 15 6.414 15H15a1 1 0 000-2H6.414l1-1H14a1 1 0 00.894-.553l3-6A1 1 0 0017 5H6.28l-.31-1.243A1 1 0 005 3H3zM16 16.5a1.5 1.5 0 11-3 0 1.5 1.5 0 013 0zM6.5 18a1.5 1.5 0 100-3 1.5 1.5 0 000 3z" /></svg>
-                <span className="grid h-5 min-w-5 place-items-center rounded-full bg-neutral-900 text-white px-1 text-[10px]">{totalItems}</span>
-              </Link>
-            )}
-
-            {/* Hamburger */}
-            <button
-              type="button"
-              onClick={() => setMenuOpen((o) => !o)}
-              className="h-9 w-9 rounded-xl border border-neutral-200 bg-white flex items-center justify-center text-neutral-700 hover:bg-neutral-50 transition shadow-sm"
-              aria-label={menuOpen ? "Close menu" : "Open menu"}
-              aria-expanded={menuOpen}
-              aria-controls="mobile-menu"
-            >
-              {menuOpen ? (
-                <svg className="h-4 w-4" viewBox="0 0 20 20" fill="currentColor"><path fillRule="evenodd" d="M4.293 4.293a1 1 0 011.414 0L10 8.586l4.293-4.293a1 1 0 111.414 1.414L11.414 10l4.293 4.293a1 1 0 01-1.414 1.414L10 11.414l-4.293 4.293a1 1 0 01-1.414-1.414L8.586 10 4.293 5.707a1 1 0 010-1.414z" clipRule="evenodd" /></svg>
+            {/* Desktop nav */}
+            <nav className="hidden md:flex items-center gap-5 ml-auto">
+              {isAuthenticated ? (
+                <>
+                  {!isAdmin && <NavLink to="/orders" className={navLinkClass}>My Orders</NavLink>}
+                  {isAdmin && <NavLink to="/admin" className={navLinkClass}>Admin</NavLink>}
+                  <button onClick={signOut} className="nav-shine text-sm text-neutral-600 hover:text-neutral-950 transition">Logout</button>
+                  <span className="hidden lg:inline text-xs text-neutral-400 max-w-[140px] truncate">{user?.email}</span>
+                </>
               ) : (
-                <svg className="h-4 w-4" viewBox="0 0 20 20" fill="currentColor"><path fillRule="evenodd" d="M3 5a1 1 0 011-1h12a1 1 0 110 2H4a1 1 0 01-1-1zM3 10a1 1 0 011-1h12a1 1 0 110 2H4a1 1 0 01-1-1zM3 15a1 1 0 011-1h12a1 1 0 110 2H4a1 1 0 01-1-1z" clipRule="evenodd" /></svg>
+                <NavLink to="/login" className={navLinkClass}>Login</NavLink>
               )}
-            </button>
+
+              {!isAdmin && (
+                <Link to="/cart"
+                  className={`cart-shine ml-1 inline-flex items-center gap-2 rounded-full border border-neutral-200 bg-white px-3 py-1.5 text-xs font-medium text-neutral-900 relative overflow-hidden transition-all duration-300 hover:border-[#1e3a5f]/20 hover:shadow-[0_2px_12px_rgba(30,58,95,0.12)] hover:-translate-y-px active:translate-y-0.5 active:scale-[0.97] ${bump ? "scale-[1.06]" : "scale-100"}`}
+                  title="Cart">
+                  <svg className="h-3.5 w-3.5" viewBox="0 0 20 20" fill="currentColor"><path d="M3 3a1 1 0 000 2h1.22l.305 1.222a.997.997 0 00.01.042l1.358 5.43-.893.892C3.74 13.846 4.632 15 6.414 15H15a1 1 0 000-2H6.414l1-1H14a1 1 0 00.894-.553l3-6A1 1 0 0017 5H6.28l-.31-1.243A1 1 0 005 3H3zM16 16.5a1.5 1.5 0 11-3 0 1.5 1.5 0 013 0zM6.5 18a1.5 1.5 0 100-3 1.5 1.5 0 000 3z" /></svg>
+                  Cart
+                  <span className="grid h-5 min-w-5 place-items-center rounded-full bg-neutral-900 text-white px-1 text-[10px]">{totalItems}</span>
+                </Link>
+              )}
+            </nav>
+
+            {/* Mobile right-side: cart + hamburger */}
+            <div className="flex md:hidden items-center gap-2 ml-auto">
+              {!isAdmin && (
+                <Link to="/cart"
+                  aria-label={`Cart, ${totalItems} ${totalItems === 1 ? "item" : "items"}`}
+                  className={`inline-flex items-center gap-1.5 rounded-full border border-neutral-200 bg-white px-3 py-1.5 text-xs text-neutral-900 shadow-sm transition ${bump ? "scale-[1.06]" : "scale-100"}`}>
+                  <svg className="h-3.5 w-3.5" viewBox="0 0 20 20" fill="currentColor"><path d="M3 3a1 1 0 000 2h1.22l.305 1.222a.997.997 0 00.01.042l1.358 5.43-.893.892C3.74 13.846 4.632 15 6.414 15H15a1 1 0 000-2H6.414l1-1H14a1 1 0 00.894-.553l3-6A1 1 0 0017 5H6.28l-.31-1.243A1 1 0 005 3H3zM16 16.5a1.5 1.5 0 11-3 0 1.5 1.5 0 013 0zM6.5 18a1.5 1.5 0 100-3 1.5 1.5 0 000 3z" /></svg>
+                  <span className="grid h-5 min-w-5 place-items-center rounded-full bg-neutral-900 text-white px-1 text-[10px]">{totalItems}</span>
+                </Link>
+              )}
+
+              {/* Hamburger */}
+              <button
+                type="button"
+                onClick={() => setMenuOpen((o) => !o)}
+                className="h-9 w-9 rounded-xl border border-neutral-200 bg-white flex items-center justify-center text-neutral-700 hover:bg-neutral-50 transition shadow-sm"
+                aria-label={menuOpen ? "Close menu" : "Open menu"}
+                aria-expanded={menuOpen}
+                aria-controls="mobile-menu"
+              >
+                {menuOpen ? (
+                  <svg className="h-4 w-4" viewBox="0 0 20 20" fill="currentColor"><path fillRule="evenodd" d="M4.293 4.293a1 1 0 011.414 0L10 8.586l4.293-4.293a1 1 0 111.414 1.414L11.414 10l4.293 4.293a1 1 0 01-1.414 1.414L10 11.414l-4.293 4.293a1 1 0 01-1.414-1.414L8.586 10 4.293 5.707a1 1 0 010-1.414z" clipRule="evenodd" /></svg>
+                ) : (
+                  <svg className="h-4 w-4" viewBox="0 0 20 20" fill="currentColor"><path fillRule="evenodd" d="M3 5a1 1 0 011-1h12a1 1 0 110 2H4a1 1 0 01-1-1zM3 10a1 1 0 011-1h12a1 1 0 110 2H4a1 1 0 01-1-1zM3 15a1 1 0 011-1h12a1 1 0 110 2H4a1 1 0 01-1-1z" clipRule="evenodd" /></svg>
+                )}
+              </button>
+            </div>
           </div>
+
+          {/* Mobile search row */}
+          {!isAdmin && (
+            <SearchForm
+              key={`mobile-${location.key}`}
+              id="navbar-search-mobile"
+              className="md:hidden pb-3"
+              initialQuery={initialQuery}
+              onSubmit={submitSearch}
+            />
+          )}
         </div>
+
+        {/* Desktop category row — logo + search + this row replace the old
+            Home/Shop text links entirely. */}
+        {!isAdmin && (
+          <div className="hidden md:block border-t border-line">
+            <nav aria-label="Shop by category" className="mx-auto max-w-6xl px-4 h-9 flex items-center gap-6 overflow-x-auto no-scrollbar text-sm">
+              <Link
+                to="/shop"
+                className={isShopPath && !activeCategoryParam ? categoryLinkActiveClass : categoryLinkInactiveClass}
+              >
+                All products
+              </Link>
+              {categories.map((cat) => {
+                const isActive = isShopPath && activeCategoryParam === cat.category;
+                return (
+                  <Link
+                    key={cat.category}
+                    to={`/shop?category=${encodeURIComponent(cat.category)}`}
+                    className={isActive ? categoryLinkActiveClass : categoryLinkInactiveClass}
+                  >
+                    {cat.label}
+                  </Link>
+                );
+              })}
+            </nav>
+          </div>
+        )}
 
         {/* Mobile drawer — slides down below the header. `inert` while collapsed so
             keyboard users can't tab into links that are visually clipped away. */}
@@ -177,6 +279,16 @@ export default function Navbar() {
                     Shop
                   </span>
                 </NavLink>
+
+                <div className="px-4 pt-3 pb-1 text-[10px] font-semibold uppercase tracking-wide text-stone-400">Shop by category</div>
+                {categories.map((cat) => (
+                  <NavLink key={cat.category} to={`/shop?category=${encodeURIComponent(cat.category)}`} className={mobileNavLinkClass}>
+                    <span className="flex items-center gap-3">
+                      <span className="text-base leading-none">{cat.emoji}</span>
+                      {cat.label}
+                    </span>
+                  </NavLink>
+                ))}
               </>
             )}
 

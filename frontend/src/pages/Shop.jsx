@@ -1,9 +1,11 @@
 /**
- * Shop.jsx — Product listing page with search, category filter, and add-to-cart.
+ * Shop.jsx — Product listing page with a 1mg-style filter rail.
  *
- * Fetches all active products from Supabase and displays them in a responsive
- * grid. Includes a search bar, category filter dropdown, skeleton loading
- * states, and an inline toast notification on add-to-cart.
+ * Search (`q`) is owned by the header (`components/Navbar.jsx`) — this page
+ * only reads it from the URL and shows it as a removable chip. The left rail
+ * (desktop) / bottom sheet (mobile) filters on category, price band, customer
+ * rating, offers and stock — all URL-synced via `utils/shopFilters.js` so
+ * links from Home and the header's category row work without extra state.
  *
  * Also fetches `gst_percentage` from `app_settings` to conditionally show
  * "Excl. GST & Shipping" or "Excl. Shipping" on product cards.
@@ -18,12 +20,20 @@ import { useSearchParams } from "react-router-dom";
 import { fetchProducts } from "../services/products";
 import { useCart } from "../context/CartContext";
 import { supabase } from "../services/supabase/client";
-import useDebounce from "../hooks/useDebounce";
 import SEO from "../components/SEO";
 import { useToast } from "../context/ToastContext";
 import ScrollReveal from "../components/ScrollReveal";
 import ProductCard from "../components/ProductCard";
+import ShopFilters from "../components/ShopFilters";
 import { SkeletonGrid } from "../components/Skeleton";
+import {
+  FILTER_KEYS,
+  PRICE_BANDS,
+  RATING_OPTIONS,
+  applyFilters,
+  countActiveFilters,
+  readFilters,
+} from "../utils/shopFilters";
 
 const PAGE_TITLE = "Shop | Core Atoms";
 const PAGE_DESCRIPTION =
@@ -38,14 +48,17 @@ export default function Shop() {
   const [products, setProducts] = useState([]);
   const [loading, setLoading] = useState(true);
   const [err, setErr] = useState("");
+  const [sheetOpen, setSheetOpen] = useState(false);
 
-  // URL-synced filters — survive refresh and are shareable
-  const category = searchParams.get("category") || "All";
+  // URL-synced — survive refresh and are shareable. `q` is owned by the header.
   const query = searchParams.get("q") || "";
   const sort = searchParams.get("sort") || "featured";
-  const setCategory = (cat) => {
+  const filters = useMemo(() => readFilters(searchParams), [searchParams]);
+
+  const setFilter = (key, value) => {
     setSearchParams((prev) => {
-      if (cat === "All") prev.delete("category"); else prev.set("category", cat);
+      const v = value === true ? "1" : value;
+      if (!v || v === "All") prev.delete(key); else prev.set(key, String(v));
       return prev;
     });
   };
@@ -55,17 +68,21 @@ export default function Shop() {
       return prev;
     });
   };
-  // `replace` so a search doesn't push one history entry per keystroke —
-  // typing "collagen" used to need eight back presses to leave the page.
-  const setQuery = (q) => {
+  const clearFilters = () => {
     setSearchParams((prev) => {
-      if (!q.trim()) prev.delete("q"); else prev.set("q", q);
+      [...FILTER_KEYS, "q"].forEach((k) => prev.delete(k));
       return prev;
-    }, { replace: true });
+    });
   };
-
-  // Debounce search for performance
-  const debouncedQuery = useDebounce(query, 300);
+  const removeChip = (key) => {
+    if (key === "q") {
+      setSearchParams((prev) => { prev.delete("q"); return prev; });
+    } else if (key === "offer" || key === "stock") {
+      setFilter(key, false);
+    } else {
+      setFilter(key, "");
+    }
+  };
 
   const [justAddedId, setJustAddedId] = useState(null);
   const [gstPercent, setGstPercent] = useState(0);
@@ -112,17 +129,40 @@ export default function Shop() {
     };
   }, [loadProducts]);
 
+  // Escape closes the mobile filter sheet.
+  useEffect(() => {
+    const onKey = (e) => { if (e.key === "Escape" && sheetOpen) setSheetOpen(false); };
+    document.addEventListener("keydown", onKey);
+    return () => document.removeEventListener("keydown", onKey);
+  }, [sheetOpen]);
+
+  // Lock body scroll while the sheet is open.
+  useEffect(() => {
+    document.body.style.overflow = sheetOpen ? "hidden" : "";
+    return () => { document.body.style.overflow = ""; };
+  }, [sheetOpen]);
+
+  const activeProducts = useMemo(() => products.filter((p) => p.isActive !== false), [products]);
+
   const categories = useMemo(() => {
     const set = new Set();
-    products.forEach((p) => { const c = (p.category || "").trim(); if (c) set.add(c); });
-    return ["All", ...Array.from(set).sort()];
-  }, [products]);
+    activeProducts.forEach((p) => { const c = (p.category || "").trim(); if (c) set.add(c); });
+    return Array.from(set).sort();
+  }, [activeProducts]);
+
+  const categoryCounts = useMemo(() => {
+    const counts = {};
+    activeProducts.forEach((p) => {
+      const c = (p.category || "").trim();
+      if (c) counts[c] = (counts[c] || 0) + 1;
+    });
+    return counts;
+  }, [activeProducts]);
+
+  const total = activeProducts.length;
 
   const active = useMemo(() => {
-    let list = products.filter((p) => p.isActive !== false);
-    if (category !== "All") list = list.filter((p) => p.category === category);
-    const q = debouncedQuery.trim().toLowerCase();
-    if (q) list = list.filter((p) => p.name?.toLowerCase().includes(q) || p.category?.toLowerCase().includes(q));
+    let list = applyFilters(products, filters, query);
 
     // "featured" keeps the catalogue order the store was curated in.
     if (sort !== "featured") {
@@ -143,7 +183,26 @@ export default function Shop() {
       }
     }
     return list;
-  }, [products, category, debouncedQuery, sort]);
+  }, [products, filters, query, sort]);
+
+  const chips = useMemo(() => {
+    const list = [];
+    if (query) list.push({ key: "q", label: `"${query}"` });
+    if (filters.category !== "All") list.push({ key: "category", label: filters.category });
+    if (filters.price) {
+      const band = PRICE_BANDS.find((b) => b.id === filters.price);
+      if (band) list.push({ key: "price", label: band.label });
+    }
+    if (filters.rating) {
+      const option = RATING_OPTIONS.find((r) => r.id === filters.rating);
+      if (option) list.push({ key: "rating", label: option.label });
+    }
+    if (filters.offer) list.push({ key: "offer", label: "On offer" });
+    if (filters.stock) list.push({ key: "stock", label: "In stock" });
+    return list;
+  }, [query, filters]);
+
+  const activeFilterCount = countActiveFilters(filters);
 
   /** Ref for button feedback timer. */
   const btnTimerRef = useRef(null);
@@ -155,7 +214,7 @@ export default function Shop() {
 
   /** Handles adding a product to cart with toast + button feedback.
    *  Memoised so `ProductCard`'s React.memo isn't defeated by a fresh callback
-   *  identity on every keystroke in the search box. */
+   *  identity on every render. */
   const handleAdd = useCallback((p) => {
     addItem(p, 1);
     setJustAddedId(p.id);
@@ -186,122 +245,136 @@ export default function Shop() {
         </div>
       </ScrollReveal>
 
-      {/* Filters — Premium glass bar */}
-      <div
-        className="mb-8 rounded-2xl p-4 sm:p-5 flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between"
-        style={{
-          background: "rgba(255,255,255,0.75)",
-          backdropFilter: "blur(16px) saturate(180%)",
-          WebkitBackdropFilter: "blur(16px) saturate(180%)",
-          border: "1px solid rgba(232,228,222,0.6)",
-          boxShadow: "0 4px 24px rgba(0,0,0,0.04), 0 1px 3px rgba(0,0,0,0.03), inset 0 1px 0 rgba(255,255,255,0.9)",
-        }}
-      >
-        <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:gap-3">
-          {/* Search input with integrated icon */}
-          <div className="relative group">
-            <div className="absolute left-3.5 top-1/2 -translate-y-1/2 pointer-events-none">
-              <svg className="h-4 w-4 text-stone-400 group-focus-within:text-[#1e3a5f] transition-colors" viewBox="0 0 20 20" fill="currentColor">
-                <path fillRule="evenodd" d="M8 4a4 4 0 100 8 4 4 0 000-8zM2 8a6 6 0 1110.89 3.476l4.817 4.817a1 1 0 01-1.414 1.414l-4.816-4.816A6 6 0 012 8z" clipRule="evenodd" />
-              </svg>
-            </div>
-            <input
-              id="shop-search"
-              type="search"
-              aria-label="Search products"
-              value={query}
-              onChange={(e) => setQuery(e.target.value)}
-              placeholder="Search products…"
-              className="w-full sm:w-64 rounded-xl border border-[#E8E4DE]/80 bg-white/90 pl-10 pr-4 py-2.5 text-sm text-stone-900 placeholder:text-stone-400 outline-none transition-all duration-200 focus:border-[#1e3a5f]/40 focus:ring-[3px] focus:ring-[#1e3a5f]/8 focus:bg-white hover:border-stone-300"
-              style={{ boxShadow: "inset 0 1px 2px rgba(0,0,0,0.04)" }}
-            />
-          </div>
-
-          {/* Category dropdown with integrated icon */}
-          <div className="relative group">
-            <div className="absolute left-3.5 top-1/2 -translate-y-1/2 pointer-events-none">
-              <svg className="h-4 w-4 text-stone-400 group-focus-within:text-[#1e3a5f] transition-colors" viewBox="0 0 20 20" fill="currentColor">
-                <path fillRule="evenodd" d="M3 3a1 1 0 011-1h12a1 1 0 011 1v3a1 1 0 01-.293.707L13 10.414V17a1 1 0 01-.553.894l-4 2A1 1 0 017 19v-8.586L3.293 6.707A1 1 0 013 6V3z" clipRule="evenodd" />
-              </svg>
-            </div>
-            <select
-              id="shop-category"
-              aria-label="Filter by category"
-              value={category}
-              onChange={(e) => setCategory(e.target.value)}
-              className="appearance-none rounded-xl border border-[#E8E4DE]/80 bg-white/90 pl-10 pr-10 py-2.5 text-sm text-stone-900 outline-none transition-all duration-200 focus:border-[#1e3a5f]/40 focus:ring-[3px] focus:ring-[#1e3a5f]/8 focus:bg-white hover:border-stone-300 cursor-pointer"
-              style={{ boxShadow: "inset 0 1px 2px rgba(0,0,0,0.04)" }}
-            >
-              {categories.map((c) => (
-                <option key={c} value={c}>{c}</option>
-              ))}
-            </select>
-            {/* Custom chevron */}
-            <div className="absolute right-3.5 top-1/2 -translate-y-1/2 pointer-events-none">
-              <svg className="h-4 w-4 text-stone-400" viewBox="0 0 20 20" fill="currentColor">
-                <path fillRule="evenodd" d="M5.293 7.293a1 1 0 011.414 0L10 10.586l3.293-3.293a1 1 0 111.414 1.414l-4 4a1 1 0 01-1.414 0l-4-4a1 1 0 010-1.414z" clipRule="evenodd" />
-              </svg>
-            </div>
-          </div>
-
-          {/* Sort dropdown — mirrors the category control's styling */}
-          <div className="relative group">
-            <div className="absolute left-3.5 top-1/2 -translate-y-1/2 pointer-events-none">
-              <svg className="h-4 w-4 text-stone-400 group-focus-within:text-[#1e3a5f] transition-colors" viewBox="0 0 20 20" fill="currentColor">
-                <path d="M3 4a1 1 0 000 2h11a1 1 0 100-2H3zM3 8a1 1 0 000 2h7a1 1 0 100-2H3zM3 12a1 1 0 100 2h4a1 1 0 100-2H3zM13 16a1 1 0 102 0v-5.586l1.293 1.293a1 1 0 001.414-1.414l-3-3a1 1 0 00-1.414 0l-3 3a1 1 0 101.414 1.414L13 10.414V16z" />
-              </svg>
-            </div>
-            <select
-              id="shop-sort"
-              aria-label="Sort products"
-              value={sort}
-              onChange={(e) => setSort(e.target.value)}
-              className="appearance-none rounded-xl border border-[#E8E4DE]/80 bg-white/90 pl-10 pr-10 py-2.5 text-sm text-stone-900 outline-none transition-all duration-200 focus:border-[#1e3a5f]/40 focus:ring-[3px] focus:ring-[#1e3a5f]/8 focus:bg-white hover:border-stone-300 cursor-pointer"
-              style={{ boxShadow: "inset 0 1px 2px rgba(0,0,0,0.04)" }}
-            >
-              <option value="featured">Sort: Featured</option>
-              <option value="price-asc">Price: Low to High</option>
-              <option value="price-desc">Price: High to Low</option>
-              <option value="rating">Top Rated</option>
-              <option value="newest">Newest First</option>
-            </select>
-            {/* Custom chevron */}
-            <div className="absolute right-3.5 top-1/2 -translate-y-1/2 pointer-events-none">
-              <svg className="h-4 w-4 text-stone-400" viewBox="0 0 20 20" fill="currentColor">
-                <path fillRule="evenodd" d="M5.293 7.293a1 1 0 011.414 0L10 10.586l3.293-3.293a1 1 0 111.414 1.414l-4 4a1 1 0 01-1.414 0l-4-4a1 1 0 010-1.414z" clipRule="evenodd" />
-              </svg>
-            </div>
-          </div>
+      <div className="lg:grid lg:grid-cols-[240px_minmax(0,1fr)] lg:gap-8 lg:items-start">
+        {/* Desktop rail */}
+        <div className="hidden lg:block lg:sticky lg:top-28">
+          <ShopFilters
+            idPrefix="rail"
+            categories={categories}
+            categoryCounts={categoryCounts}
+            total={total}
+            filters={filters}
+            onChange={setFilter}
+            onClear={clearFilters}
+          />
         </div>
 
-        {/* Product count pill */}
-        <div className="inline-flex items-center gap-1.5 rounded-full border border-[#E8E4DE]/60 bg-white/80 px-3 py-1.5 self-start sm:self-auto">
-          <span className="inline-block h-1.5 w-1.5 rounded-full bg-[#1e3a5f]/50" />
-          <span className="text-xs font-medium text-stone-500">
-            {active.length} product{active.length !== 1 ? "s" : ""}
-          </span>
+        <div>
+          {/* Toolbar */}
+          <div className="flex flex-wrap items-center gap-3 mb-4">
+            <button
+              type="button"
+              onClick={() => setSheetOpen(true)}
+              className="lg:hidden inline-flex items-center gap-2 rounded-xl border border-line bg-white px-4 py-2 text-sm font-medium text-stone-700"
+            >
+              Filters
+              {activeFilterCount > 0 && (
+                <span className="inline-flex h-5 min-w-5 items-center justify-center rounded-full bg-brand px-1 text-[10px] font-semibold text-white">
+                  {activeFilterCount}
+                </span>
+              )}
+            </button>
+
+            <div className="inline-flex items-center gap-1.5 rounded-full border border-[#E8E4DE]/60 bg-white/80 px-3 py-1.5">
+              <span className="inline-block h-1.5 w-1.5 rounded-full bg-[#1e3a5f]/50" />
+              <span className="text-xs font-medium text-stone-500">
+                {active.length} product{active.length !== 1 ? "s" : ""}
+              </span>
+            </div>
+
+            {/* Sort dropdown */}
+            <div className="relative group ml-auto">
+              <div className="absolute left-3.5 top-1/2 -translate-y-1/2 pointer-events-none">
+                <svg className="h-4 w-4 text-stone-400 group-focus-within:text-[#1e3a5f] transition-colors" viewBox="0 0 20 20" fill="currentColor">
+                  <path d="M3 4a1 1 0 000 2h11a1 1 0 100-2H3zM3 8a1 1 0 000 2h7a1 1 0 100-2H3zM3 12a1 1 0 100 2h4a1 1 0 100-2H3zM13 16a1 1 0 102 0v-5.586l1.293 1.293a1 1 0 001.414-1.414l-3-3a1 1 0 00-1.414 0l-3 3a1 1 0 101.414 1.414L13 10.414V16z" />
+                </svg>
+              </div>
+              <select
+                id="shop-sort"
+                aria-label="Sort products"
+                value={sort}
+                onChange={(e) => setSort(e.target.value)}
+                className="appearance-none rounded-xl border border-[#E8E4DE]/80 bg-white/90 pl-10 pr-10 py-2.5 text-sm text-stone-900 outline-none transition-all duration-200 focus:border-[#1e3a5f]/40 focus:ring-[3px] focus:ring-[#1e3a5f]/8 focus:bg-white hover:border-stone-300 cursor-pointer"
+                style={{ boxShadow: "inset 0 1px 2px rgba(0,0,0,0.04)" }}
+              >
+                <option value="featured">Sort: Featured</option>
+                <option value="price-asc">Price: Low to High</option>
+                <option value="price-desc">Price: High to Low</option>
+                <option value="rating">Top Rated</option>
+                <option value="newest">Newest First</option>
+              </select>
+              <div className="absolute right-3.5 top-1/2 -translate-y-1/2 pointer-events-none">
+                <svg className="h-4 w-4 text-stone-400" viewBox="0 0 20 20" fill="currentColor">
+                  <path fillRule="evenodd" d="M5.293 7.293a1 1 0 011.414 0L10 10.586l3.293-3.293a1 1 0 111.414 1.414l-4 4a1 1 0 01-1.414 0l-4-4a1 1 0 010-1.414z" clipRule="evenodd" />
+                </svg>
+              </div>
+            </div>
+          </div>
+
+          {/* Active filter chips */}
+          {(query || activeFilterCount > 0) && (
+            <div className="flex flex-wrap items-center gap-2 mb-4">
+              {chips.map((chip) => (
+                <button
+                  key={chip.key}
+                  type="button"
+                  onClick={() => removeChip(chip.key)}
+                  className="inline-flex items-center gap-1.5 rounded-full border border-line bg-white px-3 py-1 text-xs font-medium text-stone-600 hover:border-stone-300"
+                >
+                  {chip.label}
+                  <span aria-hidden="true" className="text-stone-400">×</span>
+                </button>
+              ))}
+              <button type="button" onClick={clearFilters} className="text-xs font-semibold text-brand hover:underline">
+                Clear all
+              </button>
+            </div>
+          )}
+
+          {err && (
+            <div className="card p-6 mb-6 text-sm text-red-600" role="alert">{err}</div>
+          )}
+
+          {active.length === 0 ? (
+            <div className="card p-12 text-center">
+              <p className="text-base font-semibold text-stone-900">No products match these filters.</p>
+              <button onClick={clearFilters} className="btn-ghost mt-5">Clear all filters</button>
+            </div>
+          ) : (
+            <div className="grid gap-5 sm:grid-cols-2 lg:grid-cols-3">
+              {active.map((p) => (
+                <ProductCard key={p.id} p={p} onAdd={handleAdd} justAdded={justAddedId === p.id} gstPercent={gstPercent} />
+              ))}
+            </div>
+          )}
         </div>
       </div>
 
-
-      {err && (
-        <div className="card p-6 mb-6 text-sm text-red-600" role="alert">{err}</div>
-      )}
-
-      {active.length === 0 ? (
-        <div className="card p-12 text-center">
-          <p className="text-base font-semibold text-stone-900">No products found</p>
-          <p className="mt-1 text-sm text-stone-500">Try a different search or category.</p>
-          <button onClick={() => { setCategory("All"); setQuery(""); }} className="btn-ghost mt-5">Reset filters</button>
+      {/* Mobile filter sheet */}
+      {sheetOpen && (
+        <div className="fixed inset-0 z-[60] lg:hidden">
+          <div className="absolute inset-0 bg-black/30" onClick={() => setSheetOpen(false)} />
+          <div
+            role="dialog"
+            aria-modal="true"
+            aria-label="Filters"
+            className="absolute inset-x-0 bottom-0 max-h-[85vh] overflow-y-auto rounded-t-2xl bg-white p-5"
+          >
+            <ShopFilters
+              idPrefix="sheet"
+              categories={categories}
+              categoryCounts={categoryCounts}
+              total={total}
+              filters={filters}
+              onChange={setFilter}
+              onClear={clearFilters}
+            />
+            <button type="button" onClick={() => setSheetOpen(false)} className="btn-primary mt-5 w-full">
+              Show {active.length} products
+            </button>
+          </div>
         </div>
-      ) : (
-        <div className="grid gap-5 sm:grid-cols-2 lg:grid-cols-3">
-          {active.map((p) => (
-            <ProductCard key={p.id} p={p} onAdd={handleAdd} justAdded={justAddedId === p.id} gstPercent={gstPercent} />
-          ))}
-        </div>
       )}
-
     </div>
   );
 }

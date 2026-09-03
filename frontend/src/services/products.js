@@ -128,6 +128,14 @@ export function mapDbProduct(p) {
 const PRODUCT_FIELDS =
   "id,name,sku,category,description,price_inr,mrp_inr,stock_qty,image_url,image_position,is_active,created_at,updated_at,about_text,best_for,pairs_well_with,recommended_stack,highlights,details,product_images(id,image_url,sort_order),product_reviews(rating),product_variants(id,label,price_inr,mrp_inr,stock_qty,sku,sort_order,is_active)";
 
+/** True when nothing on the card can be bought (all variants at 0, or base stock 0). */
+export function isOutOfStock(p) {
+  const variants = p?.variants || [];
+  return variants.length > 0
+    ? variants.every((v) => (v.stockQty ?? 0) <= 0)
+    : (p?.stockQty ?? 0) <= 0;
+}
+
 export async function fetchProducts() {
   const { data, error } = await supabase
     .from("products")

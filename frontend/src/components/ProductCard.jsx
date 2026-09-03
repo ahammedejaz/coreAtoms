@@ -11,6 +11,7 @@
 import React, { useState } from "react";
 import { Link } from "react-router-dom";
 import { money, discountPercent } from "../utils/format";
+import { isOutOfStock } from "../services/products";
 
 export function Stars({ rating, count }) {
   if (!count) return null;
@@ -30,9 +31,7 @@ const ProductCard = React.memo(function ProductCard({ p, onAdd, justAdded, gstPe
   // Stock lives on the variant rows for variant products — the base `stock_qty`
   // is 0 for those, so reading it alone flagged perfectly sellable products as
   // out of stock. `mapDbProduct` already drops inactive variants.
-  const out = hasVariants
-    ? variants.every((v) => (v.stockQty ?? 0) <= 0)
-    : (p.stockQty ?? 0) <= 0;
+  const out = isOutOfStock(p);
   const desc = String(p.description || "").replace(/\s+/g, " ").trim().slice(0, 110) ||
     "Premium daily supplement with clean ingredients and reliable quality.";
 

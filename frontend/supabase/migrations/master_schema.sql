@@ -434,8 +434,9 @@ CREATE INDEX IF NOT EXISTS idx_order_items_order ON public.order_items (order_id
 --    homepage_hero_images     — [{url, position}]
 --    homepage_hero_copy       — {headline, headlineAccent, body, primaryCta, secondaryCta, trustIcons}
 --    homepage_pillars         — [{icon, title, desc}]
---    homepage_categories      — [{label, emoji, category}]
+--    homepage_categories      — [{label, emoji, category, image?}]  (image optional; web only)
 --    homepage_philosophy      — {label, heading, body, cta}
+--    homepage_why_us          — {label, heading, body, cta, stats:[{value,label}]}  (web only)
 --    homepage_featured_products — [product_id, ...]
 --    promo_banner             — {enabled, text, link, bgColor, textColor}
 --    shipping_amount          — {amount: 0}   (0 = use Delhivery pincode rate)

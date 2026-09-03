@@ -4,10 +4,15 @@
  * Fetches one product by URL param `:id` and `gst_percentage` from
  * `app_settings` in parallel. Shows image gallery with thumbnails,
  * variant picker, quantity stepper, stock/order-limit warnings,
- * highlight pills, about section, and customer reviews.
+ * highlight pills, about section, and customer reviews with a
+ * `RatingBreakdown` distribution.
  *
  * The price label reads "Excl. GST & Shipping" when GST > 0,
  * or "Excl. Shipping" when GST is disabled.
+ *
+ * `StickyAddToCart` renders a bottom bar on mobile (`lg:hidden`) mirroring
+ * the desktop info column's add-to-cart controls, so the CTA is always
+ * reachable without scrolling back up.
  *
  * Uses composite cart keys (`productId_variantId`) for variant items.
  *
@@ -27,6 +32,8 @@ import RichText from "../components/RichText";
 import BenefitIcon from "../components/BenefitIcon";
 import { SkeletonProductDetail } from "../components/Skeleton";
 import RelatedProducts from "../components/RelatedProducts";
+import RatingBreakdown from "../components/RatingBreakdown";
+import StickyAddToCart from "../components/StickyAddToCart";
 import { useToast } from "../context/ToastContext";
 
 import { money, discountPercent } from "../utils/format";
@@ -278,7 +285,7 @@ export default function ProductDetail() {
   }
 
   return (
-    <div className="pb-16 overflow-x-hidden">
+    <div className="pb-28 lg:pb-16 overflow-x-hidden">
       <SEO
         title={pageTitle}
         description={pageDescription}
@@ -608,26 +615,14 @@ export default function ProductDetail() {
           <div className="rounded-2xl border border-[#E8E4DE] bg-white p-4 sm:p-7">
 
             {/* Reviews header */}
-            <div className="flex items-center justify-between mb-6">
-              <div>
-                <h2 className="text-base font-semibold text-stone-900">Customer Reviews</h2>
-                <p className="text-xs text-stone-400 mt-0.5">{product.reviewCount} review{product.reviewCount !== 1 ? "s" : ""}</p>
-              </div>
-              {product.reviewCount > 0 && (
-                <div className="flex flex-col items-end gap-1">
-                  <div className="flex items-center gap-1">
-                    {[1, 2, 3, 4, 5].map((i) => (
-                      <span
-                        key={i}
-                        className={`text-lg leading-none ${i <= Math.round(product.avgRating) ? "text-amber-400" : "text-stone-200"}`}
-                      >★</span>
-                    ))}
-                  </div>
-                  <span className="text-sm font-semibold text-stone-700">
-                    {Number(product.avgRating).toFixed(1)} / 5.0
-                  </span>
-                </div>
-              )}
+            <div className="mb-6">
+              <h2 className="text-base font-semibold text-stone-900">Customer Reviews</h2>
+              <p className="text-xs text-stone-400 mt-0.5">{product.reviewCount} review{product.reviewCount !== 1 ? "s" : ""}</p>
+            </div>
+
+            {/* Rating distribution */}
+            <div className="mb-6 pb-6 border-b border-[#E8E4DE]">
+              <RatingBreakdown reviews={product.reviews} avgRating={product.avgRating} reviewCount={product.reviewCount} />
             </div>
 
             {/* Review list */}
@@ -680,6 +675,18 @@ export default function ProductDetail() {
           </div>
         </div>
       )}
+
+      {/* ── Sticky mobile add-to-cart bar ── */}
+      <StickyAddToCart
+        price={activePrice}
+        mrp={activeMrp}
+        offPct={activeOffPct}
+        inStock={activeStock > 0}
+        canAdd={canAdd}
+        cartQty={cartQty}
+        onAdd={handlePlus}
+        onViewCart={() => navigate("/cart")}
+      />
 
       {/* ── Cross-sell ── */}
       <RelatedProducts productId={product.id} category={product.category} gstPercent={gstPercent} />

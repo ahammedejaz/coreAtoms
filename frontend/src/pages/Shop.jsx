@@ -10,6 +10,8 @@
  *
  * Also fetches `gst_percentage` from `app_settings` so cards can note
  * "excl. GST" only when it applies. Adding to cart opens the cart drawer.
+ * The grid enters with a short stagger and re-sorts in place when a filter
+ * or sort changes (Motion `layout` with `AnimatePresence`).
  *
  * @module pages/Shop
  */
@@ -25,6 +27,7 @@ import ShopFilters from "../components/ShopFilters";
 import { SkeletonGrid } from "../components/Skeleton";
 import { useScrollLock } from "../components/fx/SmoothScroll";
 import RevealText from "../components/fx/RevealText";
+import { AnimatePresence, motion } from "motion/react";
 import {
   FILTER_KEYS,
   PRICE_BANDS,
@@ -333,11 +336,22 @@ export default function Shop() {
               <button onClick={clearFilters} className="btn-secondary mt-6">Clear all filters</button>
             </div>
           ) : (
-            <div className="grid grid-cols-2 gap-x-4 gap-y-8 lg:grid-cols-3 lg:gap-x-6 lg:gap-y-10">
-              {active.map((p) => (
-                <ProductCard key={p.id} p={p} onAdd={handleAdd} justAdded={justAddedId === p.id} gstPercent={gstPercent} />
-              ))}
-            </div>
+            <motion.div layout className="grid grid-cols-2 gap-x-4 gap-y-8 lg:grid-cols-3 lg:gap-x-6 lg:gap-y-10">
+              <AnimatePresence mode="popLayout">
+                {active.map((p, i) => (
+                  <motion.div
+                    key={p.id}
+                    layout
+                    initial={{ opacity: 0, y: 28 }}
+                    animate={{ opacity: 1, y: 0 }}
+                    exit={{ opacity: 0, scale: 0.96 }}
+                    transition={{ duration: 0.5, ease: [0.23, 1, 0.32, 1], delay: Math.min(i, 8) * 0.045 }}
+                  >
+                    <ProductCard p={p} onAdd={handleAdd} justAdded={justAddedId === p.id} gstPercent={gstPercent} />
+                  </motion.div>
+                ))}
+              </AnimatePresence>
+            </motion.div>
           )}
         </div>
       </div>

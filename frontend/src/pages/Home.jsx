@@ -19,9 +19,11 @@
  *
  * This file only loads data and orders the sections; each section lives in
  * `components/home/`. Section order: hero, pillars panel, category tiles and
- * goals, best sellers, daily schedule, the Formulary standard, ingredient index,
- * proof band (navy), testimonials, education, FAQ preview, recently viewed,
- * manifesto.
+ * goals, best sellers, daily schedule, a full-bleed photo break, the
+ * Formulary standard (pinned on desktop), ingredient index, proof band
+ * (navy), testimonials, a second photo break, education, FAQ preview,
+ * recently viewed, manifesto. The photo breaks reuse the hero slides the
+ * admin uploaded (the second and third), so they appear only when those exist.
  *
  * @module pages/Home
  */
@@ -49,6 +51,7 @@ import ProofBand from "../components/home/ProofBand";
 import Education from "../components/home/Education";
 import FaqPreview from "../components/home/FaqPreview";
 import Manifesto from "../components/home/Manifesto";
+import PhotoBreak from "../components/home/PhotoBreak";
 import {
   DEFAULT_HOME_CATEGORIES,
   DEFAULT_WHY_US,
@@ -82,6 +85,12 @@ const DEFAULT_PILLARS = [
   { icon: "◈", title: "Lab Tested", desc: "Third-party verified for potency, purity, and safety." },
   { icon: "⬡", title: "COD Available", desc: "Cash on delivery across India. No prepayment required." },
   { icon: "⌖", title: "Fast Fulfilment", desc: "Orders dispatched within 24 hours from our facility." },
+];
+
+/** Copy over the two full-bleed photographs between sections. */
+const DEFAULT_BREAKS = [
+  { text: "Made for the days you keep.", sub: "Formulas built around routines, not resolutions. One dose, the same time, every day." },
+  { text: "Checked before it ships.", sub: "Identity, potency and contaminants, verified on every batch by an independent laboratory." },
 ];
 
 const DEFAULT_PHILOSOPHY = {
@@ -314,6 +323,12 @@ export default function Home() {
   /** Shown on the hero only when no photographs are saved. */
   const leadProduct = products[0] || allProducts[0] || null;
 
+  /** The second and third hero slides double as the photo breaks. */
+  const breakImages = useMemo(() => {
+    const list = (heroImages || []).filter((s) => s?.url);
+    return [list[1] || null, list[2] || null];
+  }, [heroImages]);
+
   /** Catalogue-derived sections. */
   const goals = useMemo(() => deriveGoals(allProducts), [allProducts]);
   const routine = useMemo(() => buildRoutine(allProducts), [allProducts]);
@@ -361,6 +376,8 @@ export default function Home() {
 
       <Routine slots={routine} onAdd={handleAdd} justAddedId={justAddedId} />
 
+      {breakImages[0] && <PhotoBreak image={breakImages[0]} text={DEFAULT_BREAKS[0].text} sub={DEFAULT_BREAKS[0].sub} />}
+
       <Standard items={standards} />
 
       <IngredientIndex items={ingredients} total={activeCount} />
@@ -368,6 +385,8 @@ export default function Home() {
       <ProofBand whyUs={whyUs} />
 
       <Testimonials reviews={reviews} summary={reviewSummary} />
+
+      {breakImages[1] && <PhotoBreak image={breakImages[1]} text={DEFAULT_BREAKS[1].text} sub={DEFAULT_BREAKS[1].sub} align="center" />}
 
       <Education cards={education} />
 

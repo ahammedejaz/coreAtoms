@@ -7,9 +7,14 @@
  * body, the two pills and the trust points rise in turn. On scroll the copy
  * drifts down and fades while the photograph moves at a slower rate.
  *
- * With no slides saved it is a navy field with the lead product on a bone
- * tile; while settings are still loading it is the navy field alone, so the
- * product never flashes in front of a photograph that is about to arrive.
+ * On desktop the lead formula's jar sits in the right third in three
+ * dimensions (`components/three`): the cap unscrews, tablets pour in, the
+ * cap screws back on, then the jar rests and leans toward the pointer. A
+ * click on it replays the sequence. Where the scene cannot run the jar is
+ * simply absent over photographs, or the lead product's photo stands on a
+ * bone tile when no slides are saved. While settings are still loading it
+ * is the navy field alone, so nothing flashes in front of a photograph that
+ * is about to arrive.
  *
  * @param {{ images: Array<{url:string, position:string}>|null, copy: object, trust: Array<{label:string}>, leadProduct?: object }} props
  * @module components/home/Hero
@@ -22,6 +27,8 @@ import HintIcon from "../HintIcon";
 import { usePrefersReducedMotion } from "../ScrollReveal";
 import { money } from "../../utils/format";
 import Magnetic from "../fx/Magnetic";
+import Bottle3D from "../three/Bottle3D";
+import { useMotion } from "../../context/MotionContext";
 
 const SLIDE_INTERVAL_MS = 6000;
 
@@ -41,6 +48,8 @@ function MaskWords({ text, className = "", startDelay = 80, step = 55, offset = 
 export default function Hero({ images, copy, trust, leadProduct }) {
   const ref = useRef(null);
   const reduceMotion = usePrefersReducedMotion();
+  const { hero3d } = useMotion();
+  const [replayKey, setReplayKey] = useState(0);
   const [index, setIndex] = useState(0);
   const [tick, setTick] = useState(0);
   const [broken, setBroken] = useState({});
@@ -76,9 +85,12 @@ export default function Hero({ images, copy, trust, leadProduct }) {
   const bgY = useTransform(scrollYProgress, [0, 1], ["0%", "14%"]);
   const copyY = useTransform(scrollYProgress, [0, 1], [0, 160]);
   const copyOpacity = useTransform(scrollYProgress, [0, 0.55], [1, 0]);
+  const jarY = useTransform(scrollYProgress, [0, 1], [0, 90]);
+  const jarOpacity = useTransform(scrollYProgress, [0, 0.7], [1, 0]);
 
   const headlineWords = String(copy.headline || "").split(/\s+/).filter(Boolean).length;
-  const showProduct = !pending && !hasSlides && leadProduct?.image;
+  const showJar = !pending && hero3d && Boolean(leadProduct);
+  const showProduct = !pending && !hasSlides && leadProduct?.image && !hero3d;
 
   return (
     <section ref={ref} className="relative isolate flex min-h-[88svh] flex-col overflow-hidden bg-navy-950 text-white">
@@ -140,13 +152,27 @@ export default function Hero({ images, copy, trust, leadProduct }) {
         </Link>
       )}
 
+      {/* The jar, in three dimensions, on desktop. */}
+      {showJar && (
+        <motion.div
+          style={reduceMotion ? undefined : { y: jarY, opacity: jarOpacity }}
+          className="absolute inset-y-[4%] right-[1%] hidden w-[46%] lg:block"
+          data-cursor="Replay"
+          onClick={() => setReplayKey((k) => k + 1)}
+          role="presentation"
+        >
+          <div className="pointer-events-none absolute inset-[12%] rounded-full bg-[radial-gradient(closest-side,rgba(8,19,42,0.55),transparent)]" aria-hidden="true" />
+          <Bottle3D product={leadProduct} driver={{ mode: "auto", delay: 900, duration: 5600, replayKey }} className="relative h-full w-full" />
+        </motion.div>
+      )}
+
       {/* Copy */}
       <motion.div
         style={reduceMotion ? undefined : { y: copyY, opacity: copyOpacity }}
         className="relative flex flex-1 items-center"
       >
         <div className="mx-auto w-full max-w-6xl px-5 pb-32 pt-16 sm:px-6 sm:pt-20 lg:pb-40 lg:pt-24">
-          <h1 className={`font-display text-[2.75rem] font-semibold leading-[0.94] tracking-[-0.04em] sm:text-[4.25rem] lg:text-[5.5rem] ${showProduct ? "max-w-[11ch]" : "max-w-[18ch]"}`}>
+          <h1 className={`font-display text-[2.75rem] font-semibold leading-[0.94] tracking-[-0.04em] sm:text-[4.25rem] lg:text-[5.5rem] ${showProduct || showJar ? "max-w-[12ch]" : "max-w-[18ch]"}`}>
             <MaskWords text={copy.headline} />
             {" "}
             <MaskWords text={copy.headlineAccent} className="text-amber" offset={headlineWords} />

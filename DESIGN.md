@@ -1,6 +1,8 @@
 # Core Atoms storefront design system: "The Formulary"
 
-Recorded from the built storefront in `frontend/` on 2026-09-05. The tokens
+Recorded from the built storefront in `frontend/` on 2026-09-05 and extended
+on 2026-09-06 with the physical layer, the real-jar treatment and the Site
+content model. The tokens
 live in `frontend/src/index.css` (`@theme` block plus `@layer components`);
 this file explains the decisions behind them so later work extends the world
 instead of polishing over it.
@@ -114,7 +116,41 @@ studio backdrop disappears and the bottle looks placed, not pasted.
   scroll-snap containers with `scroll-px` matching their padding, so the
   first tile snaps to the container edge rather than the screen edge.
 - Routes fade in with `.page-enter` (opacity only, so fixed children keep the
-  viewport as their containing block).
+  viewport as their containing block); with the curtain on, the arriving page
+  uses `.page-arrive` instead.
+- The physical layer (`components/fx/`, switched in `context/MotionContext`
+  from the `site_motion` setting and gated by pointer, viewport and
+  reduced-motion): Lenis smooth scrolling (`SmoothScroll`, lerp 0.1, with
+  `useScrollLock` for the drawer, menu, filter sheet and promo so overlays
+  stop the page underneath), a two-pixel amber reading line at the top and a
+  draggable ink rail replacing the native scrollbar on desktop (`Scrollbar`),
+  a navy curtain that wipes over route changes carrying the destination's
+  name (`RouteCurtain`: 300ms cover, 60ms hold, 560ms reveal), a faint film
+  grain over the page (`Grain`, multiply at 0.055), headings that rise word by
+  word from a mask when they scroll into view (`RevealText`), product and
+  category tiles that tilt toward the pointer with a sweeping sheen (`Tilt`),
+  and primary buttons that lean toward the pointer (`Magnetic`). A custom
+  pointer with "View" labels exists (`Cursor`) but ships off.
+- The real jar. Every product photograph is shot on a flat near-white sweep,
+  so `utils/cutout.js` lifts the jar off it in the browser: a flood fill from
+  the border marks the backdrop, the photographed shadow becomes alpha, and
+  the crop is centred on the jar with room for that shadow. The result is a
+  plain `<img>` (`components/Cutout`) that can stand on navy or bone with its
+  own shadow. It appears on the home hero (rises in, floats on a seven-second
+  drift, leans up to seven degrees toward the pointer, drifts at its own rate
+  on scroll, with a glass caption pill linking to the formula), on the
+  product page's "What's inside" stage (a navy field beside the Supplement
+  Facts panel where the jar turns from -26° to 8° and settles as one facts row
+  inks in per stretch of scroll), on the category index's stage (the hovered
+  category's jar, swapped only once the next cutout is ready so the field is
+  never empty), and on the login panel, empty cart and 404 page. A rendered
+  three-dimensional jar was built and rejected on 2026-09-05: beside the real
+  photography it read as a plastic toy. Do not bring back rendered product
+  imagery; the photograph is the product.
+- Pinned stories: the Formulary standard pins its `.facts` panel while the six
+  rules scroll past, each filling its row as it crosses the middle of the
+  viewport; two full-bleed photo breaks (the second and third hero
+  photographs) grow from an inset frame to the full width as they enter.
 - Everything collapses under `prefers-reduced-motion`.
 
 ## Components and where they live
@@ -124,19 +160,24 @@ studio backdrop disappears and the bottle looks placed, not pasted.
   `CartDrawer` (opens on every add via `CartContext.lastAction`), `Footer`.
 - Home (`components/home/`), in page order: `Hero` (photograph slides,
   masked headline, lead-product fallback when no slides are saved),
-  `Pillars` (white panel overlapping the hero), `CategoryTiles` (square
-  photo tiles in a snap strip, any count, plus "Shop by goal" chips derived
-  from every product's `best_for`), best sellers (in `Home.jsx`), `Routine`
+  `Pillars` (white panel overlapping the hero), `CategoryIndex` (one hairline
+  row per category with a numeral, the name set large, the live formula count
+  and what those formulas are taken for, beside a navy stage showing the
+  hovered category's jar; plus "Shop by goal" chips derived from every
+  product's `best_for`; it replaced the photo-tile strip, which repeated the
+  same two photographs six times), best sellers (in `Home.jsx`), `Routine`
   ("When to take what": the daily schedule as one `.facts` table, a row per
   time of day with the rationale and the formulas the labels name, built
   from every product's `recommended_stack`; text rows with an add button,
-  no thumbnails), `Standard` (the
-  six Formulary rules), `IngredientIndex` (the actives across the range as
+  no thumbnails), `PhotoBreak` (a full-bleed photograph with one line, used
+  twice), `Standard` (the six Formulary rules as a pinned story on desktop
+  and a hairline list elsewhere), `IngredientIndex` (the actives across the range as
   a bordered grid with formula counts and a filler cell that closes the last
   row), `ProofBand` (navy field, counting stats), `Testimonials`,
   `Education` (four supplement-literacy panels), `FaqPreview` (five FAQ
-  entries shared with the FAQ page), `Manifesto` (scroll-revealed
-  statement). `Home.jsx` only loads settings and orders these sections.
+  entries shared with the FAQ page), `RecentlyViewed`, `Manifesto`
+  (scroll-revealed statement). `Home.jsx` loads settings and renders these
+  sections in the order saved under Site content → Home, skipping hidden ones.
   The single-product spotlight and the typographic category rows were
   removed on 2026-09-05 at the owner's request.
 - Catalogue: `ProductCard` (4:5 bone tile, hover swap, round add button in
@@ -145,26 +186,45 @@ studio backdrop disappears and the bottle looks placed, not pasted.
   strips with a store-wide rating summary), `RecentlyViewed` (localStorage
   `coreatoms_recent`).
 - Product page: sticky gallery, buy column without card shells, monograph
-  sections with the heading in the left column, `.facts` ingredient panel,
-  `StickyAddToCart` on phones.
-- Account: `AuthShell` split layout for login, forgot and reset.
+  sections with the heading in the left column, the "What's inside" stage
+  (real jar on navy, `.facts` panel inking in with scroll) on desktop and the
+  plain panel elsewhere, `StickyAddToCart` on phones.
+- Account: `AuthShell` split layout for login, forgot and reset, with the lead
+  jar in the navy panel's corner.
 - Documents: `LegalPage` with an "On this page" rail built from section
-  titles; `FAQPage` accordion groups.
+  titles; `LegalDocument` renders one policy from its content key;
+  `FAQPage` accordion groups; `RichText` (paragraphs, bullets, monograph
+  headings, `**bold**`, `[label](/path)` links, `{placeholders}`).
+- Physical layer: `components/fx/` (`SmoothScroll`, `Scrollbar`, `Cursor`,
+  `RouteCurtain`, `Grain`, `RevealText`, `Tilt`, `Magnetic`), orchestrated by
+  `layouts/MainLayout.jsx`; `components/Cutout.jsx` with `hooks/useCutout.js`
+  and `utils/cutout.js`.
 
 ## Where the words live
 
-- Admin-controlled copy comes from `app_settings` (`homepage_hero_copy`,
-  `homepage_pillars`, `homepage_categories`, `homepage_why_us`,
-  `homepage_philosophy`, `homepage_featured_products`). The standard and
-  education sections ship with defaults in `services/homepage.js`
-  (`DEFAULT_STANDARDS`, `DEFAULT_EDUCATION`) and read `homepage_standards`
-  and `homepage_education` when an admin saves them; no editor exists yet.
+- Every page's copy is editable under Admin → Site content. The schema in
+  `content/siteContent.js` lists sixteen `app_settings` keys (`site_global`,
+  `site_motion`, `page_home`, `page_shop`, `page_product`, `page_cart`,
+  `page_checkout`, `page_account`, `page_orders`, `page_faq`, `page_contact`,
+  `page_legal_terms|privacy|shipping|refund`, `page_errors`) with the fields
+  the editor renders and the defaults the storefront ships with. Pages read
+  the merged value through `useSiteContent(key)` (`services/siteContent.js`):
+  defaults at once, the saved value once loaded, and admin saves pushed into
+  open tabs. Objects merge, saved arrays replace defaults wholesale.
+- The older Home settings still own the hero (`homepage_hero_images`,
+  `homepage_hero_copy`), pillars, categories, featured products, the proof
+  band and the manifesto. The standard and education panels can be saved in
+  both places; Site content wins when it has them, then `homepage_standards`
+  / `homepage_education`, then the defaults.
 - Catalogue-derived copy (goals, schedule, ingredient index) is computed in
   `services/homepage.js` from `best_for`, `recommended_stack` and product
   names. The schedule's three "why" sentences live in `SLOT_DEFS` there. `INGREDIENT_ROLES` holds the one-line role for each active; a new
   formula joins the index when its name matches an entry.
-- The FAQ lives once, in `content/faqs.js`; the FAQ page renders all of it
-  and the home page renders `HOME_FAQS`.
+- The FAQ lives once, as `page_faq.groups` (defaults in `content/faqs.js`);
+  the FAQ page renders all of it and the home page renders the questions
+  picked under Site content → Home, matched by text. The four policies are
+  rich-text sections in their `page_legal_*` keys and may use `{legalName}`,
+  `{supportEmail}` and `{supportPhone}` from Store information.
 - Product monographs live on the product row: `about_text` (intro, Uses,
   Why this formula, Key nutrients) and the `details` JSONB (benefits,
   ingredients, howToUse, faqs, safetyInfo). All fifteen active products
@@ -187,3 +247,8 @@ studio backdrop disappears and the bottle looks placed, not pasted.
 - Icons come from lucide-react at stroke 1.5 to 1.75. No emoji, no inline
   heroicons.
 - Admin pages inherit tokens and `.card`; the storefront never uses `.card`.
+- The product is always its photograph. No rendered, illustrated or
+  procedural jars; the cutout is the only manipulation, and it goes on navy
+  or bone, never over another photograph's subject.
+- Effects are switches, not structure: every item in the physical layer can
+  be turned off under Site content → Motion and the page must still read.

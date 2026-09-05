@@ -109,6 +109,21 @@ There is no Helmet provider — React 19 hoists `<title>` and `<meta>` into `<he
 
 **Admin dashboard** is embedded in the same React app under `/admin` routes (`frontend/src/pages/admin/`), not a separate deployment. Admin access is controlled by `profiles.role = 'admin'` in Supabase.
 
+**Site content**: every storefront sentence that is not product data is editable under Admin → Site content
+(`pages/admin/AdminSiteContent.jsx`). The schema and shipped defaults live in `frontend/src/content/siteContent.js`
+(sixteen `app_settings` keys: `site_global`, `site_motion`, `page_home`, `page_shop`, `page_product`, `page_cart`,
+`page_checkout`, `page_account`, `page_orders`, `page_faq`, `page_contact`, `page_legal_*`, `page_errors`); pages read
+them with `useSiteContent(key)` from `services/siteContent.js`, which returns the defaults immediately and the merged
+saved value once loaded (objects merge, saved arrays replace). These are data rows, not schema. The older
+`homepage_*` keys still drive the hero, pillars, categories, featured products, proof band and manifesto.
+
+**Motion and the physical layer**: `context/MotionContext.jsx` combines the `site_motion` setting with the device
+(fine pointer, desktop width, `prefers-reduced-motion`) into flags; `components/fx/` holds Lenis smooth scrolling,
+the custom scrollbar, the route curtain, grain, `RevealText`, `Tilt` and `Magnetic`, orchestrated by
+`layouts/MainLayout.jsx`. Product imagery is always the photograph: `utils/cutout.js` lifts a jar off its studio
+backdrop in the browser (flood fill from the border, shadow kept as alpha) and `components/Cutout.jsx` renders it;
+there is no 3D scene and no three.js dependency. `DESIGN.md` at the repo root records the design system.
+
 ### Mobile Architecture
 
 **Provider tree** (see `mobile/App.js`):

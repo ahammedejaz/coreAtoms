@@ -10,6 +10,7 @@
 import { Children, isValidElement } from "react";
 import SEO from "../../components/SEO";
 import RevealText from "../../components/fx/RevealText";
+import ScrollReveal from "../../components/ScrollReveal";
 
 const slug = (s) => String(s).toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/(^-|-$)/g, "");
 
@@ -50,10 +51,10 @@ export default function LegalPage({ title, updated, seoTitle, seoDescription, ca
 /** One titled block of a legal document. */
 export function LegalSection({ title, children }) {
     return (
-        <section id={slug(title)} className="scroll-mt-32 py-8 first:pt-0 last:pb-0">
+        <ScrollReveal as="section" id={slug(title)} className="scroll-mt-32 py-8 first:pt-0 last:pb-0" threshold={0.05}>
             <h2 className="font-display text-xl font-semibold tracking-tight text-ink sm:text-2xl">{title}</h2>
             <div className="mt-4 space-y-3 text-[15px] leading-relaxed text-stone-600 [&_strong]:font-semibold [&_strong]:text-ink">{children}</div>
-        </section>
+        </ScrollReveal>
     );
 }
 

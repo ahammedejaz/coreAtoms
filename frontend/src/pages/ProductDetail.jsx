@@ -13,9 +13,9 @@
  * `RatingBreakdown`, recently viewed and the cross-sell strip.
  *
  * On desktop the ingredient panel is a scroll story: the product's jar
- * (`components/three`) sits beside the Supplement Facts panel and fills
- * with tablets as the visitor scrolls, one facts row appearing per stretch
- * of the pour, so the label assembles as the bottle does. Elsewhere it is
+ * (`components/Cutout`) stands on a navy field beside the Supplement Facts
+ * panel and turns toward the visitor as they scroll, one facts row inking
+ * in per stretch, so the label assembles as the jar settles. Elsewhere it is
  * the plain panel.
  *
  * `StickyAddToCart` renders a bottom bar on mobile (`lg:hidden`) mirroring
@@ -49,9 +49,9 @@ import { useToast } from "../context/ToastContext";
 import useRecentlyViewed from "../hooks/useRecentlyViewed";
 import Magnetic from "../components/fx/Magnetic";
 import RevealText from "../components/fx/RevealText";
-import Bottle3D from "../components/three/Bottle3D";
+import Cutout from "../components/Cutout";
 import { useMotion } from "../context/MotionContext";
-import { useScroll, useMotionValueEvent } from "motion/react";
+import { motion, useScroll, useTransform, useMotionValueEvent } from "motion/react";
 
 import { money, discountPercent } from "../utils/format";
 
@@ -768,15 +768,18 @@ function AboutSection({ text }) {
 
 function IngredientsSection({ ingredients, product }) {
   const hasAmounts = ingredients.some((r) => r.amount);
-  const { hero3d } = useMotion();
+  const { stage } = useMotion();
   const ref = useRef(null);
-  const { scrollYProgress } = useScroll({ target: ref, offset: ["start 0.25", "end 0.95"] });
+  const { scrollYProgress } = useScroll({ target: ref, offset: ["start 0.3", "end 0.9"] });
   const [step, setStep] = useState(0);
   const count = ingredients.length;
 
-  // One row per stretch of the pour (the pour runs from 0.28 to 0.78).
+  // The jar turns and settles as the rows ink in, one per stretch of scroll.
+  const rotateY = useTransform(scrollYProgress, [0, 1], [-26, 8]);
+  const scale = useTransform(scrollYProgress, [0, 1], [0.84, 1.02]);
+  const y = useTransform(scrollYProgress, [0, 1], [36, -24]);
   useMotionValueEvent(scrollYProgress, "change", (v) => {
-    const n = Math.max(0, Math.min(count, Math.floor(((v - 0.24) / 0.56) * count) + 1));
+    const n = Math.max(0, Math.min(count, Math.floor(((v - 0.12) / 0.7) * count) + 1));
     setStep((s) => (s === n ? s : n));
   });
 
@@ -785,7 +788,7 @@ function IngredientsSection({ ingredients, product }) {
       <p className="facts-title">Supplement Facts</p>
       <p className="facts-sub">{hasAmounts ? "Amount per serving" : "Key ingredients"}</p>
       {ingredients.map((r, i) => {
-        const shown = !hero3d || i < step;
+        const shown = !stage || i < step;
         return (
           <div
             key={i}
@@ -799,11 +802,11 @@ function IngredientsSection({ ingredients, product }) {
           </div>
         );
       })}
-      <p className={`facts-foot transition-opacity duration-500 ${!hero3d || step >= count ? "opacity-100" : "opacity-20"}`}>Ingredients as disclosed on the product label.</p>
+      <p className={`facts-foot transition-opacity duration-500 ${!stage || step >= count ? "opacity-100" : "opacity-20"}`}>Ingredients as disclosed on the product label.</p>
     </div>
   );
 
-  if (!hero3d) {
+  if (!stage || !product?.image) {
     return <Section title="What's inside">{facts}</Section>;
   }
 
@@ -812,12 +815,26 @@ function IngredientsSection({ ingredients, product }) {
       <div className="grid gap-6 lg:grid-cols-[minmax(0,1fr)_minmax(0,2fr)] lg:gap-16">
         <div className="lg:sticky lg:top-32 lg:self-start">
           <RevealText as="h2" text="What's inside" className="font-display text-2xl font-semibold tracking-tight text-ink sm:text-3xl" />
-          <p className="mt-3 max-w-xs text-[14px] leading-relaxed text-stone-500">Scroll to fill the jar. Each row on the label appears as its ingredient goes in.</p>
+          <p className="mt-3 max-w-xs text-[14px] leading-relaxed text-stone-500">Scroll through the label. Each ingredient appears as you reach it.</p>
         </div>
-        <div className="lg:grid lg:min-h-[165vh] lg:grid-cols-[minmax(0,0.85fr)_minmax(0,1.15fr)] lg:gap-10">
+        <div className="lg:grid lg:min-h-[150vh] lg:grid-cols-[minmax(0,0.85fr)_minmax(0,1.15fr)] lg:gap-10">
           <div className="lg:sticky lg:top-28 lg:h-[72vh]">
-            <div className="field-navy grain relative h-full overflow-hidden rounded-[28px] shadow-frame">
-              <Bottle3D product={product} driver={{ mode: "value", value: scrollYProgress }} className="relative z-[1] h-full w-full" />
+            <div className="field-navy grain stage-field relative h-full overflow-hidden rounded-[28px] shadow-frame">
+              <motion.div style={{ rotateY, scale, y }} className="absolute inset-x-0 bottom-[14%] top-[10%] z-[1] flex items-center justify-center will-change-transform">
+                <Cutout
+                  src={product.image}
+                  alt={product.name}
+                  className="max-h-full w-[150%] max-w-none object-contain"
+                  fallback={<img src={product.image} alt={product.name} className="h-full w-full rounded-[20px] object-cover" />}
+                />
+              </motion.div>
+              <p className="absolute right-5 top-5 z-[2] rounded-full border border-white/15 bg-white/10 px-3 py-1 text-[12px] font-medium text-white/80 tabular-nums backdrop-blur-sm">
+                {Math.min(step, count)} of {count}
+              </p>
+              <div className="absolute inset-x-0 bottom-0 z-[2] p-5 text-white">
+                <p className="truncate text-[11px] font-semibold uppercase tracking-[0.16em] text-white/55">{product.category || "Formula"}</p>
+                <p className="mt-1 truncate font-display text-[17px] font-semibold tracking-tight">{product.name}</p>
+              </div>
             </div>
           </div>
           <div className="lg:sticky lg:top-32 lg:self-start">{facts}</div>

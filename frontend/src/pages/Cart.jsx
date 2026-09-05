@@ -19,6 +19,9 @@ import SEO from "../components/SEO";
 import ConfirmDialog from "../components/ConfirmDialog";
 import RevealText from "../components/fx/RevealText";
 import Magnetic from "../components/fx/Magnetic";
+import Cutout from "../components/Cutout";
+import { fetchProductsCached } from "../services/products";
+import { AnimatePresence, motion } from "motion/react";
 import { fetchPricingSettings, EMPTY_PRICING } from "../services/settings";
 import { useEffect, useState } from "react";
 
@@ -38,6 +41,14 @@ export default function Cart() {
   const [pricing, setPricing] = useState(EMPTY_PRICING);
   const [confirmClear, setConfirmClear] = useState(false);
   const [brokenImages, setBrokenImages] = useState(() => new Set());
+  const [leadProduct, setLeadProduct] = useState(null);
+
+  // The empty state shows the range's lead jar; a failed read simply leaves it out.
+  useEffect(() => {
+    let on = true;
+    fetchProductsCached().then((list) => { if (on) setLeadProduct(list?.find((p) => p.image) || null); }).catch(() => {});
+    return () => { on = false; };
+  }, []);
 
   useEffect(() => {
     let cancelled = false;
@@ -74,10 +85,30 @@ export default function Cart() {
       </div>
 
       {empty ? (
-        <div className="border-t border-line py-24 text-center">
-          <span className="mx-auto grid h-16 w-16 place-items-center rounded-full bg-bone text-brand">
-            <ShoppingBag className="h-7 w-7" strokeWidth={1.5} aria-hidden="true" />
-          </span>
+        <div className="border-t border-line py-16 text-center lg:py-20">
+          <div className="relative mx-auto h-64 w-64 sm:h-72 sm:w-72">
+            <span className="absolute inset-[8%] rounded-full bg-bone" aria-hidden="true" />
+            {leadProduct?.image ? (
+              <div className="hero-float relative flex h-full w-full items-center justify-center">
+                <Cutout
+                  src={leadProduct.image}
+                  alt=""
+                  className="hero-jar-enter max-h-[92%] w-auto max-w-full object-contain"
+                  fallback={(
+                    <span className="grid h-16 w-16 place-items-center rounded-full bg-white text-brand shadow-lift">
+                      <ShoppingBag className="h-7 w-7" strokeWidth={1.5} aria-hidden="true" />
+                    </span>
+                  )}
+                />
+              </div>
+            ) : (
+              <span className="relative grid h-full w-full place-items-center">
+                <span className="grid h-16 w-16 place-items-center rounded-full bg-white text-brand shadow-lift">
+                  <ShoppingBag className="h-7 w-7" strokeWidth={1.5} aria-hidden="true" />
+                </span>
+              </span>
+            )}
+          </div>
           <h2 className="mt-6 font-display text-2xl font-semibold tracking-tight text-ink">Your cart is empty</h2>
           <p className="mx-auto mt-2 max-w-xs text-sm text-stone-500">Every formula on the site ships anywhere in India, with Cash on Delivery.</p>
           <Link to="/shop" className="btn-primary btn-lg mt-8">
@@ -90,12 +121,21 @@ export default function Cart() {
 
           {/* Lines */}
           <div>
-            <ul className="divide-y divide-line border-y border-line">
+            <ul className="border-y border-line">
+              <AnimatePresence initial={false}>
               {items.map((item) => {
                 const lineTotal = (Number(item.unitPrice) || 0) * (Number(item.qty) || 0);
                 const broken = !item.image || brokenImages.has(item.id);
                 return (
-                  <li key={item.id} className="flex gap-4 py-5 sm:gap-6">
+                  <motion.li
+                    key={item.id}
+                    layout
+                    initial={{ opacity: 0, y: 12 }}
+                    animate={{ opacity: 1, y: 0 }}
+                    exit={{ opacity: 0, x: 24, transition: { duration: 0.22 } }}
+                    transition={{ duration: 0.4, ease: [0.23, 1, 0.32, 1] }}
+                    className="flex gap-4 border-b border-line py-5 last:border-b-0 sm:gap-6"
+                  >
                     <div className="h-24 w-24 shrink-0 overflow-hidden rounded-2xl bg-bone sm:h-28 sm:w-28">
                       {broken ? (
                         <div className="grid h-full w-full place-items-center text-stone-300" aria-hidden="true">
@@ -155,9 +195,10 @@ export default function Cart() {
                         </button>
                       </div>
                     </div>
-                  </li>
+                  </motion.li>
                 );
               })}
+              </AnimatePresence>
             </ul>
             <button type="button" onClick={() => setConfirmClear(true)} className="mt-4 text-xs font-medium text-stone-500 transition-colors hover:text-red-600">
               Clear the cart

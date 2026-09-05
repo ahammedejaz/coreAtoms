@@ -710,7 +710,10 @@ export default function Checkout() {
         <div className="w-full max-w-md space-y-4">
           {/* Success header */}
           <div className="text-center">
-            <div className="mx-auto mb-4 grid h-14 w-14 place-items-center rounded-full bg-emerald-600 text-white"><Check className="h-6 w-6" strokeWidth={2.5} aria-hidden="true" /></div>
+            <svg className="draw-check mx-auto mb-4 h-16 w-16" viewBox="0 0 64 64" aria-hidden="true">
+              <circle cx="32" cy="32" r="29" fill="none" stroke="currentColor" strokeWidth="2.5" />
+              <path d="M20 33.5 28.5 42 45 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round" />
+            </svg>
             <h2 className="font-display text-3xl font-semibold tracking-tight text-ink">Order placed</h2>
             <p className="mt-1 text-sm text-stone-500">Thank you. We're preparing your order for dispatch.</p>
           </div>

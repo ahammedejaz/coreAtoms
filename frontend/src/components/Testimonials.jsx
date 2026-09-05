@@ -1,9 +1,10 @@
 /**
  * Testimonials.jsx — Homepage "What customers say" section.
  *
- * Renders nothing when there are no reviews to show — `Home.jsx` fetches
- * reviews rated 4+ with a non-empty body via `fetchHomepageReviews()` and the
- * fetch never throws, so an empty array here just means the section is absent.
+ * `Home.jsx` fetches reviews rated 4+ with a non-empty body via
+ * `fetchHomepageReviews()`; `quotable()` keeps the ones long enough to quote
+ * and drops duplicates. With fewer than three, the store's average rating
+ * stands alone as a slim band, and with no rating at all the section is absent.
  *
  * The reviews run as a continuous strip (two strips in opposite directions
  * once there are enough of them) that pauses under the pointer. Bodies on
@@ -66,8 +67,46 @@ function Strip({ items, reverse = false, duration }) {
   );
 }
 
-export default function Testimonials({ reviews, summary }) {
-  if (!reviews?.length) return null;
+/**
+ * Keeps the reviews worth quoting: a body of at least a sentence, no
+ * duplicates, preferring longer ones. One-word ratings ("Good", "Great")
+ * read as filler when set in display type, so they never make the strip.
+ */
+export function quotable(reviews) {
+  const seen = new Set();
+  return [...(reviews || [])]
+    .filter((r) => String(r.body || "").trim().length >= 24)
+    .sort((a, b) => String(b.body).length - String(a.body).length)
+    .filter((r) => {
+      const key = `${String(r.body).trim().toLowerCase()}|${String(r.reviewerName || "").toLowerCase()}`;
+      if (seen.has(key)) return false;
+      seen.add(key);
+      return true;
+    })
+    .slice(0, 10);
+}
+
+/** With too few quotes, the store's rating stands on its own as a slim band. */
+function RatingBand({ summary }) {
+  return (
+    <section className="border-y border-line bg-white py-8" aria-label="Customer rating">
+      <ScrollReveal className="mx-auto flex max-w-6xl flex-col items-center gap-3 px-5 text-center sm:flex-row sm:justify-between sm:text-left sm:px-6">
+        <div className="flex items-center gap-3">
+          <ReviewStars rating={Math.round(summary.average)} iconClassName="h-4.5 w-4.5" />
+          <p className="text-[15px] text-stone-600">
+            <span className="font-display text-xl font-semibold text-ink tabular-nums">{summary.average.toFixed(1)}</span>
+            <span className="ml-1.5">average across <span className="font-semibold text-ink tabular-nums">{summary.count}</span> verified {summary.count === 1 ? "review" : "reviews"}</span>
+          </p>
+        </div>
+        <p className="text-[13.5px] text-stone-500">Every review is written by a verified buyer and shown in full on the product's page.</p>
+      </ScrollReveal>
+    </section>
+  );
+}
+
+export default function Testimonials({ reviews: raw, summary }) {
+  const reviews = quotable(raw);
+  if (reviews.length < 3) return summary?.count > 0 ? <RatingBand summary={summary} /> : null;
 
   // Each strip needs enough panels to fill a wide screen twice over.
   const rowA = reviews.length >= 6 ? reviews.filter((_, i) => i % 2 === 0) : reviews;

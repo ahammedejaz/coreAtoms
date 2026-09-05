@@ -47,6 +47,7 @@ export default function ScrollReveal({
     threshold = 0.15,
     className = "",
     as: Tag = "div",
+    ...rest
 }) {
     const ref = useRef(null);
     const [visible, setVisible] = useState(false);
@@ -75,7 +76,7 @@ export default function ScrollReveal({
 
     // Reduced motion: no transition, no transform, no hidden start state.
     if (reduceMotion) {
-        return <Tag ref={ref} className={className}>{children}</Tag>;
+        return <Tag ref={ref} className={className} {...rest}>{children}</Tag>;
     }
 
     return (
@@ -83,6 +84,7 @@ export default function ScrollReveal({
             ref={ref}
             className={`transition-[opacity,translate,scale,filter] duration-700 ease-out-strong ${visible ? "translate-y-0 translate-x-0 opacity-100 scale-100 blur-none" : hiddenClass} ${className}`}
             style={{ transitionDelay: `${delay}ms` }}
+            {...rest}
         >
             {children}
         </Tag>

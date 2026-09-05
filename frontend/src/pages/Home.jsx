@@ -43,7 +43,7 @@ import Testimonials from "../components/Testimonials";
 import RecentlyViewed from "../components/RecentlyViewed";
 import Hero from "../components/home/Hero";
 import Pillars from "../components/home/Pillars";
-import CategoryTiles from "../components/home/CategoryTiles";
+import CategoryIndex from "../components/home/CategoryIndex";
 import Routine from "../components/home/Routine";
 import Standard from "../components/home/Standard";
 import IngredientIndex from "../components/home/IngredientIndex";
@@ -362,7 +362,7 @@ export default function Home() {
 
       <Pillars pillars={pillars} />
 
-      <CategoryTiles categories={categories} products={allProducts} goals={goals} />
+      <CategoryIndex categories={categories} products={allProducts} goals={goals} />
 
       <BestSellers
         products={products}

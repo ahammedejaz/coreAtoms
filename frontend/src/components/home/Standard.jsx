@@ -76,13 +76,13 @@ function Story({ rows }) {
         </div>
       </div>
 
-      <ol className="py-[14vh]">
+      <ol className="py-[10vh]">
         {rows.map((it, i) => (
           <li
             key={`${it.title}-${i}`}
             ref={(el) => { stepRefs.current[i] = el; }}
             data-index={i}
-            className={`flex min-h-[44vh] items-start gap-6 border-t border-line py-10 transition-opacity duration-500 ease-out-strong ${i === active ? "opacity-100" : "opacity-35"}`}
+            className={`flex min-h-[34vh] items-start gap-6 border-t border-line py-9 transition-opacity duration-500 ease-out-strong ${i === active ? "opacity-100" : "opacity-35"}`}
           >
             <span className="grid h-12 w-12 shrink-0 place-items-center rounded-full bg-bone text-brand">
               <RuleIcon it={it} className="h-6 w-6" />

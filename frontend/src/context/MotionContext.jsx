@@ -2,11 +2,12 @@
  * MotionContext.jsx — One place that decides how much motion this visit gets.
  *
  * The admin's `site_motion` setting (smooth scroll, custom cursor, route
- * curtain, grain, 3D bottle, tilt, custom scrollbar) is combined with what
- * the device can actually do: a fine pointer for the cursor and tilt, a
- * desktop viewport and WebGL for the bottle, and the visitor's own
- * reduced-motion preference, which wins over everything. The admin
- * dashboard never gets the storefront effects.
+ * curtain, grain, product stages, tilt, custom scrollbar) is combined with
+ * what the device can actually do: a fine pointer for the cursor and tilt, a
+ * desktop viewport for the stages, and the visitor's own reduced-motion
+ * preference, which wins over everything. The admin dashboard never gets the
+ * storefront effects. The custom cursor ships off; it is there for an admin
+ * who wants it.
  *
  * @module context/MotionContext
  */
@@ -18,10 +19,10 @@ import { usePrefersReducedMotion } from "../components/ScrollReveal";
 export const DEFAULT_MOTION = Object.freeze({
   smoothScroll: true,
   scrollbar: true,
-  cursor: true,
+  cursor: false,
   curtain: true,
   grain: true,
-  hero3d: true,
+  stage: true,
   tilt: true,
 });
 
@@ -37,19 +38,6 @@ function useMediaQuery(query) {
     () => window.matchMedia(query).matches,
     () => false
   );
-}
-
-let webglProbe = null;
-/** True when the browser can give us a WebGL context. Probed once. */
-function canWebGL() {
-  if (webglProbe !== null) return webglProbe;
-  try {
-    const c = document.createElement("canvas");
-    webglProbe = Boolean(c.getContext("webgl2") || c.getContext("webgl"));
-  } catch {
-    webglProbe = false;
-  }
-  return webglProbe;
 }
 
 let settingsCache = null;
@@ -105,7 +93,7 @@ export function MotionProvider({ children }) {
       cursor: storefront && settings.cursor && finePointer && !reduceMotion,
       curtain: storefront && settings.curtain && !reduceMotion,
       grain: storefront && settings.grain,
-      hero3d: storefront && settings.hero3d && isDesktop && !reduceMotion && canWebGL(),
+      stage: storefront && settings.stage && isDesktop && !reduceMotion,
       tilt: storefront && settings.tilt && finePointer && !reduceMotion,
     };
   }, [settings, reduceMotion, finePointer, isDesktop, isAdminRoute]);
@@ -117,6 +105,6 @@ export function MotionProvider({ children }) {
 export function useMotion() {
   return useContext(MotionContext) || {
     settings: DEFAULT_MOTION, reduceMotion: false, finePointer: false, isDesktop: false,
-    smoothScroll: false, scrollbar: false, cursor: false, curtain: false, grain: false, hero3d: false, tilt: false,
+    smoothScroll: false, scrollbar: false, cursor: false, curtain: false, grain: false, stage: false, tilt: false,
   };
 }

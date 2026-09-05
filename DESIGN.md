@@ -136,17 +136,16 @@ studio backdrop disappears and the bottle looks placed, not pasted.
   the border marks the backdrop, the photographed shadow becomes alpha, and
   the crop is centred on the jar with room for that shadow. The result is a
   plain `<img>` (`components/Cutout`) that can stand on navy or bone with its
-  own shadow. It appears on the home hero (rises in, floats on a seven-second
-  drift, leans up to seven degrees toward the pointer, drifts at its own rate
-  on scroll, with a glass caption pill linking to the formula), on the
-  product page's "What's inside" stage (a navy field beside the Supplement
-  Facts panel where the jar turns from -26° to 8° and settles as one facts row
-  inks in per stretch of scroll), on the category index's stage (the hovered
+  own shadow. It appears on the category index's stage (the hovered
   category's jar, swapped only once the next cutout is ready so the field is
-  never empty), and on the login panel, empty cart and 404 page. A rendered
-  three-dimensional jar was built and rejected on 2026-09-05: beside the real
-  photography it read as a plastic toy. Do not bring back rendered product
-  imagery; the photograph is the product.
+  never empty), and on the login panel, empty cart and 404 page. It does not
+  appear on the home hero or the product page: a rendered three-dimensional
+  jar was built for both and rejected on 2026-09-05 (beside the real
+  photography it read as a plastic toy), and the cutout that replaced it
+  there was removed on 2026-09-06 at the owner's request. The hero is the
+  photograph and the words alone; the "What's inside" panel is the plain
+  Supplement Facts table. Do not bring back rendered product imagery, and do
+  not put a jar back in front of the hero.
 - Pinned stories: the Formulary standard pins its `.facts` panel while the six
   rules scroll past, each filling its row as it crosses the middle of the
   viewport; two full-bleed photo breaks (the second and third hero
@@ -186,9 +185,8 @@ studio backdrop disappears and the bottle looks placed, not pasted.
   strips with a store-wide rating summary), `RecentlyViewed` (localStorage
   `coreatoms_recent`).
 - Product page: sticky gallery, buy column without card shells, monograph
-  sections with the heading in the left column, the "What's inside" stage
-  (real jar on navy, `.facts` panel inking in with scroll) on desktop and the
-  plain panel elsewhere, `StickyAddToCart` on phones.
+  sections with the heading in the left column, the "What's inside"
+  Supplement Facts panel, `StickyAddToCart` on phones.
 - Account: `AuthShell` split layout for login, forgot and reset, with the lead
   jar in the navy panel's corner.
 - Documents: `LegalPage` with an "On this page" rail built from section

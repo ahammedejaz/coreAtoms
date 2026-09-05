@@ -350,7 +350,6 @@ export default function Home() {
   }, [home.sections]);
 
   /** Shown on the hero only when no photographs are saved. */
-  const leadProduct = products[0] || allProducts[0] || null;
 
   /** The second and third hero slides double as the photo breaks. */
   const breakImages = useMemo(() => {
@@ -432,7 +431,7 @@ export default function Home() {
 
       <PromoBanner />
 
-      <Hero images={heroImages} copy={heroCopy} trust={trust} leadProduct={leadProduct} />
+      <Hero images={heroImages} copy={heroCopy} trust={trust} />
 
       {sectionOrder.map((x) => {
         if (!x.visible) return null;

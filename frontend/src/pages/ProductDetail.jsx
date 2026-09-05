@@ -12,12 +12,6 @@
  * how to use, the routine, FAQs, safety information, then reviews with a
  * `RatingBreakdown`, recently viewed and the cross-sell strip.
  *
- * On desktop the ingredient panel is a scroll story: the product's jar
- * (`components/Cutout`) stands on a navy field beside the Supplement Facts
- * panel and turns toward the visitor as they scroll, one facts row inking
- * in per stretch, so the label assembles as the jar settles. Elsewhere it is
- * the plain panel.
- *
  * `StickyAddToCart` renders a bottom bar on mobile (`lg:hidden`) mirroring
  * the buy column's add-to-cart controls.
  *
@@ -48,11 +42,7 @@ import StickyAddToCart from "../components/StickyAddToCart";
 import { useToast } from "../context/ToastContext";
 import useRecentlyViewed from "../hooks/useRecentlyViewed";
 import Magnetic from "../components/fx/Magnetic";
-import RevealText from "../components/fx/RevealText";
-import Cutout from "../components/Cutout";
 import { useSiteContent } from "../services/siteContent";
-import { useMotion } from "../context/MotionContext";
-import { motion, useScroll, useTransform, useMotionValueEvent } from "motion/react";
 
 import { money, discountPercent } from "../utils/format";
 
@@ -768,82 +758,27 @@ function AboutSection({ text }) {
   );
 }
 
-function IngredientsSection({ ingredients, product }) {
+function IngredientsSection({ ingredients }) {
   const hasAmounts = ingredients.some((r) => r.amount);
-  const { stage } = useMotion();
   const pageCopy = useSiteContent("page_product");
-  const ref = useRef(null);
-  const { scrollYProgress } = useScroll({ target: ref, offset: ["start 0.3", "end 0.9"] });
-  const [step, setStep] = useState(0);
-  const count = ingredients.length;
 
-  // The jar turns and settles as the rows ink in, one per stretch of scroll.
-  const rotateY = useTransform(scrollYProgress, [0, 1], [-26, 8]);
-  const scale = useTransform(scrollYProgress, [0, 1], [0.84, 1.02]);
-  const y = useTransform(scrollYProgress, [0, 1], [36, -24]);
-  useMotionValueEvent(scrollYProgress, "change", (v) => {
-    const n = Math.max(0, Math.min(count, Math.floor(((v - 0.12) / 0.7) * count) + 1));
-    setStep((s) => (s === n ? s : n));
-  });
-
-  const facts = (
-    <div className="facts max-w-xl">
-      <p className="facts-title">Supplement Facts</p>
-      <p className="facts-sub">{hasAmounts ? "Amount per serving" : "Key ingredients"}</p>
-      {ingredients.map((r, i) => {
-        const shown = !stage || i < step;
-        return (
-          <div
-            key={i}
-            className={`facts-row flex-col items-stretch gap-0.5 transition-[opacity,translate] duration-500 ease-out-strong ${shown ? "opacity-100 translate-y-0" : "opacity-20 translate-y-1"}`}
-          >
+  return (
+    <Section title={pageCopy.sectionTitles.inside}>
+      <div className="facts max-w-xl">
+        <p className="facts-title">Supplement Facts</p>
+        <p className="facts-sub">{hasAmounts ? "Amount per serving" : "Key ingredients"}</p>
+        {ingredients.map((r, i) => (
+          <div key={i} className="facts-row flex-col items-stretch gap-0.5">
             <div className="flex items-baseline justify-between gap-4">
               <span className="font-semibold text-ink">{r.name}</span>
               {r.amount && <span className="facts-val">{r.amount}</span>}
             </div>
             {r.purpose && <span className="text-[13px] leading-snug text-stone-500">{r.purpose}</span>}
           </div>
-        );
-      })}
-      <p className={`facts-foot transition-opacity duration-500 ${!stage || step >= count ? "opacity-100" : "opacity-20"}`}>Ingredients as disclosed on the product label.</p>
-    </div>
-  );
-
-  if (!stage || !product?.image) {
-    return <Section title={pageCopy.sectionTitles.inside}>{facts}</Section>;
-  }
-
-  return (
-    <section ref={ref} className="mx-auto mt-14 max-w-6xl border-t border-line px-5 pt-10 sm:px-6 lg:mt-16 lg:pt-12">
-      <div className="grid gap-6 lg:grid-cols-[minmax(0,1fr)_minmax(0,2fr)] lg:gap-16">
-        <div className="lg:sticky lg:top-32 lg:self-start">
-          <RevealText as="h2" text={pageCopy.sectionTitles.inside} className="font-display text-2xl font-semibold tracking-tight text-ink sm:text-3xl" />
-          <p className="mt-3 max-w-xs text-[14px] leading-relaxed text-stone-500">{pageCopy.storyHint}</p>
-        </div>
-        <div className="lg:grid lg:min-h-[150vh] lg:grid-cols-[minmax(0,0.85fr)_minmax(0,1.15fr)] lg:gap-10">
-          <div className="lg:sticky lg:top-28 lg:h-[72vh]">
-            <div className="field-navy grain stage-field relative h-full overflow-hidden rounded-[28px] shadow-frame">
-              <motion.div style={{ rotateY, scale, y }} className="absolute inset-x-0 bottom-[14%] top-[10%] z-[1] flex items-center justify-center will-change-transform">
-                <Cutout
-                  src={product.image}
-                  alt={product.name}
-                  className="max-h-full w-[150%] max-w-none object-contain"
-                  fallback={<img src={product.image} alt={product.name} className="h-full w-full rounded-[20px] object-cover" />}
-                />
-              </motion.div>
-              <p className="absolute right-5 top-5 z-[2] rounded-full border border-white/15 bg-white/10 px-3 py-1 text-[12px] font-medium text-white/80 tabular-nums backdrop-blur-sm">
-                {Math.min(step, count)} of {count}
-              </p>
-              <div className="absolute inset-x-0 bottom-0 z-[2] p-5 text-white">
-                <p className="truncate text-[11px] font-semibold uppercase tracking-[0.16em] text-white/55">{product.category || "Formula"}</p>
-                <p className="mt-1 truncate font-display text-[17px] font-semibold tracking-tight">{product.name}</p>
-              </div>
-            </div>
-          </div>
-          <div className="lg:sticky lg:top-32 lg:self-start">{facts}</div>
-        </div>
+        ))}
+        <p className="facts-foot">Ingredients as disclosed on the product label.</p>
       </div>
-    </section>
+    </Section>
   );
 }
 
@@ -933,7 +868,7 @@ function ProductStory({ product }) {
     <>
       {d.benefits?.length > 0 && <BenefitsSection benefits={d.benefits} />}
       {product.aboutText && <AboutSection text={product.aboutText} />}
-      {d.ingredients?.length > 0 && <IngredientsSection ingredients={d.ingredients} product={product} />}
+      {d.ingredients?.length > 0 && <IngredientsSection ingredients={d.ingredients} />}
       {d.howToUse?.length > 0 && <HowToUseSection steps={d.howToUse} />}
       {hasRoutine && <RoutineSection product={product} />}
       {d.faqs?.length > 0 && <FaqSection faqs={d.faqs} />}

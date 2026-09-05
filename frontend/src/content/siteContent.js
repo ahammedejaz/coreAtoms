@@ -85,7 +85,7 @@ export const PAGES = [
       f("cursor", "Custom pointer with “View” labels (desktop)", "toggle"),
       f("curtain", "Navy curtain between pages", "toggle"),
       f("grain", "Film grain over the page", "toggle"),
-      f("stage", "Product stages: the jar turns as the product page scrolls, and the category index previews on hover (desktop)", "toggle"),
+      f("stage", "Category stage: the home page's category index previews the hovered category's jar (desktop)", "toggle"),
       f("tilt", "Tiles tilt toward the pointer; primary buttons lean toward it", "toggle"),
     ],
     defaults: { smoothScroll: true, scrollbar: true, cursor: false, curtain: true, grain: true, stage: true, tilt: true },
@@ -201,7 +201,6 @@ export const PAGES = [
     description: "The trust row, the section headings, the jar hint and the disclaimer every product page carries. The monograph itself is edited per product under Products.",
     fields: [
       f("trustPoints", "Trust row (four short points)", "stringlist", { max: 4 }),
-      f("storyHint", "Line beside the jar (desktop)", "textarea"),
       f("sectionTitles.benefits", "Benefits heading", "text"),
       f("sectionTitles.about", "About heading", "text"),
       f("sectionTitles.inside", "Ingredients heading", "text"),
@@ -215,7 +214,6 @@ export const PAGES = [
     ],
     defaults: {
       trustPoints: ["100% authentic", "Lab tested", "Secure payments", "Easy replacement"],
-      storyHint: "Scroll through the label. Each ingredient appears as you reach it.",
       sectionTitles: {
         benefits: "What it does for you", about: "About this product", inside: "What's inside", howToUse: "How to use",
         stack: "Build your stack", faqs: "Questions, answered", safety: "Safety information", reviews: "Reviews", related: "You may also like",

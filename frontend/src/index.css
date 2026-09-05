@@ -358,10 +358,6 @@
   /* The real jar over the hero: rises in, then breathes on a slow float. */
   .hero-jar-enter { animation: jar-enter 1300ms var(--ease-out-strong) 250ms both; }
   .hero-float { animation: drift 7s ease-in-out 1500ms infinite; }
-  .hero-glow {
-    background: radial-gradient(closest-side, rgba(8, 19, 42, .62), rgba(8, 19, 42, .25) 55%, transparent);
-    animation: fade-in 1200ms ease 300ms both;
-  }
 
   /* A product stage: the jar on a navy field, driven by scroll or hover. */
   .stage-field {

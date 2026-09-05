@@ -87,7 +87,7 @@ export default function ProofBand({ whyUs }) {
   const stats = (whyUs?.stats || []).slice(0, 4);
 
   return (
-    <section className="field-navy grain overflow-hidden py-24 lg:py-32" aria-labelledby="proof-heading">
+    <section className="field-navy grain overflow-hidden py-20 lg:py-24" aria-labelledby="proof-heading">
       <div className="relative z-[1] mx-auto max-w-6xl px-5 sm:px-6">
         <div className="grid gap-10 lg:grid-cols-[1.05fr_0.95fr] lg:items-end lg:gap-16">
           <ScrollReveal>
@@ -107,7 +107,7 @@ export default function ProofBand({ whyUs }) {
         </div>
 
         {stats.length > 0 && (
-          <ul className="mt-16 grid grid-cols-2 gap-y-10 border-t border-white/15 pt-10 lg:mt-20 lg:grid-cols-4 lg:gap-x-8 lg:pt-12">
+          <ul className="mt-12 grid grid-cols-2 gap-y-10 border-t border-white/15 pt-10 lg:mt-14 lg:grid-cols-4 lg:gap-x-8 lg:pt-12">
             {stats.map((s, i) => <Stat key={`${s.label}-${i}`} value={s.value} label={s.label} index={i} />)}
           </ul>
         )}

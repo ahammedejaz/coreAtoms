@@ -60,7 +60,7 @@ function ScrollWords({ text, as: Tag = "p", className = "", start = 0.92, end = 
 
 export default function Manifesto({ philosophy }) {
   return (
-    <section className="border-t border-line py-24 lg:py-40" aria-labelledby="manifesto-heading">
+    <section className="border-t border-line py-20 lg:py-28" aria-labelledby="manifesto-heading">
       <div className="mx-auto max-w-4xl px-5 text-center sm:px-6">
         <ScrollWords
           as="h2"

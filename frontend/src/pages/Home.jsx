@@ -8,17 +8,20 @@
  * Fetches the following from `app_settings` on mount (parallel requests):
  *   homepage_hero_images, homepage_hero_copy, homepage_pillars,
  *   homepage_categories, homepage_philosophy, homepage_featured_products,
- *   homepage_why_us, gst_percentage. Testimonials are read separately from
- *   `product_reviews` via `services/homepage.fetchHomepageReviews()`.
+ *   homepage_why_us, homepage_standards, homepage_education, gst_percentage.
+ * Testimonials are read separately from `product_reviews` via
+ * `services/homepage.fetchHomepageReviews()`.
  *
- * All visible text, images and links are admin-controlled via AdminHomepage.
+ * Three sections are derived from the live catalogue rather than settings:
+ * the "Shop by goal" chips (every product's `best_for`), "Build your
+ * routine" (every product's `recommended_stack`) and "What's inside"
+ * (product names against the ingredient index). See services/homepage.js.
+ *
  * This file only loads data and orders the sections; each section lives in
- * `components/home/`.
- *
- * Section order: hero (full-bleed photograph), pillars panel, spotlight
- * (the lead formula), find your formula (typographic index), best sellers
- * (strip), proof band (navy, counting stats), testimonials (strips),
- * recently viewed, manifesto (scroll-revealed words).
+ * `components/home/`. Section order: hero, pillars panel, category tiles and
+ * goals, best sellers, routine, the Formulary standard, ingredient index,
+ * proof band (navy), testimonials, education, FAQ preview, recently viewed,
+ * manifesto.
  *
  * @module pages/Home
  */
@@ -37,11 +40,25 @@ import Testimonials from "../components/Testimonials";
 import RecentlyViewed from "../components/RecentlyViewed";
 import Hero from "../components/home/Hero";
 import Pillars from "../components/home/Pillars";
-import Spotlight from "../components/home/Spotlight";
-import CategoryIndex from "../components/home/CategoryIndex";
+import CategoryTiles from "../components/home/CategoryTiles";
+import Routine from "../components/home/Routine";
+import Standard from "../components/home/Standard";
+import IngredientIndex from "../components/home/IngredientIndex";
 import ProofBand from "../components/home/ProofBand";
+import Education from "../components/home/Education";
+import FaqPreview from "../components/home/FaqPreview";
 import Manifesto from "../components/home/Manifesto";
-import { DEFAULT_HOME_CATEGORIES, DEFAULT_WHY_US, fetchHomepageReviews } from "../services/homepage";
+import {
+  DEFAULT_HOME_CATEGORIES,
+  DEFAULT_WHY_US,
+  DEFAULT_STANDARDS,
+  DEFAULT_EDUCATION,
+  fetchHomepageReviews,
+  deriveGoals,
+  buildRoutine,
+  buildIngredientIndex,
+} from "../services/homepage";
+import { HOME_FAQS } from "../content/faqs";
 
 /** Generic load failure copy — the raw Supabase message stays in the console. */
 const LOAD_ERROR_MESSAGE = "We couldn't load products just now. Please try again.";
@@ -88,7 +105,7 @@ function BestSellers({ products, loading, error, onRetry, onAdd, justAddedId, gs
   };
 
   return (
-    <section id="best-sellers" className="scroll-mt-24 border-y border-line bg-white py-20 lg:py-28" aria-labelledby="best-sellers-heading">
+    <section id="best-sellers" className="scroll-mt-24 border-y border-line bg-white py-14 lg:py-20" aria-labelledby="best-sellers-heading">
       <Container>
         <ScrollReveal>
           <div className="flex items-end justify-between gap-6">
@@ -112,11 +129,11 @@ function BestSellers({ products, loading, error, onRetry, onAdd, justAddedId, gs
         </ScrollReveal>
 
         {loading ? (
-          <div className="mt-10 grid grid-cols-2 gap-x-4 lg:grid-cols-4 lg:gap-x-6">
+          <div className="mt-8 grid grid-cols-2 gap-x-4 lg:grid-cols-4 lg:gap-x-6">
             {Array.from({ length: 4 }).map((_, i) => <SkeletonCard key={i} />)}
           </div>
         ) : error ? (
-          <div className="mt-10 border-t border-line py-16 text-center">
+          <div className="mt-8 border-t border-line py-16 text-center">
             <p className="font-display text-xl font-semibold text-ink">Unable to load products</p>
             <p className="mt-1 text-sm text-stone-500">{error}</p>
             <button type="button" onClick={onRetry} className="btn-primary mt-5">Try again</button>
@@ -124,7 +141,7 @@ function BestSellers({ products, loading, error, onRetry, onAdd, justAddedId, gs
         ) : (
           <div
             ref={scrollerRef}
-            className="no-scrollbar -mx-5 mt-10 flex snap-x snap-mandatory gap-4 overflow-x-auto px-5 pb-2 scroll-px-5 sm:-mx-6 sm:px-6 sm:scroll-px-6 lg:gap-6"
+            className="no-scrollbar -mx-5 mt-8 flex snap-x snap-mandatory gap-4 overflow-x-auto px-5 pb-2 scroll-px-5 sm:-mx-6 sm:px-6 sm:scroll-px-6 lg:gap-6"
           >
             <ScrollRevealGroup stagger={70} className="w-[68vw] shrink-0 snap-start sm:w-[42vw] lg:w-[calc((100%-4.5rem)/4)]">
               {products.map((p) => (
@@ -133,7 +150,7 @@ function BestSellers({ products, loading, error, onRetry, onAdd, justAddedId, gs
             </ScrollRevealGroup>
           </div>
         )}
-        <Link to="/shop" className="btn-secondary mt-8 w-full sm:hidden">
+        <Link to="/shop" className="btn-secondary mt-6 w-full sm:hidden">
           View all products
           <ArrowRight className="h-4 w-4" strokeWidth={1.75} aria-hidden="true" />
         </Link>
@@ -160,6 +177,8 @@ export default function Home() {
   const [categories, setCategories] = useState(DEFAULT_HOME_CATEGORIES);
   const [philosophy, setPhilosophy] = useState(DEFAULT_PHILOSOPHY);
   const [whyUs, setWhyUs] = useState(DEFAULT_WHY_US);
+  const [standards, setStandards] = useState(DEFAULT_STANDARDS);
+  const [education, setEducation] = useState(DEFAULT_EDUCATION);
   const [reviews, setReviews] = useState([]);
   const [gstPercent, setGstPercent] = useState(0);
 
@@ -180,6 +199,8 @@ export default function Home() {
             "homepage_categories",
             "homepage_philosophy",
             "homepage_why_us",
+            "homepage_standards",
+            "homepage_education",
             "gst_percentage",
           ]),
         fetchProducts(),
@@ -218,6 +239,12 @@ export default function Home() {
             ? map.homepage_why_us.stats
             : DEFAULT_WHY_US.stats,
         });
+      }
+      if (Array.isArray(map.homepage_standards) && map.homepage_standards.length > 0) {
+        setStandards(map.homepage_standards);
+      }
+      if (Array.isArray(map.homepage_education) && map.homepage_education.length > 0) {
+        setEducation(map.homepage_education);
       }
       setGstPercent(Number(map.gst_percentage?.percentage ?? 0));
 
@@ -283,14 +310,14 @@ export default function Home() {
 
   const trust = heroCopy.trustIcons || DEFAULT_HERO_COPY.trustIcons;
 
-  /** The spotlight formula: first pinned best seller, else the first product. */
+  /** Shown on the hero only when no photographs are saved. */
   const leadProduct = products[0] || allProducts[0] || null;
 
-  /** The strip skips the spotlight product when there is enough else to show. */
-  const stripProducts = useMemo(
-    () => (leadProduct && products.length > 4 ? products.filter((p) => p.id !== leadProduct.id) : products),
-    [products, leadProduct]
-  );
+  /** Catalogue-derived sections. */
+  const goals = useMemo(() => deriveGoals(allProducts), [allProducts]);
+  const routine = useMemo(() => buildRoutine(allProducts), [allProducts]);
+  const ingredients = useMemo(() => buildIngredientIndex(allProducts), [allProducts]);
+  const activeCount = useMemo(() => allProducts.filter((p) => p.isActive !== false).length, [allProducts]);
 
   /** Store-wide rating, weighted by each product's review count. */
   const reviewSummary = useMemo(() => {
@@ -319,17 +346,10 @@ export default function Home() {
 
       <Pillars pillars={pillars} />
 
-      <Spotlight
-        product={leadProduct}
-        gstPercent={gstPercent}
-        onAdd={handleAdd}
-        justAdded={leadProduct ? justAddedId === leadProduct.id : false}
-      />
-
-      <CategoryIndex categories={categories} products={allProducts} />
+      <CategoryTiles categories={categories} products={allProducts} goals={goals} />
 
       <BestSellers
-        products={stripProducts}
+        products={products}
         loading={loadingProducts}
         error={fetchError}
         onRetry={loadData}
@@ -338,12 +358,22 @@ export default function Home() {
         gstPercent={gstPercent}
       />
 
+      <Routine slots={routine} onAdd={handleAdd} justAddedId={justAddedId} />
+
+      <Standard items={standards} />
+
+      <IngredientIndex items={ingredients} total={activeCount} />
+
       <ProofBand whyUs={whyUs} />
 
       <Testimonials reviews={reviews} summary={reviewSummary} />
 
+      <Education cards={education} />
+
+      <FaqPreview faqs={HOME_FAQS} />
+
       <Container>
-        <RecentlyViewed gstPercent={gstPercent} className="border-t border-line py-14" />
+        <RecentlyViewed gstPercent={gstPercent} className="py-12" />
       </Container>
 
       <Manifesto philosophy={philosophy} />

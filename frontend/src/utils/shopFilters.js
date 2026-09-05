@@ -45,8 +45,13 @@ export function applyFilters(list, filters, query) {
 
   const q = (query || "").trim().toLowerCase();
   if (q) {
+    // `best_for` is searched too so a goal ("Skin health", "Sleep") finds the
+    // formulas labelled for it, not only those named after it.
     result = result.filter(
-      (p) => p.name?.toLowerCase().includes(q) || p.category?.toLowerCase().includes(q)
+      (p) =>
+        p.name?.toLowerCase().includes(q) ||
+        p.category?.toLowerCase().includes(q) ||
+        p.bestFor?.toLowerCase().includes(q)
     );
   }
 

@@ -74,7 +74,7 @@ export default function Testimonials({ reviews, summary }) {
   const fill = (row) => (row.length < 5 ? [...row, ...row, ...row].slice(0, Math.max(5, row.length)).map((r, i) => ({ ...r, id: `${r.id}-${i}` })) : row);
 
   return (
-    <section className="overflow-hidden border-t border-line py-20 lg:py-28" aria-labelledby="testimonials-heading">
+    <section className="overflow-hidden py-14 lg:py-20" aria-labelledby="testimonials-heading">
       <div className="mx-auto max-w-6xl px-5 sm:px-6">
         <ScrollReveal>
           <div className="flex flex-col gap-4 sm:flex-row sm:items-end sm:justify-between">
@@ -88,7 +88,7 @@ export default function Testimonials({ reviews, summary }) {
           </div>
         </ScrollReveal>
       </div>
-      <div className="mt-12 space-y-4">
+      <div className="mt-10 space-y-4">
         <Strip items={fill(rowA)} duration={Math.max(36, fill(rowA).length * 9)} />
         {rowB && <Strip items={fill(rowB)} reverse duration={Math.max(40, fill(rowB).length * 10)} />}
       </div>

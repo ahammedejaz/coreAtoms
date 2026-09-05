@@ -43,8 +43,9 @@ studio backdrop disappears and the bottle looks placed, not pasted.
 - Scale on a page: hero 2.75rem / 4.25rem / 5.5rem; manifesto 2.6rem /
   3.75rem / 5rem; proof numerals 2.75rem / 3.75rem (worded values a step
   smaller so they hold one line); home section titles 2.25rem / 3rem; page
-  titles 2.25rem / 3rem; section titles elsewhere 1.5rem to 2.25rem; category
-  index rows 1.6rem / 2.6rem / 3.4rem; card names 15px semibold.
+  titles 2.25rem / 3rem; section titles elsewhere 1.5rem to 2.25rem;
+  ingredient cells 1.15rem / 1.3rem; card names 15px semibold; body copy in
+  the content sections 14px on 1.6 line-height.
 - No eyebrow labels above headings. `.section-label` survives only for the
   admin dashboard.
 
@@ -74,7 +75,12 @@ studio backdrop disappears and the bottle looks placed, not pasted.
 - Photography carries the first viewport: full-bleed lifestyle slides from
   `homepage_hero_images` sit under a navy scrim (`.hero-slide`, a 9s
   push-in on the active slide, a crossfade every 6s). Product photography
-  stays on bone tiles; the spotlight tile drifts against the scroll.
+  stays on bone tiles everywhere else.
+- Density is part of the material. Sections run 56 to 80px of vertical
+  padding and alternate canvas, white and bone bands (navy for the proof
+  band) so the page reads as composed rather than sparse. A first-time
+  visitor comparing stores should find the answers on this page, not in a
+  gap.
 - Icons for admin-authored labels come from `HintIcon`, which maps the text
   ("Lab Tested", "COD Available") to one lucide glyph, so emoji saved in
   `app_settings` never reach the web storefront.
@@ -87,13 +93,14 @@ studio backdrop disappears and the bottle looks placed, not pasted.
   reveals word by word from a mask (`.word-mask`, 900ms, 55ms stagger),
   then body, pills and trust points rise in turn (`animate-rise`), and on
   scroll the photograph drifts slower than the page while the copy sinks and
-  fades; the pillars panel rises last and overlaps the hero's foot; the
-  spotlight bottle drifts against the scroll; category rows float a
-  photograph in beside the pointer and slide the label 12px; proof numerals
+  fades; the pillars panel rises last and overlaps the hero's foot; category
+  tiles lift their photograph and reveal an arrow on hover; proof numerals
   count up once when 60% in view (1.6s, 120ms stagger, en-IN grouping);
   testimonials run as two marquee strips (`.marquee`, opposite directions,
   paused on hover and focus); the manifesto brightens one word at a time as
-  it crosses the middle of the viewport.
+  it crosses the middle of the viewport. The content sections (routine,
+  standard, ingredient index, education, FAQ) use `ScrollReveal` entrances
+  only; their job is to be read.
 - Elsewhere: the drawer's 420ms in / 260ms out slide; the cart badge `pop`;
   card hover lift with a crossfade to the second photo; `ScrollReveal`
   entrances at 700ms with 24px of travel and a 5px blur that clears.
@@ -112,14 +119,21 @@ studio backdrop disappears and the bottle looks placed, not pasted.
 - Shell: `AnnouncementBar` (free-shipping threshold, COD, lab testing),
   `Navbar` (search with live suggestions, category row, cart trigger),
   `CartDrawer` (opens on every add via `CartContext.lastAction`), `Footer`.
-- Home (`components/home/`): `Hero` (photograph slides, masked headline,
-  lead-product fallback when no slides are saved), `Pillars` (white panel
-  overlapping the hero), `Spotlight` (one formula large, with benefit chips
-  from `best_for` and the highlights list), `CategoryIndex` ("Find your
-  formula" as typographic rows with live counts), `ProofBand` (navy field,
-  counting stats), `Manifesto` (scroll-revealed statement). `Home.jsx` only
-  loads settings and orders these sections; every string and image is
-  admin-controlled.
+- Home (`components/home/`), in page order: `Hero` (photograph slides,
+  masked headline, lead-product fallback when no slides are saved),
+  `Pillars` (white panel overlapping the hero), `CategoryTiles` (square
+  photo tiles in a snap strip, any count, plus "Shop by goal" chips derived
+  from every product's `best_for`), best sellers (in `Home.jsx`), `Routine`
+  (morning, midday and night panels built from every product's
+  `recommended_stack`, each row with its own add button), `Standard` (the
+  six Formulary rules), `IngredientIndex` (the actives across the range as
+  a bordered grid with formula counts and a filler cell that closes the last
+  row), `ProofBand` (navy field, counting stats), `Testimonials`,
+  `Education` (four supplement-literacy panels), `FaqPreview` (five FAQ
+  entries shared with the FAQ page), `Manifesto` (scroll-revealed
+  statement). `Home.jsx` only loads settings and orders these sections.
+  The single-product spotlight and the typographic category rows were
+  removed on 2026-09-05 at the owner's request.
 - Catalogue: `ProductCard` (4:5 bone tile, hover swap, round add button in
   the tile corner, then category, name, stars and a price row), `ShopFilters`
   (native inputs drawn as navy rings and squares), `Testimonials` (marquee
@@ -131,6 +145,29 @@ studio backdrop disappears and the bottle looks placed, not pasted.
 - Account: `AuthShell` split layout for login, forgot and reset.
 - Documents: `LegalPage` with an "On this page" rail built from section
   titles; `FAQPage` accordion groups.
+
+## Where the words live
+
+- Admin-controlled copy comes from `app_settings` (`homepage_hero_copy`,
+  `homepage_pillars`, `homepage_categories`, `homepage_why_us`,
+  `homepage_philosophy`, `homepage_featured_products`). The standard and
+  education sections ship with defaults in `services/homepage.js`
+  (`DEFAULT_STANDARDS`, `DEFAULT_EDUCATION`) and read `homepage_standards`
+  and `homepage_education` when an admin saves them; no editor exists yet.
+- Catalogue-derived copy (goals, routine, ingredient index) is computed in
+  `services/homepage.js` from `best_for`, `recommended_stack` and product
+  names. `INGREDIENT_ROLES` holds the one-line role for each active; a new
+  formula joins the index when its name matches an entry.
+- The FAQ lives once, in `content/faqs.js`; the FAQ page renders all of it
+  and the home page renders `HOME_FAQS`.
+- Product monographs live on the product row: `about_text` (intro, Uses,
+  Why this formula, Key nutrients) and the `details` JSONB (benefits,
+  ingredients, howToUse, faqs, safetyInfo). All fifteen active products
+  carry one as of 2026-09-05; the admin's structured editor maintains them.
+- Health copy is written as general wellness information: "supports",
+  "contributes to", "traditionally used for". Nothing claims to diagnose,
+  treat, cure or prevent a disease, and certifications are only stated where
+  the admin has entered them.
 
 ## Rules that keep the world intact
 

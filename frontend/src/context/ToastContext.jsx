@@ -14,10 +14,10 @@ import React, { createContext, useCallback, useContext, useEffect, useMemo, useR
 const ToastContext = createContext(null);
 
 const VARIANT_STYLES = {
-    success: "bg-emerald-600 text-white",
-    error: "bg-red-600 text-white",
-    info: "bg-[#1e3a5f] text-white",
-    warning: "bg-amber-500 text-white",
+    success: "bg-emerald-700 text-white",
+    error: "bg-red-700 text-white",
+    info: "bg-ink text-white",
+    warning: "bg-amber-deep text-white",
 };
 
 /** Exit animation length — must match the `duration-300` transition below. */
@@ -80,7 +80,7 @@ export function ToastProvider({ children }) {
             {/* Toast container — always mounted so the live region is present
                 before messages land in it, otherwise screen readers miss them. */}
             <div
-                className="fixed top-4 right-4 z-[9999] flex flex-col gap-2 pointer-events-none"
+                className="pointer-events-none fixed right-4 top-4 z-[95] flex flex-col gap-2"
                 style={{ maxWidth: 380 }}
                 role="status"
                 aria-live="polite"
@@ -89,7 +89,7 @@ export function ToastProvider({ children }) {
                 {toasts.map((toast) => (
                     <div
                         key={toast.id}
-                        className={`pointer-events-auto flex items-center gap-3 rounded-xl px-4 py-3 shadow-lg text-sm font-medium backdrop-blur-sm transition-all duration-300 ${VARIANT_STYLES[toast.variant] || VARIANT_STYLES.info
+                        className={`pointer-events-auto flex items-center gap-3 rounded-full px-4 py-3 text-sm font-medium shadow-lift-lg transition-[opacity,translate] duration-300 ease-out-strong ${VARIANT_STYLES[toast.variant] || VARIANT_STYLES.info
                             } ${toast.exiting ? "opacity-0 translate-x-4" : "opacity-100 translate-x-0 animate-toast-in"}`}
                     >
                         <span className="flex-1">{toast.message}</span>

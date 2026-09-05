@@ -1,0 +1,49 @@
+/**
+ * AuthShell.jsx — Split layout shared by Login, Forgot password and Reset
+ * password: a navy brand panel on the left, the form on the right. On
+ * phones the panel collapses to a short band above the form.
+ *
+ * @param {{ title: string, subtitle?: string, children: React.ReactNode }} props
+ * @module components/AuthShell
+ */
+import { Check } from "lucide-react";
+
+const POINTS = [
+  "Track every order and shipment live",
+  "Cash on Delivery across India",
+  "CoreCoins on every purchase",
+];
+
+export default function AuthShell({ title, subtitle, children }) {
+  return (
+    <div className="grid overflow-hidden rounded-[28px] border border-line bg-white lg:min-h-[620px] lg:grid-cols-[0.9fr_1.1fr]">
+      <aside className="field-navy grain flex flex-col justify-between p-7 sm:p-10 lg:p-12">
+        <div className="relative z-[1]">
+          <img src="/logo.png" alt="Core Atoms" className="h-6 w-auto brightness-0 invert sm:h-7" />
+          <p className="mt-6 font-display text-2xl font-semibold leading-[1.05] tracking-[-0.03em] text-white sm:text-3xl lg:mt-10 lg:text-4xl">
+            Every ingredient on the label. Every batch tested.
+          </p>
+          <ul className="mt-8 hidden space-y-3 lg:block">
+            {POINTS.map((t) => (
+              <li key={t} className="flex items-center gap-3 text-[14.5px] text-white/80">
+                <span className="grid h-5 w-5 shrink-0 place-items-center rounded-full bg-white/15">
+                  <Check className="h-3 w-3 text-amber" strokeWidth={3} aria-hidden="true" />
+                </span>
+                {t}
+              </li>
+            ))}
+          </ul>
+        </div>
+        <p className="relative z-[1] mt-10 hidden text-xs text-white/50 lg:block">Core Atoms. Nutraceuticals made in India.</p>
+      </aside>
+
+      <div className="flex flex-col justify-center p-6 sm:p-10 lg:p-14">
+        <div className="mx-auto w-full max-w-sm">
+          <h1 className="font-display text-3xl font-semibold tracking-[-0.03em] text-ink">{title}</h1>
+          {subtitle && <p className="mt-2 text-sm text-stone-500">{subtitle}</p>}
+          <div className="mt-8">{children}</div>
+        </div>
+      </div>
+    </div>
+  );
+}

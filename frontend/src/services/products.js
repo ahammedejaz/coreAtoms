@@ -147,6 +147,24 @@ export async function fetchProducts() {
   return (data ?? []).map(mapDbProduct);
 }
 
+/* ── Short-lived catalogue cache ──────────────────────────────────────────
+   Header search suggestions, "Recently viewed" and the cross-sell strip all
+   want the same active-product list within seconds of each other. One
+   request serves them for a minute; the pages themselves keep calling
+   `fetchProducts()` so realtime refreshes stay authoritative. */
+const CACHE_TTL_MS = 60 * 1000;
+let catalogueCache = { at: 0, list: null, inflight: null };
+
+export async function fetchProductsCached() {
+  const now = Date.now();
+  if (catalogueCache.list && now - catalogueCache.at < CACHE_TTL_MS) return catalogueCache.list;
+  if (catalogueCache.inflight) return catalogueCache.inflight;
+  catalogueCache.inflight = fetchProducts()
+    .then((list) => { catalogueCache = { at: Date.now(), list, inflight: null }; return list; })
+    .catch((e) => { catalogueCache.inflight = null; throw e; });
+  return catalogueCache.inflight;
+}
+
 export async function fetchProductById(id) {
   const { data, error } = await supabase
     .from("products")

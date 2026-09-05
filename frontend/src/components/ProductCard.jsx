@@ -1,191 +1,198 @@
 /**
- * ProductCard.jsx — Catalogue product card used by Shop and Home.
+ * ProductCard.jsx — Catalogue product card used by Shop, Home and the
+ * cross-sell strips.
+ *
+ * Image-led: a 4:5 bone tile carries the bottle (multiply-blended so the
+ * studio backdrop disappears), the second photo crossfades in on hover, and
+ * the add-to-cart control lives on the tile. With a mouse it slides up from
+ * the bottom edge on hover; on touch it is a round button that stays in
+ * view. The copy block stays to three lines: name and price, the benefit
+ * line from `best_for`, then rating.
  *
  * Lives here rather than inside Shop.jsx so that Home can render a product
- * without statically importing the whole Shop page — that import defeated
- * Shop's lazy route split and pulled it into the initial bundle.
+ * without statically importing the whole Shop page.
  *
  * @param {{ p: object, onAdd: Function, justAdded: boolean, gstPercent: number }} props
  * @module components/ProductCard
  */
 import React, { useState } from "react";
 import { Link } from "react-router-dom";
+import { ImageOff, Star, Check, Plus, ArrowRight } from "lucide-react";
 import { money, discountPercent } from "../utils/format";
 import { isOutOfStock } from "../services/products";
 
-export function Stars({ rating, count }) {
+const NEW_WINDOW_MS = 30 * 24 * 60 * 60 * 1000;
+/** Read once per page load; "New" is a 30-day window, so second precision is irrelevant. */
+const LOADED_AT = Date.now();
+
+export function Stars({ rating, count, className = "" }) {
   if (!count) return null;
   return (
-    <div className="flex items-center gap-1">
-      {[1, 2, 3, 4, 5].map((i) => (
-        <span key={i} className={`text-[13px] leading-none ${i <= Math.round(rating) ? "text-amber-400" : "text-stone-200"}`}>★</span>
-      ))}
-      <span className="text-[11px] text-stone-400 ml-0.5">{Number(rating).toFixed(1)} ({count})</span>
+    <div className={`flex items-center gap-1.5 ${className}`}>
+      <div className="flex items-center gap-px" aria-hidden="true">
+        {[1, 2, 3, 4, 5].map((i) => (
+          <Star
+            key={i}
+            className={`h-3 w-3 ${i <= Math.round(rating) ? "text-amber" : "text-line-strong"}`}
+            fill="currentColor"
+            strokeWidth={0}
+          />
+        ))}
+      </div>
+      <span className="text-[11.5px] text-stone-500 tabular-nums">
+        <span className="sr-only">Rated </span>{Number(rating).toFixed(1)}<span className="text-stone-400"> ({count})</span>
+      </span>
     </div>
   );
+}
+
+/**
+ * `best_for` is admin text such as "Immunity • Skin health". The card shows
+ * it as one quiet sentence; the separators are whatever the admin typed.
+ */
+function benefitLine(p) {
+  const raw = String(p?.bestFor || "").trim();
+  if (!raw) return "";
+  return raw.split(/\s*[•·|,]\s*/).filter(Boolean).join(", ");
 }
 
 const ProductCard = React.memo(function ProductCard({ p, onAdd, justAdded, gstPercent }) {
   const variants = p.variants || [];
   const hasVariants = variants.length > 0;
   // Stock lives on the variant rows for variant products — the base `stock_qty`
-  // is 0 for those, so reading it alone flagged perfectly sellable products as
-  // out of stock. `mapDbProduct` already drops inactive variants.
+  // is 0 for those, so reading it alone flagged sellable products as sold out.
   const out = isOutOfStock(p);
-  const desc = String(p.description || "").replace(/\s+/g, " ").trim().slice(0, 110) ||
-    "Premium daily supplement with clean ingredients and reliable quality.";
 
   // Tracks the src that failed so a stale Storage URL falls back to a neutral
-  // placeholder instead of the browser's broken-image glyph. Keyed by src so a
-  // realtime product update with a fresh image retries automatically.
+  // placeholder instead of the browser's broken-image glyph.
   const [failedSrc, setFailedSrc] = useState(null);
   const imageBroken = !p.image || failedSrc === p.image;
+  const hoverImage = (p.images || []).find((u) => u && u !== p.image) || null;
 
-  // Strikethrough MRP renders only for a genuine discount (mrp > price); the
-  // percent is derived, never stored, so it can't drift from the two prices.
+  // Strikethrough MRP renders only for a genuine discount (mrp > price).
   const offPct = discountPercent(p.mrp, p.price);
+  const isNew = Boolean(p.createdAt) && LOADED_AT - new Date(p.createdAt).getTime() < NEW_WINDOW_MS;
+  const benefit = benefitLine(p) || p.category || "";
+  const href = `/product/${p.id}`;
+
+  const addLabel = out ? `${p.name} is sold out` : justAdded ? `${p.name} added` : `Add ${p.name} to cart`;
 
   return (
-    <div className="group flex flex-col rounded-2xl border border-[#E8E4DE] bg-white overflow-hidden shadow-[0_2px_12px_rgba(0,0,0,0.06)] hover:shadow-[0_4px_20px_rgba(30,58,95,0.12),0_0_0_1px_rgba(30,58,95,0.08)] hover:border-[#1e3a5f]/20 hover:scale-[1.02] transition-all duration-300 ease-out">
-
-      <Link to={`/product/${p.id}`} className="block relative overflow-hidden bg-stone-50" style={{ height: "220px" }}>
-        {imageBroken ? (
-          <div className="h-full w-full grid place-items-center bg-stone-100" aria-hidden="true">
-            <svg className="h-9 w-9 text-stone-300" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
-              <rect x="3" y="4" width="18" height="16" rx="2" />
-              <circle cx="8.5" cy="9.5" r="1.5" />
-              <path d="m3 16 4.5-4.5 3.5 3.5 3-3L21 17" />
-            </svg>
-          </div>
-        ) : (
-          <img
-            src={p.image}
-            alt={p.name}
-            className="h-full w-full object-cover transition-transform duration-300 group-hover:scale-[1.03]"
-            style={{ objectPosition: p.imagePosition || "50% 50%" }}
-            loading="lazy"
-            sizes="(max-width: 640px) 100vw, (max-width: 1024px) 50vw, 33vw"
-            onError={() => setFailedSrc(p.image)}
-          />
-        )}
-        {/* Category */}
-        {p.category && (
-          <div className="absolute top-3 left-3">
-            <span className="rounded-full bg-white border border-[#E8E4DE] px-2.5 py-1 text-[10px] font-semibold text-stone-600 shadow-sm">
-              {p.category}
-            </span>
-          </div>
-        )}
-        {/* Stock */}
-        <div className="absolute top-3 right-3">
-          <span className={`rounded-full px-2.5 py-1 text-[10px] font-semibold border ${out ? "bg-red-50 border-red-200 text-red-600" : "bg-emerald-50 border-emerald-200 text-emerald-700"
-            }`}>
-            <span className="inline-flex items-center gap-1">
-              <span className={`inline-block h-1.5 w-1.5 rounded-full ${out ? "bg-red-500" : "bg-emerald-500"}`} />
-              {out ? "Out of stock" : "In stock"}
-            </span>
-          </span>
-        </div>
-      </Link>
-
-      {/* Body */}
-      <div className="flex flex-col flex-1 p-5">
-
-        {/* 1. Name — 2 lines max */}
-        <Link to={`/product/${p.id}`}>
-          <h3 className="text-[15px] font-semibold text-stone-900 leading-snug line-clamp-2 group-hover:text-[#1e3a5f] transition-colors">
-            {p.name}
-          </h3>
+    <article className="group relative flex h-full flex-col">
+      {/* Tile */}
+      <div className="relative aspect-[4/5] overflow-hidden rounded-tile bg-bone transition-[box-shadow] duration-500 ease-out-strong can-hover:group-hover:shadow-lift-lg">
+        <Link to={href} className="absolute inset-0 block" tabIndex={-1} aria-hidden="true">
+          {imageBroken ? (
+            <div className="grid h-full w-full place-items-center text-stone-300">
+              <ImageOff className="h-8 w-8" strokeWidth={1.25} />
+            </div>
+          ) : (
+            <>
+              <img
+                src={p.image}
+                alt=""
+                className={`product-img absolute inset-0 h-full w-full object-cover transition-[scale,opacity] duration-700 ease-out-strong can-hover:group-hover:scale-[1.06] ${hoverImage ? "can-hover:group-hover:opacity-0" : ""}`}
+                style={{ objectPosition: p.imagePosition || "50% 50%" }}
+                loading="lazy"
+                sizes="(max-width: 640px) 50vw, (max-width: 1024px) 33vw, 25vw"
+                onError={() => setFailedSrc(p.image)}
+              />
+              {hoverImage && (
+                <img
+                  src={hoverImage}
+                  alt=""
+                  className="product-img absolute inset-0 hidden h-full w-full scale-[1.06] object-cover opacity-0 transition-opacity duration-700 ease-out-strong can-hover:block can-hover:group-hover:opacity-100"
+                  loading="lazy"
+                  aria-hidden="true"
+                />
+              )}
+            </>
+          )}
         </Link>
 
-        {/* 2. Rating — always reserves space so cards stay aligned */}
-        <div className="mt-1.5 h-5 flex items-center">
+        {/* Badges */}
+        {(offPct || isNew || out) && (
+          <div className="pointer-events-none absolute left-3.5 top-3.5 flex flex-wrap gap-1.5">
+            {out ? (
+              <span className="rounded-full bg-white/95 px-2.5 py-1 text-[11px] font-semibold text-stone-600">Sold out</span>
+            ) : (
+              <>
+                {offPct && <span className="rounded-full bg-amber px-2.5 py-1 text-[11px] font-semibold text-ink">{offPct}% off</span>}
+                {isNew && <span className="rounded-full bg-ink px-2.5 py-1 text-[11px] font-semibold text-white">New</span>}
+              </>
+            )}
+          </div>
+        )}
+
+        {/* Add — a sibling of the image link, never nested inside it. */}
+        {!out && (hasVariants ? (
+          <>
+            <Link
+              to={href}
+              aria-label={`Choose a size for ${p.name}`}
+              className="absolute inset-x-3 bottom-3 hidden h-11 items-center justify-center gap-2 rounded-full bg-ink text-[13.5px] font-semibold text-white shadow-float transition-[translate,opacity,scale,background-color] duration-300 ease-out-strong hover:bg-brand active:scale-[0.97] can-hover:flex can-hover:translate-y-[calc(100%+1rem)] can-hover:opacity-0 can-hover:group-hover:translate-y-0 can-hover:group-hover:opacity-100 can-hover:group-focus-within:translate-y-0 can-hover:group-focus-within:opacity-100"
+            >
+              Choose a size
+              <ArrowRight className="h-4 w-4" strokeWidth={1.75} aria-hidden="true" />
+            </Link>
+            <Link
+              to={href}
+              aria-label={`Choose a size for ${p.name}`}
+              className="absolute bottom-3 right-3 inline-flex h-11 items-center gap-1.5 rounded-full bg-white pl-4 pr-3 text-[13px] font-semibold text-ink shadow-float transition-[scale] duration-150 ease-out-strong active:scale-[0.95] can-hover:hidden"
+            >
+              Sizes
+              <ArrowRight className="h-4 w-4" strokeWidth={1.75} aria-hidden="true" />
+            </Link>
+          </>
+        ) : (
+          <>
+            <button
+              type="button"
+              onClick={() => onAdd(p)}
+              aria-label={addLabel}
+              className={`absolute inset-x-3 bottom-3 hidden h-11 items-center justify-center gap-2 rounded-full text-[13.5px] font-semibold text-white shadow-float transition-[translate,opacity,scale,background-color] duration-300 ease-out-strong active:scale-[0.97] can-hover:flex can-hover:translate-y-[calc(100%+1rem)] can-hover:opacity-0 can-hover:group-hover:translate-y-0 can-hover:group-hover:opacity-100 can-hover:group-focus-within:translate-y-0 can-hover:group-focus-within:opacity-100 ${justAdded ? "bg-emerald-600" : "bg-ink hover:bg-brand"}`}
+            >
+              {justAdded
+                ? <><Check className="h-4 w-4" strokeWidth={2.25} aria-hidden="true" />Added</>
+                : <><Plus className="h-4 w-4" strokeWidth={2} aria-hidden="true" />Add to cart</>}
+            </button>
+            <button
+              type="button"
+              onClick={() => onAdd(p)}
+              aria-label={addLabel}
+              className={`absolute bottom-3 right-3 grid h-11 w-11 place-items-center rounded-full text-white shadow-float transition-[scale,background-color] duration-200 ease-out-strong active:scale-[0.92] can-hover:hidden ${justAdded ? "bg-emerald-600" : "bg-ink"}`}
+            >
+              {justAdded
+                ? <Check className="h-5 w-5" strokeWidth={2.25} aria-hidden="true" />
+                : <Plus className="h-5 w-5" strokeWidth={2} aria-hidden="true" />}
+            </button>
+          </>
+        ))}
+      </div>
+
+      {/* Copy */}
+      <div className="flex flex-1 flex-col pt-3.5">
+        <div className="flex items-start justify-between gap-3">
+          <Link to={href} className="min-w-0">
+            <h3 className="text-[15px] font-semibold leading-snug tracking-tight text-ink transition-colors group-hover:text-brand line-clamp-2">
+              {p.name}
+            </h3>
+          </Link>
+          <p className="shrink-0 pt-px text-right font-display text-[15.5px] font-semibold leading-snug tabular-nums tracking-tight text-ink">
+            {hasVariants && <span className="font-sans text-[11px] font-medium text-stone-500">From </span>}
+            {money(p.price)}
+            {offPct && <s className="ml-1.5 font-sans text-[12px] font-normal text-stone-400">{money(p.mrp)}</s>}
+          </p>
+        </div>
+        <div className="mt-1 flex items-baseline justify-between gap-3">
+          <p className="truncate text-[13px] text-stone-500">{benefit}</p>
+          {Number(gstPercent) > 0 && <span className="shrink-0 text-[10.5px] text-stone-400">excl. GST</span>}
+        </div>
+        <div className="mt-2 flex h-4 items-center">
           {p.reviewCount > 0 && <Stars rating={p.avgRating} count={p.reviewCount} />}
         </div>
-
-        {/* 3. Description — 2 lines max */}
-        <p className="mt-2 text-[13px] text-stone-500 leading-relaxed line-clamp-2">{desc}</p>
-
-        {/* 4. Highlights — pushed to sit just above price.
-            Composite key because `highlights` is admin-editable free text and
-            can legitimately contain the same string twice. */}
-        <div className="mt-auto pt-3 flex flex-wrap gap-1.5">
-          {(p.highlights && p.highlights.length > 0
-            ? p.highlights.slice(0, 3)
-            : ["Clean label", "Lab-tested", "COD available"]
-          ).map((tag, i) => (
-            <span key={`${i}-${tag}`} className="rounded-full border border-[#E8E4DE] bg-stone-50 px-2.5 py-0.5 text-[10px] font-medium text-stone-500">{tag}</span>
-          ))}
-        </div>
-
-        {/* 5. Price + button */}
-        <div className="pt-4">
-          <div className="flex items-baseline justify-between mb-3">
-            <div>
-              <span className="text-[11px] text-stone-400 block mb-0.5">
-                {hasVariants ? "Starting from" : "Price"}
-              </span>
-              <span className="inline-flex items-baseline gap-1.5 flex-wrap">
-                <span className="text-lg font-semibold text-stone-900">
-                  {money(p.price)}
-                </span>
-                {offPct && (
-                  <>
-                    <s className="text-[12px] text-stone-400 font-normal">{money(p.mrp)}</s>
-                    <span className="text-[11px] font-semibold text-emerald-600">{offPct}% off</span>
-                  </>
-                )}
-              </span>
-              <span className="text-[10px] text-stone-400 block mt-0.5">
-                {Number(gstPercent) > 0 ? "Excl. GST & Shipping" : "Excl. Shipping"}
-              </span>
-            </div>
-            <Link to={`/product/${p.id}`} className="text-[12px] font-semibold text-[#1e3a5f] hover:underline underline-offset-2">
-              Details →
-            </Link>
-          </div>
-
-          {/* Variant hint chips on card */}
-          {hasVariants && (
-            <div className="flex flex-wrap gap-1.5 mb-3">
-              {variants.slice(0, 3).map((v) => (
-                <span key={v.id} className="rounded-full border border-[#1e3a5f]/20 bg-[#EFF6FF] px-2.5 py-0.5 text-[10px] font-medium text-[#1e3a5f]">
-                  {v.label}
-                </span>
-              ))}
-              {variants.length > 3 && (
-                <span className="rounded-full border border-[#E8E4DE] bg-stone-50 px-2.5 py-0.5 text-[10px] text-stone-400">
-                  +{variants.length - 3} more
-                </span>
-              )}
-            </div>
-          )}
-
-          {hasVariants ? (
-            <Link
-              to={`/product/${p.id}`}
-              className="btn-primary block w-full text-center"
-            >
-              Select option →
-            </Link>
-          ) : (
-            <button
-              onClick={() => onAdd(p)}
-              disabled={out}
-              type="button"
-              className={`w-full rounded-xl px-4 py-2.5 text-sm font-semibold border transition-all duration-200 ${out
-                ? "border-stone-200 bg-stone-100 text-stone-400 cursor-not-allowed"
-                : justAdded
-                  ? "border-emerald-300 bg-emerald-50 text-emerald-700"
-                  : "btn-primary"
-                }`}
-            >
-              {justAdded ? "Added to cart ✓" : out ? "Out of stock" : "Add to cart"}
-            </button>
-          )}
-        </div>
       </div>
-    </div>
+    </article>
   );
 });
 

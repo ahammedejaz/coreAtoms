@@ -7,34 +7,22 @@
  * @module pages/NotFound
  */
 import { Link } from "react-router-dom";
-
+import { ArrowRight } from "lucide-react";
 import useDocumentTitle from "../hooks/useDocumentTitle";
 
 export default function NotFound() {
   useDocumentTitle("Page Not Found | Core Atoms");
   return (
-    <div className="min-h-[70vh] grid place-items-center px-4">
-      <div className="w-full max-w-xl rounded-2xl border border-[#E8E4DE] bg-white p-8 shadow-sm text-center">
-        <div className="text-sm text-stone-500">Core Atoms</div>
-        <h1 className="mt-2 text-3xl font-semibold text-stone-900 tracking-tight">404</h1>
-        <p className="mt-2 text-sm text-stone-600">
-          The page you’re looking for doesn’t exist.
-        </p>
-
-        <div className="mt-6 flex items-center justify-center gap-3">
-          <Link
-            to="/"
-            className="rounded-xl bg-[#1e3a5f] px-5 py-2.5 text-sm font-semibold text-white shadow-sm hover:bg-[#16304f] transition"
-          >
-            Home
-          </Link>
-          <Link
-            to="/shop"
-            className="rounded-xl border border-[#E8E4DE] bg-white px-5 py-2.5 text-sm font-semibold text-stone-700 hover:bg-stone-50 transition"
-          >
-            Shop
-          </Link>
-        </div>
+    <div className="flex min-h-[60vh] flex-col items-center justify-center py-12 text-center">
+      <p className="font-display text-[6rem] font-semibold leading-none tracking-[-0.06em] text-ink sm:text-[8.5rem]" aria-hidden="true">404</p>
+      <h1 className="mt-4 font-display text-2xl font-semibold tracking-tight text-ink sm:text-3xl">That page isn't on the label</h1>
+      <p className="mt-2 max-w-sm text-sm text-stone-500">The address doesn't match anything on the site. It may have moved, or the link had a typo.</p>
+      <div className="mt-8 flex flex-wrap items-center justify-center gap-3">
+        <Link to="/shop" className="btn-primary btn-lg">
+          Browse the range
+          <ArrowRight className="h-4 w-4" strokeWidth={1.75} aria-hidden="true" />
+        </Link>
+        <Link to="/" className="btn-secondary btn-lg">Go home</Link>
       </div>
     </div>
   );

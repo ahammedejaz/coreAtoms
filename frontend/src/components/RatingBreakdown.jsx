@@ -5,6 +5,7 @@
  * @module components/RatingBreakdown
  */
 import { useMemo } from "react";
+import { Star } from "lucide-react";
 
 export default function RatingBreakdown({ reviews, avgRating, reviewCount }) {
   const counts = useMemo(
@@ -16,32 +17,36 @@ export default function RatingBreakdown({ reviews, avgRating, reviewCount }) {
   );
 
   return (
-    <div className="grid gap-6 sm:grid-cols-[auto_1fr] sm:items-center">
+    <div className="grid gap-6 sm:grid-cols-[auto_1fr] sm:items-center sm:gap-10">
       <div>
-        <div className="text-4xl font-semibold text-stone-900">{Number(avgRating).toFixed(1)}</div>
-        <div className="flex items-center gap-1 mt-1">
+        <div className="font-display text-6xl font-semibold leading-none tracking-[-0.04em] text-ink tabular-nums">{Number(avgRating).toFixed(1)}</div>
+        <div className="mt-2 flex items-center gap-0.5" aria-label={`${Number(avgRating).toFixed(1)} out of 5`}>
           {[1, 2, 3, 4, 5].map((i) => (
-            <span
+            <Star
               key={i}
-              className={`text-lg leading-none ${i <= Math.round(avgRating) ? "text-amber-400" : "text-stone-200"}`}
-            >★</span>
+              className={`h-4 w-4 ${i <= Math.round(avgRating) ? "text-amber" : "text-line-strong"}`}
+              fill="currentColor"
+              strokeWidth={0}
+              aria-hidden="true"
+            />
           ))}
         </div>
-        <div className="text-xs text-stone-400 mt-1">{reviewCount} review{reviewCount !== 1 ? "s" : ""}</div>
+        <div className="mt-1.5 text-xs text-stone-500">{reviewCount} review{reviewCount !== 1 ? "s" : ""}</div>
       </div>
-      <div className="space-y-1.5">
+      <div className="space-y-2">
         {counts.map(({ star, count }) => (
           <div key={star} className="flex items-center gap-3 text-xs">
-            <span className="w-6 text-stone-500">{star}★</span>
-            <div className="h-2 flex-1 rounded-full bg-stone-100 overflow-hidden">
+            <span className="w-4 text-right font-medium text-stone-600 tabular-nums">{star}</span>
+            <Star className="h-3 w-3 text-stone-400" fill="currentColor" strokeWidth={0} aria-hidden="true" />
+            <div className="h-1.5 flex-1 overflow-hidden rounded-full bg-bone-deep">
               <div
-                className="h-full rounded-full bg-amber-400"
+                className="h-full rounded-full bg-amber"
                 style={{ width: `${reviewCount ? Math.round((count / reviewCount) * 100) : 0}%` }}
                 role="img"
                 aria-label={`${count} of ${reviewCount} reviews rated ${star} stars`}
               />
             </div>
-            <span className="w-6 text-right text-stone-500">{count}</span>
+            <span className="w-5 text-right text-stone-500 tabular-nums">{count}</span>
           </div>
         ))}
       </div>

@@ -14,6 +14,7 @@
 import { useState } from "react";
 import { Link } from "react-router-dom";
 import SEO from "../../components/SEO";
+import { Plus } from "lucide-react";
 
 const FAQS = [
     {
@@ -102,16 +103,17 @@ const FAQS = [
 /** One expandable FAQ row. */
 function FaqItem({ q, a, open, onToggle }) {
     return (
-        <div className="border-b border-[#E8E4DE] last:border-b-0">
+        <div>
             <button type="button" onClick={onToggle} aria-expanded={open}
-                className="w-full flex items-center justify-between gap-4 py-4 text-left">
-                <span className="text-sm font-semibold text-stone-800">{q}</span>
-                <svg className={`h-4 w-4 shrink-0 text-stone-400 transition-transform duration-200 ${open ? "rotate-180" : ""}`}
-                    viewBox="0 0 20 20" fill="currentColor">
-                    <path fillRule="evenodd" d="M5.293 7.293a1 1 0 011.414 0L10 10.586l3.293-3.293a1 1 0 111.414 1.414l-4 4a1 1 0 01-1.414 0l-4-4a1 1 0 010-1.414z" clipRule="evenodd" />
-                </svg>
+                className="flex w-full items-center justify-between gap-4 py-4 text-left">
+                <span className="text-[15px] font-semibold text-ink">{q}</span>
+                <Plus className={`h-4 w-4 shrink-0 text-stone-400 transition-transform duration-200 ease-out ${open ? "rotate-45" : ""}`} strokeWidth={2} aria-hidden="true" />
             </button>
-            {open && <p className="pb-4 pr-8 text-sm leading-relaxed text-stone-600">{a}</p>}
+            <div className={`grid transition-[grid-template-rows] duration-250 ease-out-strong ${open ? "grid-rows-[1fr]" : "grid-rows-[0fr]"}`}>
+                <div className="overflow-hidden">
+                    <p className="pb-5 pr-8 text-[15px] leading-relaxed text-stone-600">{a}</p>
+                </div>
+            </div>
         </div>
     );
 }
@@ -130,7 +132,7 @@ export default function FAQPage() {
     };
 
     return (
-        <div className="mx-auto max-w-3xl">
+        <div>
             <SEO
                 title="FAQ"
                 description="Answers about ordering, payment, shipping, cancellations, replacements and CoreCoins at Core Atoms."
@@ -138,31 +140,45 @@ export default function FAQPage() {
             />
             <script type="application/ld+json">{JSON.stringify(structuredData)}</script>
 
-            <div className="mb-10">
-                <p className="section-label">Help center</p>
-                <h1 className="mt-2 text-3xl font-semibold tracking-tight text-stone-900" style={{ textWrap: "balance" }}>
-                    Frequently asked questions
-                </h1>
-                <p className="mt-2 text-sm text-stone-500">
-                    Can't find your answer? Head to the{" "}
-                    <Link to="/contact" className="text-[#1e3a5f] underline underline-offset-2">Contact page</Link>.
+            <div className="max-w-3xl">
+                <h1 className="font-display text-4xl font-semibold tracking-[-0.03em] text-ink sm:text-5xl">Questions, answered</h1>
+                <p className="mt-3 text-[15px] text-stone-600">
+                    Ordering, payment, shipping, replacements and CoreCoins. Not here?{" "}
+                    <Link to="/contact" className="font-semibold text-brand underline underline-offset-4">Contact us</Link>.
                 </p>
             </div>
 
-            <div className="space-y-6">
-                {FAQS.map((group) => (
-                    <section key={group.section} className="rounded-2xl border border-[#E8E4DE] bg-white px-6 py-2">
-                        <h2 className="section-label pt-4 pb-1">{group.section}</h2>
-                        {group.items.map((f) => {
-                            const id = `${group.section}::${f.q}`;
-                            return (
-                                <FaqItem key={id} q={f.q} a={f.a}
-                                    open={openId === id}
-                                    onToggle={() => setOpenId(openId === id ? null : id)} />
-                            );
-                        })}
-                    </section>
-                ))}
+            <div className="mt-10 grid gap-10 lg:grid-cols-[220px_minmax(0,1fr)] lg:gap-16">
+                <nav aria-label="Topics" className="hidden self-start lg:sticky lg:top-32 lg:block">
+                    <p className="text-xs font-semibold text-stone-500">Topics</p>
+                    <ul className="mt-3 border-l border-line">
+                        {FAQS.map((group) => (
+                            <li key={group.section}>
+                                <a href={`#${group.section.toLowerCase().replace(/[^a-z0-9]+/g, "-")}`} className="-ml-px block border-l border-transparent py-1 pl-4 text-[13.5px] leading-snug text-stone-600 transition-colors hover:border-ink hover:text-ink">
+                                    {group.section}
+                                </a>
+                            </li>
+                        ))}
+                    </ul>
+                </nav>
+
+                <div className="max-w-3xl space-y-12">
+                    {FAQS.map((group) => (
+                        <section key={group.section} id={group.section.toLowerCase().replace(/[^a-z0-9]+/g, "-")} className="scroll-mt-32">
+                            <h2 className="font-display text-xl font-semibold tracking-tight text-ink sm:text-2xl">{group.section}</h2>
+                            <div className="mt-3 divide-y divide-line border-y border-line">
+                                {group.items.map((f) => {
+                                    const id = `${group.section}::${f.q}`;
+                                    return (
+                                        <FaqItem key={id} q={f.q} a={f.a}
+                                            open={openId === id}
+                                            onToggle={() => setOpenId(openId === id ? null : id)} />
+                                    );
+                                })}
+                            </div>
+                        </section>
+                    ))}
+                </div>
             </div>
         </div>
     );

@@ -1,55 +1,49 @@
 /**
  * Cart.jsx — Shopping cart page.
  *
- * Displays cart items with quantity steppers, line totals, order summary,
- * and a "Proceed to checkout" CTA. Redirects to `/login` if unauthenticated.
+ * Line items as hairline rows with quantity steppers, an order summary with
+ * the free-shipping meter, and a "Checkout" CTA. Unauthenticated visitors
+ * are sent to `/login` with a redirect back to checkout.
+ *
+ * Pricing settings come from the cached `fetchPricingSettings()` so the
+ * page, the drawer and the announcement bar always agree.
  *
  * @module pages/Cart
  */
 import { Link, useNavigate } from "react-router-dom";
+import { ArrowLeft, ArrowRight, ImageOff, Lock, MapPin, Minus, PackageCheck, Plus, ShoppingBag, X } from "lucide-react";
 import { useCart } from "../context/CartContext";
 import { useAuth } from "../context/AuthContext";
 import { useToast } from "../context/ToastContext";
-import { supabase } from "../services/supabase/client";
 import SEO from "../components/SEO";
-import ScrollReveal from "../components/ScrollReveal";
 import ConfirmDialog from "../components/ConfirmDialog";
+import { fetchPricingSettings, EMPTY_PRICING } from "../services/settings";
 import { useEffect, useState } from "react";
 
 import { money } from "../utils/format";
+
+const TRUST = [
+  { icon: Lock, label: "Secure checkout" },
+  { icon: PackageCheck, label: "Quality packing" },
+  { icon: MapPin, label: "Ships across India" },
+];
 
 export default function Cart() {
   const navigate = useNavigate();
   const { isAuthenticated } = useAuth();
   const { showToast } = useToast();
   const { items, totalItems, subtotal, updateQty, removeItem, clear } = useCart();
-  const [shippingBase, setShippingBase] = useState(0);
-  const [freeShippingMin, setFreeShippingMin] = useState(0);
-  const [gstPercent, setGstPercent] = useState(0);
+  const [pricing, setPricing] = useState(EMPTY_PRICING);
   const [confirmClear, setConfirmClear] = useState(false);
   const [brokenImages, setBrokenImages] = useState(() => new Set());
 
-  // ─── Pricing settings — one round-trip, ignored if we unmount first ───────
   useEffect(() => {
     let cancelled = false;
-    supabase.from("app_settings").select("key,value")
-      .in("key", ["shipping_amount", "free_shipping_min", "gst_percentage"])
-      .then(({ data, error }) => {
-        if (cancelled) return;
-        if (error) { console.error("app_settings load failed:", error); return; }
-        const map = {};
-        (data || []).forEach((row) => { map[row.key] = row.value; });
-
-        const ship = Number(map.shipping_amount?.amount);
-        if (Number.isFinite(ship) && ship >= 0) setShippingBase(ship);
-        const freeMin = Number(map.free_shipping_min?.amount);
-        if (Number.isFinite(freeMin) && freeMin >= 0) setFreeShippingMin(freeMin);
-        const gst = Number(map.gst_percentage?.percentage);
-        if (Number.isFinite(gst) && gst >= 0) setGstPercent(gst);
-      });
+    fetchPricingSettings().then((p) => { if (!cancelled) setPricing(p); });
     return () => { cancelled = true; };
   }, []);
 
+  const { shippingBase, freeShippingMin, gstPercent } = pricing;
   const sub = Number(subtotal || 0);
   const qualifiesFreeShipping = freeShippingMin > 0 && sub >= freeShippingMin;
   // If admin flat rate = 0, shipping will be calculated by Delhivery at checkout
@@ -58,74 +52,74 @@ export default function Cart() {
   const gstAmount = gstPercent > 0 ? Math.round((sub * gstPercent) / 100) : 0;
   const total = sub + shipping + gstAmount;
   const amountToFreeShipping = freeShippingMin > 0 && !qualifiesFreeShipping ? freeShippingMin - sub : 0;
+  const progress = freeShippingMin > 0 ? Math.min(100, Math.round((sub / freeShippingMin) * 100)) : 0;
+
+  const empty = !items || items.length === 0;
 
   return (
     <div>
       <SEO title="Cart | Core Atoms" description="Review your cart and proceed to checkout." />
-      <ScrollReveal>
-        <div className="mb-8 flex items-end justify-between">
-          <div>
-            <p className="section-label">Review & Checkout</p>
-            <h1 className="mt-1.5 text-2xl font-semibold tracking-tight text-stone-900">Your Cart</h1>
-          </div>
-          <Link to="/shop" className="text-sm text-stone-500 hover:text-stone-900 transition-colors">← Continue shopping</Link>
+
+      <div className="mb-8 flex flex-wrap items-end justify-between gap-4">
+        <h1 className="font-display text-4xl font-semibold tracking-[-0.03em] text-ink sm:text-5xl">
+          Your cart
+          {!empty && <span className="ml-3 align-middle text-lg font-medium text-stone-400 tabular-nums">{totalItems} item{totalItems !== 1 ? "s" : ""}</span>}
+        </h1>
+        <Link to="/shop" className="inline-flex items-center gap-1.5 text-sm font-semibold text-stone-600 transition-colors hover:text-ink">
+          <ArrowLeft className="h-4 w-4" strokeWidth={1.75} aria-hidden="true" />
+          Continue shopping
+        </Link>
+      </div>
+
+      {empty ? (
+        <div className="border-t border-line py-24 text-center">
+          <span className="mx-auto grid h-16 w-16 place-items-center rounded-full bg-bone text-brand">
+            <ShoppingBag className="h-7 w-7" strokeWidth={1.5} aria-hidden="true" />
+          </span>
+          <h2 className="mt-6 font-display text-2xl font-semibold tracking-tight text-ink">Your cart is empty</h2>
+          <p className="mx-auto mt-2 max-w-xs text-sm text-stone-500">Every formula on the site ships anywhere in India, with Cash on Delivery.</p>
+          <Link to="/shop" className="btn-primary btn-lg mt-8">
+            Browse the range
+            <ArrowRight className="h-4 w-4" strokeWidth={1.75} aria-hidden="true" />
+          </Link>
         </div>
-      </ScrollReveal>
-
-      {!items || items.length === 0 ? (
-        <ScrollReveal>
-          <div className="card p-16 text-center">
-            <div className="mx-auto mb-4 h-16 w-16 rounded-2xl bg-stone-100 flex items-center justify-center">
-              <svg className="h-7 w-7 text-stone-400" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5">
-                <path d="M6 2L3 6v14a2 2 0 002 2h14a2 2 0 002-2V6l-3-4z" /><line x1="3" y1="6" x2="21" y2="6" /><path d="M16 10a4 4 0 01-8 0" />
-              </svg>
-            </div>
-            <h2 className="text-base font-semibold text-stone-900">Your cart is empty</h2>
-            <p className="mt-1 text-sm text-stone-500">Discover our range of premium supplements.</p>
-            <Link to="/shop" className="btn-primary mt-6 inline-flex">Browse products</Link>
-          </div>
-        </ScrollReveal>
       ) : (
-        <ScrollReveal delay={100}>
-          <div className="grid gap-6 lg:grid-cols-3">
+        <div className="grid gap-10 lg:grid-cols-[minmax(0,1fr)_380px] lg:gap-14">
 
-            {/* Items */}
-            <div className="lg:col-span-2 space-y-3">
+          {/* Lines */}
+          <div>
+            <ul className="divide-y divide-line border-y border-line">
               {items.map((item) => {
                 const lineTotal = (Number(item.unitPrice) || 0) * (Number(item.qty) || 0);
+                const broken = !item.image || brokenImages.has(item.id);
                 return (
-                  <div key={item.id} className="card p-5">
-                    <div className="flex gap-4">
-                      <div className="h-20 w-20 shrink-0 rounded-xl border border-[#E8E4DE] bg-stone-50 overflow-hidden">
-                        {item.image && !brokenImages.has(item.id) ? (
-                          <img src={item.image} alt={item.name} className="h-full w-full object-cover" loading="lazy"
-                            onError={() => setBrokenImages((prev) => new Set(prev).add(item.id))} />
-                        ) : (
-                          /* Deleted or unreachable image — a neutral tile beats a broken-image glyph */
-                          <div className="h-full w-full flex items-center justify-center">
-                            <svg className="h-7 w-7 text-stone-300" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5">
-                              <rect x="3" y="3" width="18" height="18" rx="2" /><circle cx="8.5" cy="8.5" r="1.5" /><path d="M21 15l-5-5L5 21" />
-                            </svg>
-                          </div>
-                        )}
-                      </div>
-                      <div className="flex-1 min-w-0">
-                        <div className="flex items-start justify-between gap-3">
-                          <div>
-                            <h3 className="font-semibold text-stone-900 text-[15px] leading-snug">{item.name}</h3>
-                            {item.category && <p className="text-xs text-stone-400 mt-0.5">{item.category}</p>}
-                            <p className="text-sm text-stone-500 mt-1">{money(item.unitPrice)} each</p>
-                          </div>
-                          <div className="text-right shrink-0">
-                            <p className="text-xs text-stone-400">Subtotal</p>
-                            <p className="text-base font-semibold text-stone-900">{money(lineTotal)}</p>
-                          </div>
+                  <li key={item.id} className="flex gap-4 py-5 sm:gap-6">
+                    <div className="h-24 w-24 shrink-0 overflow-hidden rounded-2xl bg-bone sm:h-28 sm:w-28">
+                      {broken ? (
+                        <div className="grid h-full w-full place-items-center text-stone-300" aria-hidden="true">
+                          <ImageOff className="h-6 w-6" strokeWidth={1.25} />
                         </div>
-                        <div className="mt-3 flex items-center justify-between">
-                          {/* Qty stepper */}
-                          <div className="inline-flex items-center rounded-xl border border-[#E8E4DE] bg-stone-50">
-                            <button type="button" onClick={() => {
-                              // Stepping below 1 drops the line item — say so, otherwise it just vanishes
+                      ) : (
+                        <img src={item.image} alt="" className="product-img h-full w-full object-cover" loading="lazy"
+                          onError={() => setBrokenImages((prev) => new Set(prev).add(item.id))} />
+                      )}
+                    </div>
+
+                    <div className="min-w-0 flex-1">
+                      <div className="flex items-start justify-between gap-4">
+                        <div className="min-w-0">
+                          {item.category && <p className="text-[11.5px] font-medium text-stone-500">{item.category}</p>}
+                          <h3 className="mt-0.5 text-[15px] font-semibold leading-snug text-ink">{item.name}</h3>
+                          <p className="mt-1 text-[13px] text-stone-500 tabular-nums">{money(item.unitPrice)} each</p>
+                        </div>
+                        <p className="shrink-0 font-display text-lg font-semibold tabular-nums text-ink">{money(lineTotal)}</p>
+                      </div>
+
+                      <div className="mt-4 flex items-center justify-between gap-3">
+                        <div className="inline-flex items-center rounded-full border border-line-strong bg-white p-0.5">
+                          <button
+                            type="button"
+                            onClick={() => {
                               const next = Number(item.qty) - 1;
                               if (next < 1) {
                                 removeItem(item.id);
@@ -134,99 +128,121 @@ export default function Cart() {
                                 updateQty(item.id, next);
                               }
                             }}
-                              className="h-8 w-8 flex items-center justify-center text-stone-600 hover:text-stone-900 hover:bg-stone-100 rounded-l-xl transition">−</button>
-                            <span className="w-10 text-center text-sm font-semibold text-stone-900">{item.qty}</span>
-                            <button type="button" onClick={() => updateQty(item.id, item.qty + 1)}
-                              className="h-8 w-8 flex items-center justify-center text-stone-600 hover:text-stone-900 hover:bg-stone-100 rounded-r-xl transition">+</button>
-                          </div>
-                          <button type="button" onClick={() => removeItem(item.id)}
-                            className="text-xs text-stone-400 hover:text-red-500 transition-colors">Remove</button>
+                            className="grid h-9 w-9 place-items-center rounded-full text-stone-600 transition-colors hover:bg-bone hover:text-ink"
+                            aria-label={Number(item.qty) <= 1 ? `Remove ${item.name}` : "Decrease quantity"}
+                          >
+                            <Minus className="h-4 w-4" strokeWidth={2} aria-hidden="true" />
+                          </button>
+                          <span className="w-9 text-center text-sm font-semibold tabular-nums text-ink">{item.qty}</span>
+                          <button
+                            type="button"
+                            onClick={() => updateQty(item.id, item.qty + 1)}
+                            className="grid h-9 w-9 place-items-center rounded-full text-stone-600 transition-colors hover:bg-bone hover:text-ink"
+                            aria-label="Increase quantity"
+                          >
+                            <Plus className="h-4 w-4" strokeWidth={2} aria-hidden="true" />
+                          </button>
                         </div>
+                        <button
+                          type="button"
+                          onClick={() => removeItem(item.id)}
+                          className="inline-flex items-center gap-1 text-xs font-medium text-stone-500 transition-colors hover:text-red-600"
+                        >
+                          <X className="h-3.5 w-3.5" strokeWidth={2} aria-hidden="true" />
+                          Remove
+                        </button>
                       </div>
                     </div>
-                  </div>
+                  </li>
                 );
               })}
-              <button type="button" onClick={() => setConfirmClear(true)} className="text-xs text-stone-400 hover:text-red-500 transition-colors pt-1">
-                Clear entire cart
-              </button>
-            </div>
+            </ul>
+            <button type="button" onClick={() => setConfirmClear(true)} className="mt-4 text-xs font-medium text-stone-500 transition-colors hover:text-red-600">
+              Clear the cart
+            </button>
+          </div>
 
-            {/* Summary */}
-            <div>
-              <div className="card p-6 sticky top-24">
-                <h2 className="text-base font-semibold text-stone-900 mb-5">Order Summary</h2>
-                <div className="space-y-3 text-sm">
-                  <div className="flex justify-between text-stone-600">
-                    <span>Subtotal ({totalItems} item{totalItems !== 1 ? "s" : ""})</span>
-                    <span className="font-semibold text-stone-900">{money(subtotal)}</span>
+          {/* Summary */}
+          <aside>
+            <div className="panel sticky top-32 p-6">
+              <h2 className="font-display text-xl font-semibold tracking-tight text-ink">Order summary</h2>
+
+              {freeShippingMin > 0 && (
+                <div className="mt-5">
+                  <p className="text-[13px] text-stone-700">
+                    {qualifiesFreeShipping
+                      ? <span className="font-semibold text-emerald-700">Free shipping unlocked</span>
+                      : <>Add <span className="font-semibold text-ink tabular-nums">{money(amountToFreeShipping)}</span> more for free shipping</>}
+                  </p>
+                  <div className={`meter mt-2 ${qualifiesFreeShipping ? "is-complete" : ""}`} role="progressbar" aria-valuemin={0} aria-valuemax={100} aria-valuenow={progress} aria-label="Progress to free shipping">
+                    <span style={{ "--meter": progress / 100 }} />
                   </div>
-                  <div className="flex justify-between text-stone-600">
-                    <span>Shipping</span>
+                </div>
+              )}
+
+              <dl className="mt-6 space-y-3 text-sm">
+                <div className="flex justify-between">
+                  <dt className="text-stone-600">Subtotal ({totalItems} item{totalItems !== 1 ? "s" : ""})</dt>
+                  <dd className="font-semibold tabular-nums text-ink">{money(subtotal)}</dd>
+                </div>
+                <div className="flex justify-between">
+                  <dt className="text-stone-600">Shipping</dt>
+                  <dd className="tabular-nums">
                     {qualifiesFreeShipping ? (
-                      <span className="font-semibold text-emerald-600">Free</span>
+                      <span className="font-semibold text-emerald-700">Free</span>
                     ) : shippingTBD ? (
-                      <span className="font-semibold text-stone-400 text-xs">Calculated at checkout</span>
+                      <span className="text-xs text-stone-500">Calculated at checkout</span>
                     ) : (
-                      <span className="font-semibold text-stone-900">{money(shipping)}</span>
+                      <span className="font-semibold text-ink">{money(shipping)}</span>
                     )}
-                  </div>
-                  {amountToFreeShipping > 0 && (
-                    <div className="rounded-lg bg-amber-50 border border-amber-200 px-3 py-2 text-xs text-amber-700">
-                      🚚 Add {money(amountToFreeShipping)} more for <span className="font-semibold">free shipping!</span>
-                    </div>
-                  )}
-                  {qualifiesFreeShipping && (
-                    <div className="rounded-lg bg-emerald-50 border border-emerald-200 px-3 py-2 text-xs text-emerald-700">
-                      ✅ You qualify for <span className="font-semibold">free shipping!</span>
-                    </div>
-                  )}
-                  {gstPercent > 0 && (
-                    <div className="flex justify-between text-stone-600">
-                      <span>GST ({gstPercent}%)</span>
-                      <span className="font-semibold text-stone-900">{money(gstAmount)}</span>
-                    </div>
-                  )}
-                  <div className="rounded-lg bg-blue-50 border border-blue-100 px-3 py-2 text-xs text-blue-700">
-                    🎟️ Coupon codes &amp; loyalty discounts are applied at checkout.
-                  </div>
+                  </dd>
                 </div>
-
-                <div className="my-5 h-px bg-[#E8E4DE]" />
-
-                <div className="flex justify-between mb-6">
-                  <span className="font-semibold text-stone-900">Total</span>
-                  <div className="text-right">
-                    <span className="text-xl font-semibold text-stone-900">{money(total)}</span>
-                    {shippingTBD && <p className="text-[11px] text-stone-400">+ shipping</p>}
+                {gstPercent > 0 && (
+                  <div className="flex justify-between">
+                    <dt className="text-stone-600">GST ({gstPercent}%)</dt>
+                    <dd className="font-semibold tabular-nums text-ink">{money(gstAmount)}</dd>
                   </div>
-                </div>
+                )}
+              </dl>
+              <p className="mt-3 text-xs text-stone-500">Coupon codes and CoreCoins are applied at checkout.</p>
 
-                <button
-                  type="button"
-                  onClick={() => {
-                    if (!isAuthenticated) {
-                      showToast("Please sign in to checkout", "info");
-                      navigate("/login", { state: { from: "/checkout" } });
-                    } else {
-                      navigate("/checkout");
-                    }
-                  }}
-                  className="btn-primary w-full py-3 text-[14px]"
-                >
-                  Proceed to checkout
-                </button>
+              <div className="my-5 border-t border-line" />
 
-                <div className="mt-4 flex flex-wrap gap-2 justify-center">
-                  {["🔒 Secure", "📦 Quality packing", "🇮🇳 India only"].map((t) => (
-                    <span key={t} className="text-[11px] text-stone-400">{t}</span>
-                  ))}
+              <div className="flex items-baseline justify-between">
+                <span className="font-semibold text-ink">Total</span>
+                <div className="text-right">
+                  <span className="font-display text-2xl font-semibold tabular-nums text-ink">{money(total)}</span>
+                  {shippingTBD && <p className="text-[11px] text-stone-500">plus shipping</p>}
                 </div>
               </div>
-            </div>
 
-          </div>
-        </ScrollReveal>
+              <button
+                type="button"
+                onClick={() => {
+                  if (!isAuthenticated) {
+                    showToast("Please sign in to checkout", "info");
+                    navigate("/login?redirect=%2Fcheckout");
+                  } else {
+                    navigate("/checkout");
+                  }
+                }}
+                className="btn-primary btn-lg mt-6 w-full"
+              >
+                Checkout
+                <ArrowRight className="h-4 w-4" strokeWidth={1.75} aria-hidden="true" />
+              </button>
+
+              <ul className="mt-5 flex flex-wrap justify-center gap-x-4 gap-y-1.5">
+                {TRUST.map(({ icon: Icon, label }) => (
+                  <li key={label} className="inline-flex items-center gap-1.5 text-[11.5px] text-stone-500">
+                    <Icon className="h-3.5 w-3.5 text-brand" strokeWidth={1.75} aria-hidden="true" />
+                    {label}
+                  </li>
+                ))}
+              </ul>
+            </div>
+          </aside>
+        </div>
       )}
 
       {confirmClear && (

@@ -59,6 +59,9 @@ studio backdrop disappears and the bottle looks placed, not pasted.
   28px (`--radius-tile`).
 - The Supplement Facts panel (`.facts`) is the one square-cornered object:
   6px radius, 1.5px ink border, 8px title rule, 4px sub rule, hairline rows.
+  It appears twice: the ingredient panel on the product page and the daily
+  schedule on the home page. It is the grammar for tabular truth, never a
+  card style; anything without rows and a rule stays on `.panel`.
 
 ## Depth and material
 
@@ -124,8 +127,10 @@ studio backdrop disappears and the bottle looks placed, not pasted.
   `Pillars` (white panel overlapping the hero), `CategoryTiles` (square
   photo tiles in a snap strip, any count, plus "Shop by goal" chips derived
   from every product's `best_for`), best sellers (in `Home.jsx`), `Routine`
-  (morning, midday and night panels built from every product's
-  `recommended_stack`, each row with its own add button), `Standard` (the
+  ("When to take what": the daily schedule as one `.facts` table, a row per
+  time of day with the rationale and the formulas the labels name, built
+  from every product's `recommended_stack`; text rows with an add button,
+  no thumbnails), `Standard` (the
   six Formulary rules), `IngredientIndex` (the actives across the range as
   a bordered grid with formula counts and a filler cell that closes the last
   row), `ProofBand` (navy field, counting stats), `Testimonials`,
@@ -154,9 +159,9 @@ studio backdrop disappears and the bottle looks placed, not pasted.
   education sections ship with defaults in `services/homepage.js`
   (`DEFAULT_STANDARDS`, `DEFAULT_EDUCATION`) and read `homepage_standards`
   and `homepage_education` when an admin saves them; no editor exists yet.
-- Catalogue-derived copy (goals, routine, ingredient index) is computed in
+- Catalogue-derived copy (goals, schedule, ingredient index) is computed in
   `services/homepage.js` from `best_for`, `recommended_stack` and product
-  names. `INGREDIENT_ROLES` holds the one-line role for each active; a new
+  names. The schedule's three "why" sentences live in `SLOT_DEFS` there. `INGREDIENT_ROLES` holds the one-line role for each active; a new
   formula joins the index when its name matches an entry.
 - The FAQ lives once, in `content/faqs.js`; the FAQ page renders all of it
   and the home page renders `HOME_FAQS`.

@@ -155,7 +155,7 @@ export const DEFAULT_EDUCATION = [
         title: "When to take what",
         text: "Fat-soluble nutrients such as vitamin D3 and omega-3 absorb best with a meal that contains some fat. Iron is better taken on its own with vitamin C, away from tea, coffee and calcium. Magnesium and ashwagandha suit the evening. Consistency matters more than the exact hour.",
         href: "#routine",
-        linkText: "Build a routine",
+        linkText: "See the daily schedule",
     },
     {
         icon: "testing",
@@ -208,10 +208,22 @@ export function deriveGoals(products, limit = 10) {
         .slice(0, limit);
 }
 
+/** The three times of day on the schedule. `why` is the one-sentence
+ *  rationale shown beside each row; it names nutrient classes, not products,
+ *  so it stays true as the catalogue changes. */
 const SLOT_DEFS = [
-    { key: "morning", title: "Morning", note: "With breakfast", re: /^(am|morning|breakfast)$/i },
-    { key: "midday", title: "Midday", note: "With lunch", re: /^(midday|noon|afternoon|lunch)$/i },
-    { key: "night", title: "Night", note: "After dinner", re: /^(pm|night|evening|bedtime|bed|dinner)$/i },
+    {
+        key: "morning", title: "Morning", note: "With breakfast", re: /^(am|morning|breakfast)$/i,
+        why: "Multivitamins, B-complex and vitamin D3 go with the first meal. The fat in food helps the fat-soluble vitamins absorb, and a breakfast habit is the easiest one to keep.",
+    },
+    {
+        key: "midday", title: "Midday", note: "With lunch", re: /^(midday|noon|afternoon|lunch)$/i,
+        why: "Water-soluble nutrients such as vitamin C are not stored for long, so a dose with lunch keeps the day's intake spread out rather than front-loaded.",
+    },
+    {
+        key: "night", title: "Night", note: "After dinner", re: /^(pm|night|evening|bedtime|bed|dinner)$/i,
+        why: "Calcium and magnesium suit the evening, away from the tea and coffee that hinder mineral absorption. Omega-3 goes with dinner, the meal with the most fat, and ashwagandha is traditionally taken before bed.",
+    },
 ];
 
 const squash = (s) => String(s || "").toLowerCase().replace(/[^a-z0-9]/g, "");
@@ -226,12 +238,12 @@ function matchByName(token, products) {
 }
 
 /**
- * "Build your routine": reads every product's `recommended_stack`
+ * "When to take what" (the daily schedule): reads every product's `recommended_stack`
  * ("AM: Multivitamin • PM: Omega-3", "Midday: Vitamin C") and gathers the
  * formulas named for each time of day, ranked by how often the labels name
  * them. Tokens that match no product are skipped, so admin spelling never
  * breaks the section.
- * @returns {Array<{key:string, title:string, note:string, products:Array<object>}>}
+ * @returns {Array<{key:string, title:string, note:string, why:string, products:Array<object>}>}
  */
 export function buildRoutine(products, perSlot = 4) {
     const active = (products || []).filter((p) => p.isActive !== false);
@@ -260,6 +272,7 @@ export function buildRoutine(products, perSlot = 4) {
         key: def.key,
         title: def.title,
         note: def.note,
+        why: def.why,
         products: [...tallies[i].values()]
             .sort((a, b) => b.count - a.count || a.product.name.localeCompare(b.product.name))
             .slice(0, perSlot)

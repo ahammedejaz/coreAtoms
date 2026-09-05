@@ -13,13 +13,13 @@
  * `services/homepage.fetchHomepageReviews()`.
  *
  * Three sections are derived from the live catalogue rather than settings:
- * the "Shop by goal" chips (every product's `best_for`), "Build your
- * routine" (every product's `recommended_stack`) and "What's inside"
+ * the "Shop by goal" chips (every product's `best_for`), the daily schedule
+ * in "When to take what" (every product's `recommended_stack`) and "What's inside"
  * (product names against the ingredient index). See services/homepage.js.
  *
  * This file only loads data and orders the sections; each section lives in
  * `components/home/`. Section order: hero, pillars panel, category tiles and
- * goals, best sellers, routine, the Formulary standard, ingredient index,
+ * goals, best sellers, daily schedule, the Formulary standard, ingredient index,
  * proof band (navy), testimonials, education, FAQ preview, recently viewed,
  * manifesto.
  *

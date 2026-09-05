@@ -1,11 +1,14 @@
 /**
- * Routine.jsx — "Build your routine": morning, midday and night columns of
- * the formulas the labels name for each time of day (see `buildRoutine` in
- * services/homepage.js). Each row is a compact product line with its own
- * add button, so a visitor can assemble a day's stack without leaving the
- * page. White panels on the bone field; hairline rows inside.
+ * Routine.jsx — "When to take what": the range's daily schedule, drawn as
+ * one Supplement-Facts table (`.facts`) rather than product cards. Each row
+ * is a time of day: the slot on the left, one sentence on why those
+ * nutrients suit that hour, and the formulas the labels name for it (see
+ * `buildRoutine` in services/homepage.js) as text-only lines with a price
+ * and an add button. No thumbnails: the copy is the content here, and a
+ * short row (one formula at midday) reads as a short row, not an empty
+ * card.
  *
- * @param {{ slots: Array<{key:string, title:string, note:string, products:Array<object>}>, onAdd: Function, justAddedId: string|null }} props
+ * @param {{ slots: Array<{key:string, title:string, note:string, why:string, products:Array<object>}>, onAdd: Function, justAddedId: string|null }} props
  * @module components/home/Routine
  */
 import { Link } from "react-router-dom";
@@ -16,46 +19,42 @@ import { isOutOfStock } from "../../services/products";
 
 const ICONS = { morning: Sunrise, midday: Sun, night: Moon };
 
-/** "Immunity • Skin health" → "Immunity, Skin health" */
-function benefitLine(p) {
-  return String(p?.bestFor || "").split(/\s*[•·|,]\s*/).filter(Boolean).join(", ") || p?.category || "";
-}
+/** Slot | why | formulas. Shared by the header row and every body row. */
+const COLS = "lg:grid-cols-[10.5rem_minmax(0,1fr)_minmax(0,1.15fr)] lg:gap-x-10";
 
 function Row({ p, onAdd, justAdded }) {
   const hasVariants = (p.variants || []).length > 0;
   const out = isOutOfStock(p);
   const href = `/product/${p.id}`;
   return (
-    <li className="flex items-center gap-4 py-3.5">
-      <Link to={href} className="h-16 w-16 shrink-0 overflow-hidden rounded-xl bg-bone" tabIndex={-1} aria-hidden="true">
-        {p.image && (
-          <img src={p.image} alt="" loading="lazy" className="product-img h-full w-full object-cover" style={{ objectPosition: p.imagePosition || "50% 50%" }} />
-        )}
+    <li className="flex items-center gap-3 py-2">
+      <Link to={href} className="min-w-0 flex-1 truncate text-[14.5px] font-semibold leading-snug text-ink transition-colors hover:text-brand">
+        {p.name}
       </Link>
-      <div className="min-w-0 flex-1">
-        <Link to={href} className="block truncate text-[14.5px] font-semibold leading-snug text-ink transition-colors hover:text-brand">{p.name}</Link>
-        <p className="mt-0.5 truncate text-[12.5px] text-stone-500">{benefitLine(p)}</p>
-        <p className="mt-1 font-display text-[14px] font-semibold tabular-nums tracking-tight text-ink">
-          {hasVariants && <span className="font-sans text-[11px] font-medium text-stone-500">From </span>}
-          {money(p.price)}
-        </p>
-      </div>
+      <span className="shrink-0 font-display text-[14px] font-semibold tabular-nums tracking-tight text-ink">
+        {hasVariants && <span className="font-sans text-[11px] font-medium text-stone-500">From </span>}
+        {money(p.price)}
+      </span>
       {out ? (
-        <span className="pill shrink-0">Sold out</span>
+        <span className="w-8 shrink-0 text-center text-[11px] font-medium leading-tight text-stone-500">Sold<br />out</span>
       ) : hasVariants ? (
-        <Link to={href} className="btn-icon h-10 w-10 shrink-0" aria-label={`Choose a size for ${p.name}`}>
-          <ArrowRight className="h-4 w-4" strokeWidth={1.75} aria-hidden="true" />
+        <Link
+          to={href}
+          className="grid h-8 w-8 shrink-0 place-items-center rounded-full border border-line-strong text-ink transition-colors hover:border-ink hover:bg-bone"
+          aria-label={`Choose a size for ${p.name}`}
+        >
+          <ArrowRight className="h-3.5 w-3.5" strokeWidth={1.75} aria-hidden="true" />
         </Link>
       ) : (
         <button
           type="button"
           onClick={() => onAdd(p)}
           aria-label={justAdded ? `${p.name} added` : `Add ${p.name} to cart`}
-          className={`grid h-10 w-10 shrink-0 place-items-center rounded-full text-white transition-[scale,background-color] duration-200 ease-out-strong active:scale-[0.92] ${justAdded ? "bg-emerald-600" : "bg-ink hover:bg-brand"}`}
+          className={`grid h-8 w-8 shrink-0 place-items-center rounded-full text-white transition-[scale,background-color] duration-200 ease-out-strong active:scale-[0.92] ${justAdded ? "bg-emerald-600" : "bg-ink hover:bg-brand"}`}
         >
           {justAdded
-            ? <Check className="h-4 w-4" strokeWidth={2.25} aria-hidden="true" />
-            : <Plus className="h-4 w-4" strokeWidth={2} aria-hidden="true" />}
+            ? <Check className="h-3.5 w-3.5" strokeWidth={2.25} aria-hidden="true" />
+            : <Plus className="h-3.5 w-3.5" strokeWidth={2} aria-hidden="true" />}
         </button>
       )}
     </li>
@@ -65,7 +64,6 @@ function Row({ p, onAdd, justAdded }) {
 export default function Routine({ slots, onAdd, justAddedId }) {
   const shown = (slots || []).filter((s) => s.products.length > 0);
   if (shown.length === 0) return null;
-  const cols = shown.length === 1 ? "grid-cols-1 max-w-xl" : shown.length === 2 ? "grid-cols-1 md:grid-cols-2" : "grid-cols-1 md:grid-cols-2 lg:grid-cols-3";
 
   return (
     <section id="routine" className="scroll-mt-24 bg-bone py-14 lg:py-20" aria-labelledby="routine-heading">
@@ -73,9 +71,9 @@ export default function Routine({ slots, onAdd, justAddedId }) {
         <ScrollReveal>
           <div className="flex flex-col gap-5 sm:flex-row sm:items-end sm:justify-between">
             <div>
-              <h2 id="routine-heading" className="font-display text-4xl font-semibold tracking-[-0.03em] text-ink sm:text-5xl">Build your routine</h2>
+              <h2 id="routine-heading" className="font-display text-4xl font-semibold tracking-[-0.03em] text-ink sm:text-5xl">When to take what</h2>
               <p className="mt-2 max-w-xl text-[15px] text-stone-600">
-                Each label names what it pairs well with and when to take it. Put a morning, midday and night together from those pairings; consistency does more than any single formula.
+                Every label carries a pairing note: what a formula goes with and when. Read together, they give the range a daily schedule from breakfast to bedtime.
               </p>
             </div>
             <Link to="/shop" className="btn-secondary hidden shrink-0 sm:inline-flex">
@@ -85,34 +83,49 @@ export default function Routine({ slots, onAdd, justAddedId }) {
           </div>
         </ScrollReveal>
 
-        <div className={`mt-8 grid items-start gap-4 lg:gap-5 ${cols}`}>
-          {shown.map((slot, i) => {
-            const Icon = ICONS[slot.key] || Sun;
-            return (
-              <ScrollReveal key={slot.key} delay={i * 90} className="panel px-5 pb-2 pt-5 sm:px-6">
-                <div className="flex items-center justify-between gap-3 border-b border-line pb-4">
-                  <div className="flex items-center gap-3">
-                    <span className="grid h-10 w-10 place-items-center rounded-full bg-bone text-brand">
+        <ScrollReveal delay={80} className="facts mt-8 px-5 pb-1 pt-5 sm:px-7 sm:pt-6">
+          <div className="facts-title flex items-end justify-between gap-4">
+            <span>Daily schedule</span>
+            <span className="hidden font-sans text-[12.5px] font-medium tracking-normal text-stone-500 tabular-nums sm:block">
+              {shown.reduce((n, s) => n + s.products.length, 0)} formulas
+            </span>
+          </div>
+          <div className={`facts-sub grid ${COLS}`}>
+            <span className="lg:hidden">Morning to night, with meals</span>
+            <span className="hidden lg:block">Time of day</span>
+            <span className="hidden lg:block">Why then</span>
+            <span className="hidden lg:block">Formulas</span>
+          </div>
+
+          <ol>
+            {shown.map((slot) => {
+              const Icon = ICONS[slot.key] || Sun;
+              return (
+                <li key={slot.key} className={`grid gap-y-3 border-b border-line py-5 last:border-b-0 lg:py-6 ${COLS}`}>
+                  <div className="flex items-center gap-3 lg:self-start">
+                    <span className="grid h-10 w-10 shrink-0 place-items-center rounded-full bg-bone text-brand">
                       <Icon className="h-5 w-5" strokeWidth={1.6} aria-hidden="true" />
                     </span>
                     <div>
-                      <p className="font-display text-xl font-semibold tracking-tight text-ink">{slot.title}</p>
+                      <p className="font-display text-xl font-semibold leading-tight tracking-tight text-ink">{slot.title}</p>
                       <p className="text-[12.5px] text-stone-500">{slot.note}</p>
                     </div>
                   </div>
-                  <span className="text-[12.5px] text-stone-500 tabular-nums">
-                    {slot.products.length} formula{slot.products.length !== 1 ? "s" : ""}
-                  </span>
-                </div>
-                <ul className="divide-y divide-line">
-                  {slot.products.map((p) => (
-                    <Row key={p.id} p={p} onAdd={onAdd} justAdded={justAddedId === p.id} />
-                  ))}
-                </ul>
-              </ScrollReveal>
-            );
-          })}
-        </div>
+                  <p className="max-w-md text-[14px] leading-relaxed text-stone-600">{slot.why}</p>
+                  <ul className="divide-y divide-line lg:-my-2">
+                    {slot.products.map((p) => (
+                      <Row key={p.id} p={p} onAdd={onAdd} justAdded={justAddedId === p.id} />
+                    ))}
+                  </ul>
+                </li>
+              );
+            })}
+          </ol>
+
+          <p className="facts-foot">
+            Timings are general guidance drawn from each label's pairing notes, not medical advice. Follow the directions on your pack, and ask a doctor first if you are pregnant, nursing or taking medication.
+          </p>
+        </ScrollReveal>
       </div>
     </section>
   );

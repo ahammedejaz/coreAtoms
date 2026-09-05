@@ -50,6 +50,7 @@ import useRecentlyViewed from "../hooks/useRecentlyViewed";
 import Magnetic from "../components/fx/Magnetic";
 import RevealText from "../components/fx/RevealText";
 import Cutout from "../components/Cutout";
+import { useSiteContent } from "../services/siteContent";
 import { useMotion } from "../context/MotionContext";
 import { motion, useScroll, useTransform, useMotionValueEvent } from "motion/react";
 
@@ -127,6 +128,7 @@ function ClampedText({ text }) {
 }
 
 export default function ProductDetail() {
+  const pageCopy = useSiteContent("page_product");
   const { id } = useParams();
   const navigate = useNavigate();
   const { items, addItem, maxItems, updateQty } = useCart();
@@ -596,7 +598,7 @@ export default function ProductDetail() {
 
             {/* Trust row */}
             <ul className="mt-7 grid grid-cols-2 gap-x-4 gap-y-4 border-y border-line py-5">
-              {TRUST_POINTS.map(({ label, icon: Icon }) => (
+              {TRUST_POINTS.map(({ label, icon: Icon }, i) => ({ icon: Icon, label: pageCopy.trustPoints?.[i] || label })).map(({ label, icon: Icon }) => (
                 <li key={label} className="flex items-center gap-2.5 text-[12.5px] font-medium text-stone-700">
                   <Icon className="h-[18px] w-[18px] shrink-0 text-brand" strokeWidth={1.6} aria-hidden="true" />
                   {label}
@@ -636,7 +638,7 @@ export default function ProductDetail() {
 
       {/* ── Reviews ── */}
       {product.reviews?.length > 0 && (
-        <Section id="reviews" title="Reviews">
+        <Section id="reviews" title={pageCopy.sectionTitles.reviews}>
           <RatingBreakdown reviews={product.reviews} avgRating={product.avgRating} reviewCount={product.reviewCount} />
           <ul className="mt-8 divide-y divide-line border-t border-line">
             {product.reviews.map((r) => (
@@ -691,7 +693,7 @@ export default function ProductDetail() {
       <div className="mx-auto max-w-6xl px-5 sm:px-6">
         <RecentlyViewed excludeId={product.id} gstPercent={gstPercent} className="mt-16 border-t border-line pt-12" />
       </div>
-      <RelatedProducts productId={product.id} category={product.category} gstPercent={gstPercent} />
+      <RelatedProducts productId={product.id} category={product.category} gstPercent={gstPercent} title={pageCopy.sectionTitles.related} />
     </div>
   );
 }
@@ -723,7 +725,7 @@ function Section({ id, title, children }) {
 
 function BenefitsSection({ benefits }) {
   return (
-    <Section title="What it does for you">
+    <Section title={useSiteContent("page_product").sectionTitles.benefits}>
       <ul className="grid gap-x-8 gap-y-6 sm:grid-cols-2">
         {benefits.map((b, i) => (
           <li key={i} className="flex gap-4">
@@ -745,7 +747,7 @@ function AboutSection({ text }) {
   const [expanded, setExpanded] = useState(false);
   const isLong = text.length > 900;
   return (
-    <Section title="About this product">
+    <Section title={useSiteContent("page_product").sectionTitles.about}>
       <div className={!expanded && isLong ? "relative max-h-80 overflow-hidden" : undefined}>
         <RichText text={text} />
         {!expanded && isLong && (
@@ -769,6 +771,7 @@ function AboutSection({ text }) {
 function IngredientsSection({ ingredients, product }) {
   const hasAmounts = ingredients.some((r) => r.amount);
   const { stage } = useMotion();
+  const pageCopy = useSiteContent("page_product");
   const ref = useRef(null);
   const { scrollYProgress } = useScroll({ target: ref, offset: ["start 0.3", "end 0.9"] });
   const [step, setStep] = useState(0);
@@ -807,15 +810,15 @@ function IngredientsSection({ ingredients, product }) {
   );
 
   if (!stage || !product?.image) {
-    return <Section title="What's inside">{facts}</Section>;
+    return <Section title={pageCopy.sectionTitles.inside}>{facts}</Section>;
   }
 
   return (
     <section ref={ref} className="mx-auto mt-14 max-w-6xl border-t border-line px-5 pt-10 sm:px-6 lg:mt-16 lg:pt-12">
       <div className="grid gap-6 lg:grid-cols-[minmax(0,1fr)_minmax(0,2fr)] lg:gap-16">
         <div className="lg:sticky lg:top-32 lg:self-start">
-          <RevealText as="h2" text="What's inside" className="font-display text-2xl font-semibold tracking-tight text-ink sm:text-3xl" />
-          <p className="mt-3 max-w-xs text-[14px] leading-relaxed text-stone-500">Scroll through the label. Each ingredient appears as you reach it.</p>
+          <RevealText as="h2" text={pageCopy.sectionTitles.inside} className="font-display text-2xl font-semibold tracking-tight text-ink sm:text-3xl" />
+          <p className="mt-3 max-w-xs text-[14px] leading-relaxed text-stone-500">{pageCopy.storyHint}</p>
         </div>
         <div className="lg:grid lg:min-h-[150vh] lg:grid-cols-[minmax(0,0.85fr)_minmax(0,1.15fr)] lg:gap-10">
           <div className="lg:sticky lg:top-28 lg:h-[72vh]">
@@ -846,7 +849,7 @@ function IngredientsSection({ ingredients, product }) {
 
 function HowToUseSection({ steps }) {
   return (
-    <Section title="How to use">
+    <Section title={useSiteContent("page_product").sectionTitles.howToUse}>
       <ol className="space-y-5">
         {steps.map((step, i) => (
           <li key={i} className="flex gap-5">
@@ -868,7 +871,7 @@ function RoutineSection({ product }) {
     product.recommendedStack && { label: "Recommended stack", text: product.recommendedStack },
   ].filter(Boolean);
   return (
-    <Section title="Build your stack">
+    <Section title={useSiteContent("page_product").sectionTitles.stack}>
       <dl className="grid divide-y divide-line sm:grid-cols-3 sm:divide-x sm:divide-y-0">
         {cells.map((c) => (
           <div key={c.label} className="py-4 sm:px-6 sm:py-1 sm:first:pl-0 sm:last:pr-0">
@@ -884,7 +887,7 @@ function RoutineSection({ product }) {
 function FaqSection({ faqs }) {
   const [open, setOpen] = useState(null);
   return (
-    <Section title="Questions, answered">
+    <Section title={useSiteContent("page_product").sectionTitles.faqs}>
       <div className="divide-y divide-line border-y border-line">
         {faqs.map((f, i) => {
           const isOpen = open === i;
@@ -914,7 +917,7 @@ function FaqSection({ faqs }) {
 
 function SafetySection({ text }) {
   return (
-    <Section title="Safety information">
+    <Section title={useSiteContent("page_product").sectionTitles.safety}>
       <div className="flex gap-4 rounded-panel bg-bone p-5 sm:p-6">
         <ShieldAlert className="mt-0.5 h-5 w-5 shrink-0 text-brand" strokeWidth={1.6} aria-hidden="true" />
         <RichText text={text} />
@@ -936,12 +939,7 @@ function ProductStory({ product }) {
       {d.faqs?.length > 0 && <FaqSection faqs={d.faqs} />}
       {d.safetyInfo && <SafetySection text={d.safetyInfo} />}
       <div className="mx-auto mt-10 max-w-6xl px-5 sm:px-6">
-        <p className="max-w-3xl text-[12px] leading-relaxed text-stone-500">
-          Nutraceutical supplements are not a substitute for a varied, balanced diet or a healthy
-          lifestyle, and are not intended to diagnose, treat, cure or prevent any disease. Consult
-          your healthcare professional before use if you are pregnant, nursing, on medication or
-          have a medical condition.
-        </p>
+        <p className="max-w-3xl text-[12px] leading-relaxed text-stone-500">{useSiteContent("page_product").disclaimer}</p>
       </div>
     </>
   );

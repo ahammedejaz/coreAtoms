@@ -3,20 +3,23 @@
  *
  * Carries the three facts a first-time visitor decides on: the free-shipping
  * threshold (from `free_shipping_min`), Cash on Delivery (from `cod_enabled`)
- * and lab testing. Desktop shows all three; phones rotate through them one
- * at a time so the strip stays a single line.
+ * and any extra lines from Site content. Desktop shows them all; phones
+ * rotate through them one at a time so the strip stays a single line. With
+ * nothing to say the strip is absent.
  *
  * @module components/AnnouncementBar
  */
 import { useEffect, useMemo, useState } from "react";
 import { fetchPricingSettings, EMPTY_PRICING } from "../services/settings";
 import { money } from "../utils/format";
+import { useSiteContent } from "../services/siteContent";
 
 const ROTATE_MS = 4200;
 
 export default function AnnouncementBar() {
   const [pricing, setPricing] = useState(EMPTY_PRICING);
   const [index, setIndex] = useState(0);
+  const { announcement } = useSiteContent("site_global");
 
   useEffect(() => {
     let on = true;
@@ -26,17 +29,19 @@ export default function AnnouncementBar() {
 
   const messages = useMemo(() => {
     const list = [];
-    if (pricing.freeShippingMin > 0) list.push(`Free shipping on orders over ${money(pricing.freeShippingMin)}`);
-    if (pricing.codEnabled) list.push("Cash on Delivery across India");
-    list.push("Every batch third-party lab tested");
+    if (announcement.showShipping && pricing.freeShippingMin > 0) list.push(`Free shipping on orders over ${money(pricing.freeShippingMin)}`);
+    if (announcement.showCod && pricing.codEnabled) list.push("Cash on Delivery across India");
+    (announcement.extra || []).forEach((m) => { if (m && String(m).trim()) list.push(String(m).trim()); });
     return list;
-  }, [pricing]);
+  }, [pricing, announcement]);
 
   useEffect(() => {
     if (messages.length <= 1) return;
     const t = setInterval(() => setIndex((i) => (i + 1) % messages.length), ROTATE_MS);
     return () => clearInterval(t);
   }, [messages.length]);
+
+  if (messages.length === 0) return null;
 
   return (
     <div className="bg-navy-950 text-white/85 text-[12.5px] font-medium tracking-tight">

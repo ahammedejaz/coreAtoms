@@ -15,10 +15,14 @@
  *     (the "Calcium Citrate" line above its explanation in a monograph)
  *   • **text** renders bold
  *
+ *   • [label](/path) renders a link (internal paths route in-app)
+ *   • {name} placeholders are filled from the `vars` prop
+ *
  * Pure parsing — no HTML passes through, so pasted markup can't inject.
  *
  * @module components/RichText
  */
+import { Link } from "react-router-dom";
 
 const BULLET_RX = /^\s*[•·▪‣∙*-]\s+/;
 const ORDERED_RX = /^\s*\d{1,3}[.)]\s*/;
@@ -74,17 +78,49 @@ export function parseRichText(text) {
   return blocks;
 }
 
-/** Renders `**bold**` spans; everything else is plain text. */
+/** Renders `**bold**` spans and `[label](url)` links; everything else is plain text. */
+const INLINE_RX = /(\*\*.+?\*\*|\[[^\]]+\]\([^)\s]+\))/g;
+const LINK_RX = /^\[([^\]]+)\]\(([^)\s]+)\)$/;
+
 function Inline({ text }) {
-  const parts = String(text).split(/\*\*(.+?)\*\*/g);
+  const parts = String(text).split(INLINE_RX);
   if (parts.length === 1) return text;
-  return parts.map((part, i) =>
-    i % 2 === 1 ? <strong key={i} className="font-semibold text-stone-800">{part}</strong> : part
-  );
+  return parts.map((part, i) => {
+    if (i % 2 === 0) return part;
+    if (part.startsWith("**")) return <strong key={i} className="font-semibold text-stone-800">{part.slice(2, -2)}</strong>;
+    const m = part.match(LINK_RX);
+    if (!m) return part;
+    const [, label, href] = m;
+    const cls = "font-medium text-brand underline underline-offset-2";
+    if (href.startsWith("/")) return <Link key={i} to={href} className={cls}>{label}</Link>;
+    if (href.startsWith("#") || href.startsWith("mailto:") || href.startsWith("tel:")) return <a key={i} href={href} className={cls}>{label}</a>;
+    return <a key={i} href={href} target="_blank" rel="noopener noreferrer" className={cls}>{label}</a>;
+  });
 }
 
-export default function RichText({ text, className = "" }) {
-  const blocks = parseRichText(text);
+/**
+ * Fills `{name}` placeholders from `vars`. Missing values disappear along
+ * with any stray spaces or dangling "at"/"," they leave behind. Only spaces
+ * within a line are tidied; line breaks are the paragraph and bullet grammar
+ * and must survive.
+ */
+export function fillVars(text, vars) {
+  if (!vars) return String(text || "");
+  return String(text || "")
+    .replace(/\{(\w+)\}/g, (_, k) => (vars[k] ? String(vars[k]) : ""))
+    .replace(/[ \t]+(at|,)[ \t]+(?=[.,])/g, "")
+    .replace(/[ \t]{2,}/g, " ")
+    .replace(/[ \t]+([.,;])/g, "$1");
+}
+
+const SIZES = {
+  default: { p: "text-sm", li: "text-sm" },
+  legal: { p: "text-[15px]", li: "text-[15px]" },
+};
+
+export default function RichText({ text, className = "", vars = null, variant = "default" }) {
+  const size = SIZES[variant] || SIZES.default;
+  const blocks = parseRichText(fillVars(text, vars));
   if (blocks.length === 0) return null;
 
   return (
@@ -106,20 +142,20 @@ export default function RichText({ text, className = "" }) {
         }
         if (b.type === "ul") {
           return (
-            <ul key={i} className="mt-2 mb-1 list-disc space-y-1.5 pl-5 text-sm leading-relaxed text-stone-600 marker:text-[#1e3a5f]">
+            <ul key={i} className={`mt-2 mb-1 list-disc space-y-1.5 pl-5 ${size.li} leading-relaxed text-stone-600 marker:text-[#1e3a5f]`}>
               {b.items.map((item, j) => <li key={j}><Inline text={item} /></li>)}
             </ul>
           );
         }
         if (b.type === "ol") {
           return (
-            <ol key={i} className="mt-2 mb-1 list-decimal space-y-1.5 pl-5 text-sm leading-relaxed text-stone-600 marker:font-medium marker:text-stone-400">
+            <ol key={i} className={`mt-2 mb-1 list-decimal space-y-1.5 pl-5 ${size.li} leading-relaxed text-stone-600 marker:font-medium marker:text-stone-400`}>
               {b.items.map((item, j) => <li key={j}><Inline text={item} /></li>)}
             </ol>
           );
         }
         return (
-          <p key={i} className="mt-1.5 first:mt-0 text-sm leading-relaxed text-stone-600">
+          <p key={i} className={`mt-3 first:mt-0 ${size.p} leading-relaxed text-stone-600`}>
             <Inline text={b.text} />
           </p>
         );

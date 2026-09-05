@@ -13,7 +13,7 @@ import { fetchProductsCached } from "../services/products";
 import { useCart } from "../context/CartContext";
 import ProductCard from "./ProductCard";
 
-export default function RecentlyViewed({ excludeId, gstPercent = 0, className = "" }) {
+export default function RecentlyViewed({ excludeId, gstPercent = 0, className = "", title = "Recently viewed" }) {
   const { ids } = useRecentlyViewed();
   const { addItem } = useCart();
   const [products, setProducts] = useState([]);
@@ -55,7 +55,7 @@ export default function RecentlyViewed({ excludeId, gstPercent = 0, className = 
     <section className={className} aria-labelledby="recently-viewed-heading">
       <div className="mb-6 flex items-center gap-2.5">
         <Clock className="h-4 w-4 text-stone-400" strokeWidth={1.75} aria-hidden="true" />
-        <h2 id="recently-viewed-heading" className="font-display text-xl font-semibold tracking-tight text-ink sm:text-2xl">Recently viewed</h2>
+        <h2 id="recently-viewed-heading" className="font-display text-xl font-semibold tracking-tight text-ink sm:text-2xl">{title}</h2>
       </div>
       <div className="-mx-5 flex snap-x snap-mandatory gap-4 overflow-x-auto px-5 pb-2 scroll-px-5 no-scrollbar sm:-mx-6 sm:px-6 sm:scroll-px-6">
         {visible.map((p) => (

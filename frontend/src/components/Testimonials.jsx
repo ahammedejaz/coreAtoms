@@ -104,7 +104,7 @@ function RatingBand({ summary }) {
   );
 }
 
-export default function Testimonials({ reviews: raw, summary }) {
+export default function Testimonials({ reviews: raw, summary, title = "What customers say" }) {
   const reviews = quotable(raw);
   if (reviews.length < 3) return summary?.count > 0 ? <RatingBand summary={summary} /> : null;
 
@@ -118,7 +118,7 @@ export default function Testimonials({ reviews: raw, summary }) {
       <div className="mx-auto max-w-6xl px-5 sm:px-6">
         <ScrollReveal>
           <div className="flex flex-col gap-4 sm:flex-row sm:items-end sm:justify-between">
-            <RevealText id="testimonials-heading" text="What customers say" className="font-display text-4xl font-semibold tracking-[-0.03em] text-ink sm:text-5xl" />
+            <RevealText id="testimonials-heading" text={title} className="font-display text-4xl font-semibold tracking-[-0.03em] text-ink sm:text-5xl" />
             {summary?.count > 0 && (
               <div className="flex items-center gap-3 text-[14px] text-stone-600">
                 <ReviewStars rating={Math.round(summary.average)} iconClassName="h-4 w-4" />

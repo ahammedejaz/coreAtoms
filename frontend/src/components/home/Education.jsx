@@ -5,7 +5,7 @@
  * White panels on the bone field, one lucide icon each, each with a link
  * into the FAQ, the shop or the routine section.
  *
- * @param {{ cards: Array<{icon?:string, title:string, text:string, href?:string, linkText?:string}> }} props
+ * @param {{ cards: Array<{icon?:string, title:string, text:string, href?:string, linkText?:string}>, heading?: string, intro?: string }} props
  * @module components/home/Education
  */
 import { Link } from "react-router-dom";
@@ -22,7 +22,7 @@ function CardLink({ href, children, className }) {
   return <Link to={href} className={className}>{children}</Link>;
 }
 
-export default function Education({ cards }) {
+export default function Education({ cards, heading = "Know your supplements", intro = "Four things worth understanding before you buy a supplement, from us or anyone else." }) {
   const rows = (cards || []).filter((c) => c?.title).slice(0, 4);
   if (rows.length === 0) return null;
 
@@ -32,8 +32,8 @@ export default function Education({ cards }) {
         <ScrollReveal>
           <div className="flex items-end justify-between gap-6">
             <div>
-              <RevealText id="learn-heading" text="Know your supplements" className="font-display text-4xl font-semibold tracking-[-0.03em] text-ink sm:text-5xl" />
-              <p className="mt-2 max-w-xl text-[15px] text-stone-600">Four things worth understanding before you buy a supplement, from us or anyone else.</p>
+              <RevealText id="learn-heading" text={heading} className="font-display text-4xl font-semibold tracking-[-0.03em] text-ink sm:text-5xl" />
+              <p className="mt-2 max-w-xl text-[15px] text-stone-600">{intro}</p>
             </div>
             <Link to="/faq" className="btn-secondary hidden shrink-0 sm:inline-flex">
               Read the FAQ

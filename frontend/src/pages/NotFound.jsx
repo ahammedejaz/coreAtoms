@@ -13,9 +13,11 @@ import useDocumentTitle from "../hooks/useDocumentTitle";
 import { useEffect, useState } from "react";
 import Cutout from "../components/Cutout";
 import { fetchProductsCached } from "../services/products";
+import { useSiteContent } from "../services/siteContent";
 
 export default function NotFound() {
   useDocumentTitle("Page Not Found | Core Atoms");
+  const copy = useSiteContent("page_errors");
   const [leadProduct, setLeadProduct] = useState(null);
   useEffect(() => {
     let on = true;
@@ -31,8 +33,8 @@ export default function NotFound() {
         </div>
       )}
       <p className="font-display text-[6rem] font-semibold leading-none tracking-[-0.06em] text-ink sm:text-[8.5rem]" aria-hidden="true">404</p>
-      <h1 className="mt-4 font-display text-2xl font-semibold tracking-tight text-ink sm:text-3xl">That page isn't on the label</h1>
-      <p className="mt-2 max-w-sm text-sm text-stone-500">The address doesn't match anything on the site. It may have moved, or the link had a typo.</p>
+      <h1 className="mt-4 font-display text-2xl font-semibold tracking-tight text-ink sm:text-3xl">{copy.notFoundTitle}</h1>
+      <p className="mt-2 max-w-sm text-sm text-stone-500">{copy.notFoundText}</p>
       <div className="mt-8 flex flex-wrap items-center justify-center gap-3">
         <Link to="/shop" className="btn-primary btn-lg">
           Browse the range

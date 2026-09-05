@@ -12,14 +12,11 @@ import { useEffect, useState } from "react";
 import { Check } from "lucide-react";
 import Cutout from "./Cutout";
 import { fetchProductsCached } from "../services/products";
-
-const POINTS = [
-  "Track every order and shipment live",
-  "Cash on Delivery across India",
-  "CoreCoins on every purchase",
-];
+import { useSiteContent } from "../services/siteContent";
 
 export default function AuthShell({ title, subtitle, children }) {
+  const account = useSiteContent("page_account");
+  const points = (account.panelPoints || []).filter(Boolean).slice(0, 3);
   const [leadProduct, setLeadProduct] = useState(null);
   useEffect(() => {
     let on = true;
@@ -40,10 +37,10 @@ export default function AuthShell({ title, subtitle, children }) {
         <div className="relative z-[2]">
           <img src="/logo.png" alt="Core Atoms" className="h-6 w-auto brightness-0 invert sm:h-7" />
           <p className="mt-6 font-display text-2xl font-semibold leading-[1.05] tracking-[-0.03em] text-white sm:text-3xl lg:mt-10 lg:text-4xl">
-            Every ingredient on the label. Every batch tested.
+            {account.panelHeading}
           </p>
           <ul className="mt-8 hidden space-y-3 lg:block">
-            {POINTS.map((t) => (
+            {points.map((t) => (
               <li key={t} className="flex items-center gap-3 text-[14.5px] text-white/80">
                 <span className="grid h-5 w-5 shrink-0 place-items-center rounded-full bg-white/15">
                   <Check className="h-3 w-3 text-amber" strokeWidth={3} aria-hidden="true" />
@@ -53,7 +50,7 @@ export default function AuthShell({ title, subtitle, children }) {
             ))}
           </ul>
         </div>
-        <p className="relative z-[2] mt-10 hidden text-xs text-white/50 lg:block">Core Atoms. Nutraceuticals made in India.</p>
+        <p className="relative z-[2] mt-10 hidden text-xs text-white/50 lg:block">{account.panelFootnote}</p>
       </aside>
 
       <div className="flex flex-col justify-center p-6 sm:p-10 lg:p-14">

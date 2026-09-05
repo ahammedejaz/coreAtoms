@@ -13,6 +13,7 @@ import { useEffect, useState } from "react";
 import { Link } from "react-router-dom";
 import { ArrowUpRight } from "lucide-react";
 import { fetchStoreInfo, EMPTY_STORE_INFO } from "../services/storeInfo";
+import { useSiteContent } from "../services/siteContent";
 
 const SHOP_LINKS = [
   { label: "All products", to: "/shop" },
@@ -24,7 +25,6 @@ const HELP_LINKS = [
   { label: "FAQ", to: "/faq" },
   { label: "Contact us", to: "/contact" },
   { label: "Track an order", to: "/orders" },
-  { label: "About Atoms Lifecare", href: "https://atomslifecare.com/about" },
 ];
 
 const POLICY_LINKS = [
@@ -62,6 +62,8 @@ export default function Footer() {
   const year = new Date().getFullYear();
   const [info, setInfo] = useState(EMPTY_STORE_INFO);
   useEffect(() => { let on = true; fetchStoreInfo().then((i) => { if (on) setInfo(i); }); return () => { on = false; }; }, []);
+  const { footer } = useSiteContent("site_global");
+  const helpLinks = footer.aboutLabel && footer.aboutUrl ? [...HELP_LINKS, { label: footer.aboutLabel, href: footer.aboutUrl }] : HELP_LINKS;
 
   return (
     <footer className="mt-auto border-t-2 border-ink bg-bone">
@@ -71,12 +73,11 @@ export default function Footer() {
           {/* Brand */}
           <div>
             <img src="/logo.png" alt="Core Atoms" className="h-8 w-auto max-w-[150px] object-contain" />
-            <p className="mt-5 max-w-xs text-[15px] leading-relaxed text-stone-600">
-              Formulas with every ingredient on the label, verified batch by batch, delivered anywhere in India.
-            </p>
+            <p className="mt-5 max-w-xs text-[15px] leading-relaxed text-stone-600">{footer.tagline}</p>
 
+            {footer.instagramHandle && footer.instagramUrl && (
             <a
-              href="https://www.instagram.com/core_atoms/"
+              href={footer.instagramUrl}
               target="_blank"
               rel="noopener noreferrer"
               className="mt-5 inline-flex items-center gap-2 rounded-full border border-line-strong bg-white px-3.5 py-2 text-[13px] font-semibold text-ink transition-colors hover:border-ink"
@@ -84,8 +85,9 @@ export default function Footer() {
               <svg viewBox="0 0 24 24" className="h-4 w-4" fill="none" stroke="currentColor" strokeWidth="1.75" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
                 <rect x="3" y="3" width="18" height="18" rx="5" /><path d="M16 11.37a4 4 0 1 1-7.88 1.26A4 4 0 0 1 16 11.37Z" /><path d="M17.5 6.5h.01" />
               </svg>
-              @core_atoms
+              {footer.instagramHandle}
             </a>
+            )}
 
             {(info.supportEmail || info.supportPhone || info.address) && (
               <address className="mt-6 space-y-0.5 text-[13px] not-italic leading-relaxed text-stone-500">
@@ -98,25 +100,21 @@ export default function Footer() {
           </div>
 
           <Column title="Shop" links={SHOP_LINKS} />
-          <Column title="Help" links={HELP_LINKS} />
+          <Column title="Help" links={helpLinks} />
           <Column title="Policies" links={POLICY_LINKS} />
         </div>
 
         {/* Supplement disclaimer — required presentation for nutraceuticals */}
         <div className="mt-14 border-t border-line-strong pt-6">
           <p className="max-w-3xl text-[12px] leading-relaxed text-stone-500">
-            Products sold on this site are dietary supplements, not medicines, and are not intended to
-            diagnose, treat, cure or prevent any disease. Always read the label and do not exceed the
-            recommended usage. Consult a healthcare professional before use if you are pregnant,
-            nursing, taking medication or have a medical condition. Supplements are not a substitute
-            for a varied diet.
+            {footer.disclaimer}
             {info.fssaiLicense && <> FSSAI Lic. No. {info.fssaiLicense}.</>}
           </p>
         </div>
 
         <div className="mt-6 flex flex-col gap-3 border-t border-line-strong pt-6 text-xs text-stone-500 sm:flex-row sm:items-center sm:justify-between">
           <p>© {year} {info.legalName || "Core Atoms"}. All rights reserved.</p>
-          <p>Made in India, shipped pan-India</p>
+          <p>{footer.madeIn}</p>
         </div>
       </div>
     </footer>

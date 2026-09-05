@@ -28,6 +28,7 @@ import OrderTimeline from "../components/OrderTimeline";
 import ShipmentTracker from "../components/ShipmentTracker";
 import ScrollReveal from "../components/ScrollReveal";
 import RevealText from "../components/fx/RevealText";
+import { useSiteContent } from "../services/siteContent";
 import { Check, ChevronLeft, ChevronRight, Coins, Search, TriangleAlert, RefreshCw, Clock, Camera, PackageOpen, X } from "lucide-react";
 
 
@@ -306,6 +307,7 @@ const STATUS_LABELS = {
 };
 
 export default function MyOrders() {
+  const ordersCopy = useSiteContent("page_orders");
   const { user } = useAuth();
   const userId = user?.id;
 
@@ -464,8 +466,8 @@ export default function MyOrders() {
       {/* Header */}
       <ScrollReveal>
         <div className="mb-8">
-          <RevealText as="h1" text="My orders" className="font-display text-4xl font-semibold tracking-[-0.03em] text-ink sm:text-5xl" />
-          <p className="mt-2 text-sm text-stone-500">Track shipments, raise replacements and leave reviews.</p>
+          <RevealText as="h1" text={ordersCopy.title} className="font-display text-4xl font-semibold tracking-[-0.03em] text-ink sm:text-5xl" />
+          <p className="mt-2 text-sm text-stone-500">{ordersCopy.sub}</p>
         </div>
       </ScrollReveal>
 

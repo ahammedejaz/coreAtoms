@@ -29,7 +29,7 @@
  */
 import { Link } from "react-router-dom";
 import { useCart } from "../context/CartContext";
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { Fragment, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { ArrowRight, ChevronLeft, ChevronRight } from "lucide-react";
 import { fetchProducts } from "../services/products";
 import { supabase } from "../services/supabase/client";
@@ -62,7 +62,8 @@ import {
   buildRoutine,
   buildIngredientIndex,
 } from "../services/homepage";
-import { HOME_FAQS } from "../content/faqs";
+import { useSiteContent } from "../services/siteContent";
+import { DEFAULTS, HOME_SECTIONS } from "../content/siteContent";
 
 /** Generic load failure copy — the raw Supabase message stays in the console. */
 const LOAD_ERROR_MESSAGE = "We couldn't load products just now. Please try again.";
@@ -87,12 +88,6 @@ const DEFAULT_PILLARS = [
   { icon: "⌖", title: "Fast Fulfilment", desc: "Orders dispatched within 24 hours from our facility." },
 ];
 
-/** Copy over the two full-bleed photographs between sections. */
-const DEFAULT_BREAKS = [
-  { text: "Made for the days you keep.", sub: "Formulas built around routines, not resolutions. One dose, the same time, every day." },
-  { text: "Checked before it ships.", sub: "Identity, potency and contaminants, verified on every batch by an independent laboratory." },
-];
-
 const DEFAULT_PHILOSOPHY = {
   label: "Our Philosophy",
   heading: "Built like a system,\nnot a trend.",
@@ -106,7 +101,7 @@ function Container({ children, className = "" }) {
 }
 
 /** Horizontal strip of the pinned best sellers with arrow controls. */
-function BestSellers({ products, loading, error, onRetry, onAdd, justAddedId, gstPercent }) {
+function BestSellers({ products, loading, error, onRetry, onAdd, justAddedId, gstPercent, title = "Best sellers", sub = "The formulas customers come back for." }) {
   const scrollerRef = useRef(null);
   const nudge = (dir) => {
     const el = scrollerRef.current;
@@ -120,8 +115,8 @@ function BestSellers({ products, loading, error, onRetry, onAdd, justAddedId, gs
         <ScrollReveal>
           <div className="flex items-end justify-between gap-6">
             <div>
-              <RevealText id="best-sellers-heading" text="Best sellers" className="font-display text-4xl font-semibold tracking-[-0.03em] text-ink sm:text-5xl" />
-              <p className="mt-2 text-[15px] text-stone-500">The formulas customers come back for.</p>
+              <RevealText id="best-sellers-heading" text={title} className="font-display text-4xl font-semibold tracking-[-0.03em] text-ink sm:text-5xl" />
+              <p className="mt-2 text-[15px] text-stone-500">{sub}</p>
             </div>
             <div className="flex shrink-0 items-center gap-2">
               <Link to="/shop" className="btn-secondary mr-2 hidden sm:inline-flex">
@@ -320,6 +315,40 @@ export default function Home() {
 
   const trust = heroCopy.trustIcons || DEFAULT_HERO_COPY.trustIcons;
 
+  /** Every heading, line and the section order, from Admin → Site content. */
+  const home = useSiteContent("page_home");
+  const faqContent = useSiteContent("page_faq");
+
+  // The standard and the education panels can be saved in two places: the
+  // newer Site content editor wins when it has them, then the older Home
+  // settings, then the defaults.
+  const standardRows = home.standards !== DEFAULTS.page_home.standards
+    ? home.standards
+    : (standards !== DEFAULT_STANDARDS ? standards : home.standards);
+  const educationCards = home.education.cards !== DEFAULTS.page_home.education.cards
+    ? home.education.cards
+    : (education !== DEFAULT_EDUCATION ? education : home.education.cards);
+
+  /** The home page's FAQ picks, resolved against the FAQ page's questions. */
+  const homeFaqs = useMemo(() => {
+    const all = (faqContent.groups || []).flatMap((g) => g?.items || []).filter((f) => f?.q && f?.a);
+    const norm = (v) => String(v || "").trim().toLowerCase();
+    const picks = (home.faq?.picks || []).map((q) => all.find((f) => norm(f.q) === norm(q))).filter(Boolean);
+    return picks.length > 0 ? picks : all.slice(0, 5);
+  }, [faqContent, home.faq?.picks]);
+
+  /** Saved order and visibility, with any section the save predates appended. */
+  const sectionOrder = useMemo(() => {
+    const known = HOME_SECTIONS.map((x) => x.key);
+    const seen = new Set();
+    const list = [];
+    (Array.isArray(home.sections) ? home.sections : []).forEach((x) => {
+      if (x?.key && known.includes(x.key) && !seen.has(x.key)) { seen.add(x.key); list.push({ key: x.key, visible: x.visible !== false }); }
+    });
+    known.forEach((k) => { if (!seen.has(k)) list.push({ key: k, visible: true }); });
+    return list;
+  }, [home.sections]);
+
   /** Shown on the hero only when no photographs are saved. */
   const leadProduct = products[0] || allProducts[0] || null;
 
@@ -348,6 +377,51 @@ export default function Home() {
     return count > 0 ? { count, average: sum / count } : null;
   }, [allProducts]);
 
+  const breaks = Array.isArray(home.breaks) ? home.breaks : [];
+  const sections = {
+    pillars: <Pillars pillars={pillars} />,
+    categories: (
+      <CategoryIndex
+        categories={categories}
+        products={allProducts}
+        goals={goals}
+        heading={home.categories.title}
+        intro={home.categories.sub}
+        goalsLabel={home.categories.goalsLabel}
+      />
+    ),
+    bestSellers: (
+      <BestSellers
+        products={products}
+        loading={loadingProducts}
+        error={fetchError}
+        onRetry={loadData}
+        onAdd={handleAdd}
+        justAddedId={justAddedId}
+        gstPercent={gstPercent}
+        title={home.bestSellers.title}
+        sub={home.bestSellers.sub}
+      />
+    ),
+    routine: (
+      <Routine slots={routine} onAdd={handleAdd} justAddedId={justAddedId} heading={home.routine.title} intro={home.routine.sub} footnote={home.routine.footnote} />
+    ),
+    break1: breakImages[0] && breaks[0]?.text ? <PhotoBreak image={breakImages[0]} text={breaks[0].text} sub={breaks[0].sub} /> : null,
+    standard: <Standard items={standardRows} heading={home.standard.title} intro={home.standard.intro} />,
+    ingredients: <IngredientIndex items={ingredients} total={activeCount} heading={home.ingredients.title} intro={home.ingredients.sub} />,
+    proof: <ProofBand whyUs={whyUs} />,
+    testimonials: <Testimonials reviews={reviews} summary={reviewSummary} title={home.testimonials.title} />,
+    break2: breakImages[1] && breaks[1]?.text ? <PhotoBreak image={breakImages[1]} text={breaks[1].text} sub={breaks[1].sub} align="center" /> : null,
+    education: <Education cards={educationCards} heading={home.education.title} intro={home.education.sub} />,
+    faq: <FaqPreview faqs={homeFaqs} title={home.faq.title} sub={home.faq.sub} />,
+    recentlyViewed: (
+      <Container>
+        <RecentlyViewed gstPercent={gstPercent} className="py-12" title={home.recentlyViewed.title} />
+      </Container>
+    ),
+    manifesto: <Manifesto philosophy={philosophy} />,
+  };
+
   return (
     <div>
       <SEO
@@ -360,43 +434,11 @@ export default function Home() {
 
       <Hero images={heroImages} copy={heroCopy} trust={trust} leadProduct={leadProduct} />
 
-      <Pillars pillars={pillars} />
-
-      <CategoryIndex categories={categories} products={allProducts} goals={goals} />
-
-      <BestSellers
-        products={products}
-        loading={loadingProducts}
-        error={fetchError}
-        onRetry={loadData}
-        onAdd={handleAdd}
-        justAddedId={justAddedId}
-        gstPercent={gstPercent}
-      />
-
-      <Routine slots={routine} onAdd={handleAdd} justAddedId={justAddedId} />
-
-      {breakImages[0] && <PhotoBreak image={breakImages[0]} text={DEFAULT_BREAKS[0].text} sub={DEFAULT_BREAKS[0].sub} />}
-
-      <Standard items={standards} />
-
-      <IngredientIndex items={ingredients} total={activeCount} />
-
-      <ProofBand whyUs={whyUs} />
-
-      <Testimonials reviews={reviews} summary={reviewSummary} />
-
-      {breakImages[1] && <PhotoBreak image={breakImages[1]} text={DEFAULT_BREAKS[1].text} sub={DEFAULT_BREAKS[1].sub} align="center" />}
-
-      <Education cards={education} />
-
-      <FaqPreview faqs={HOME_FAQS} />
-
-      <Container>
-        <RecentlyViewed gstPercent={gstPercent} className="py-12" />
-      </Container>
-
-      <Manifesto philosophy={philosophy} />
+      {sectionOrder.map((x) => {
+        if (!x.visible) return null;
+        const el = sections[x.key];
+        return el ? <Fragment key={x.key}>{el}</Fragment> : null;
+      })}
     </div>
   );
 }

@@ -10,21 +10,20 @@
 import { Link, useRouteError } from "react-router-dom";
 import { ArrowRight, TriangleAlert } from "lucide-react";
 import useDocumentTitle from "../hooks/useDocumentTitle";
+import { useSiteContent } from "../services/siteContent";
 
 export default function ErrorPage() {
   useDocumentTitle("Error | Core Atoms");
   const err = useRouteError();
-  const message =
-    err?.statusText ||
-    err?.message ||
-    "Something went wrong while loading this page.";
+  const copy = useSiteContent("page_errors");
+  const message = err?.statusText || err?.message || copy.errorText;
 
   return (
     <div className="mx-auto flex min-h-[70vh] max-w-2xl flex-col items-center justify-center px-5 py-16 text-center">
       <span className="grid h-16 w-16 place-items-center rounded-full bg-amber-soft text-amber-deep">
         <TriangleAlert className="h-7 w-7" strokeWidth={1.5} aria-hidden="true" />
       </span>
-      <h1 className="mt-8 font-display text-3xl font-semibold tracking-[-0.03em] text-ink sm:text-4xl">Something went wrong</h1>
+      <h1 className="mt-8 font-display text-3xl font-semibold tracking-[-0.03em] text-ink sm:text-4xl">{copy.errorTitle}</h1>
       <p className="mt-3 max-w-md text-sm leading-relaxed text-stone-600">{message}</p>
 
       <div className="mt-8 flex flex-wrap items-center justify-center gap-3">

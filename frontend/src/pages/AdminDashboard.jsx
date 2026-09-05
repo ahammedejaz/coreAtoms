@@ -15,6 +15,7 @@ import AdminReviews from "./admin/AdminReviews.jsx";
 import AdminSettings from "./admin/AdminSettings.jsx";
 import AdminReplacements from "./admin/AdminReplacements.jsx";
 import AdminCoreCoins from "./admin/AdminCoreCoins.jsx";
+import AdminSiteContent from "./admin/AdminSiteContent.jsx";
 
 const LOW_STOCK_THRESHOLD = 5;
 
@@ -53,6 +54,12 @@ const ICONS = {
     corecoins: (
         <svg className="h-4 w-4" viewBox="0 0 20 20" fill="currentColor">
             <path d="M10 2a8 8 0 100 16A8 8 0 0010 2zm1 11H9v-1.5l3-2V8H9V6.5h4V10l-2 1.5V13z" />
+        </svg>
+    ),
+    content: (
+        <svg className="h-4 w-4" viewBox="0 0 20 20" fill="currentColor">
+            <path d="M17.414 2.586a2 2 0 00-2.828 0L7 10.172V13h2.828l7.586-7.586a2 2 0 000-2.828z" />
+            <path fillRule="evenodd" d="M2 6a2 2 0 012-2h4a1 1 0 010 2H4v10h10v-4a1 1 0 112 0v4a2 2 0 01-2 2H4a2 2 0 01-2-2V6z" clipRule="evenodd" />
         </svg>
     ),
 };
@@ -258,6 +265,7 @@ export default function AdminDashboard() {
                     {tab("replacements", "Replacements", ICONS.replacements, replacementCount)}
                     {tab("reviews", "Reviews", ICONS.reviews, reviewCount, "bg-neutral-200 text-stone-600")}
                     {tab("homepage", "Homepage", ICONS.homepage)}
+                    {tab("content", "Site content", ICONS.content)}
                     {tab("corecoins", "CoreCoins", ICONS.corecoins)}
                     <div className="hidden md:block ml-auto text-xs text-stone-400">
                         {activeTab === "products" && `${products.length} products`}
@@ -266,6 +274,7 @@ export default function AdminDashboard() {
                         {activeTab === "settings" && "App settings"}
                         {activeTab === "replacements" && `${replacementCount} pending`}
                         {activeTab === "homepage" && "Homepage editor"}
+                        {activeTab === "content" && "Every page's copy"}
                         {activeTab === "corecoins" && "Loyalty wallets"}
                     </div>
                 </div>
@@ -280,6 +289,7 @@ export default function AdminDashboard() {
                     <div {...panel("settings")}><AdminSettings isActive={activeTab === "settings"} /></div>
                     <div {...panel("reviews")} ><AdminReviews onCountChange={setReviewCount} isActive={activeTab === "reviews"} /></div>
                     <div {...panel("homepage")}><AdminHomepage products={products} isActive={activeTab === "homepage"} /></div>
+                    <div {...panel("content")}><AdminSiteContent isActive={activeTab === "content"} /></div>
                     <div {...panel("replacements")}><AdminReplacements onCountChange={setReplacementCount} /></div>
                     <div {...panel("corecoins")}><AdminCoreCoins /></div>
                 </div>

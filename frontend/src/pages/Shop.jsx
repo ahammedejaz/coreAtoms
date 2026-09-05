@@ -27,6 +27,7 @@ import ShopFilters from "../components/ShopFilters";
 import { SkeletonGrid } from "../components/Skeleton";
 import { useScrollLock } from "../components/fx/SmoothScroll";
 import RevealText from "../components/fx/RevealText";
+import { useSiteContent } from "../services/siteContent";
 import { AnimatePresence, motion } from "motion/react";
 import {
   FILTER_KEYS,
@@ -216,7 +217,8 @@ export default function Shop() {
     btnTimerRef.current = setTimeout(() => setJustAddedId(null), 1000);
   }, [addItem]);
 
-  const heading = filters.category !== "All" ? filters.category : query ? `Results for "${query}"` : "All products";
+  const shopCopy = useSiteContent("page_shop");
+  const heading = filters.category !== "All" ? filters.category : query ? `Results for "${query}"` : shopCopy.title;
   const countLabel = `${active.length} formula${active.length !== 1 ? "s" : ""}`;
 
   const sortSelect = (
@@ -331,8 +333,8 @@ export default function Shop() {
               <span className="mx-auto grid h-14 w-14 place-items-center rounded-full bg-bone text-brand">
                 <SearchX className="h-6 w-6" strokeWidth={1.5} aria-hidden="true" />
               </span>
-              <p className="mt-5 font-display text-2xl font-semibold tracking-tight text-ink">No formulas match</p>
-              <p className="mx-auto mt-1.5 max-w-sm text-sm text-stone-500">Try widening the price band or clearing a filter or two.</p>
+              <p className="mt-5 font-display text-2xl font-semibold tracking-tight text-ink">{shopCopy.emptyTitle}</p>
+              <p className="mx-auto mt-1.5 max-w-sm text-sm text-stone-500">{shopCopy.emptyText}</p>
               <button onClick={clearFilters} className="btn-secondary mt-6">Clear all filters</button>
             </div>
           ) : (

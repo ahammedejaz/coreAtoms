@@ -21,6 +21,7 @@ import { useCartDrawer } from "../context/CartDrawerContext";
 import { fetchPricingSettings, EMPTY_PRICING } from "../services/settings";
 import { useScrollLock } from "./fx/SmoothScroll";
 import { money } from "../utils/format";
+import { useSiteContent } from "../services/siteContent";
 
 function LineImage({ src, alt }) {
   const [broken, setBroken] = useState(false);
@@ -35,6 +36,7 @@ function LineImage({ src, alt }) {
 }
 
 export default function CartDrawer() {
+  const copy = useSiteContent("page_cart");
   const { items, totalItems, subtotal, updateQty, removeItem, lastAction } = useCart();
   const { isOpen, open, close } = useCartDrawer();
   const navigate = useNavigate();
@@ -134,8 +136,8 @@ export default function CartDrawer() {
               <span className="grid h-16 w-16 place-items-center rounded-full bg-bone text-brand">
                 <ShoppingBag className="h-7 w-7" strokeWidth={1.5} aria-hidden="true" />
               </span>
-              <p className="mt-5 font-display text-xl font-semibold tracking-tight text-ink">Nothing here yet</p>
-              <p className="mt-1.5 max-w-[22ch] text-sm text-stone-500">Add a formula and it will show up here, ready for checkout.</p>
+              <p className="mt-5 font-display text-xl font-semibold tracking-tight text-ink">{copy.drawerEmptyTitle}</p>
+              <p className="mt-1.5 max-w-[22ch] text-sm text-stone-500">{copy.drawerEmptyText}</p>
               <Link to="/shop" onClick={close} className="btn-primary mt-6">
                 Browse the range
                 <ArrowRight className="h-4 w-4" strokeWidth={1.75} aria-hidden="true" />
@@ -200,7 +202,7 @@ export default function CartDrawer() {
               <span className="text-sm text-stone-600">Subtotal</span>
               <span className="font-display text-xl font-semibold tabular-nums text-ink">{money(sub)}</span>
             </div>
-            <p className="mt-1 text-xs text-stone-400">Shipping, GST and coupons are worked out at checkout.</p>
+            <p className="mt-1 text-xs text-stone-400">{copy.drawerNote}</p>
             <button type="button" onClick={() => { close(); navigate("/checkout"); }} className="btn-primary btn-lg mt-4 w-full">
               Checkout
               <ArrowRight className="h-4 w-4" strokeWidth={1.75} aria-hidden="true" />

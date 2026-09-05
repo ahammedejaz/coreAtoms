@@ -13,6 +13,7 @@ import { supabase } from "../services/supabase/client";
 import { useAuth } from "../context/AuthContext";
 import SEO from "../components/SEO";
 import AuthShell from "../components/AuthShell";
+import { useSiteContent } from "../services/siteContent";
 
 /** Minimum password length — mirrors the rule enforced on ResetPassword. */
 const MIN_PASSWORD_LENGTH = 6;
@@ -36,6 +37,7 @@ function safeRedirect(raw) {
 }
 
 export default function Login() {
+  const account = useSiteContent("page_account");
   const navigate = useNavigate();
   const [searchParams] = useSearchParams();
   const redirectTo = useMemo(() => safeRedirect(searchParams.get("redirect")), [searchParams]);
@@ -115,8 +117,8 @@ export default function Login() {
     <>
       <SEO title="Login | Core Atoms" description="Sign in or create an account to manage your orders." />
       <AuthShell
-        title={isSignup ? "Create your account" : "Welcome back"}
-        subtitle={isSignup ? "Order tracking, replacements and CoreCoins, all in one place." : "Sign in to manage your orders and preferences."}
+        title={isSignup ? account.signupTitle : account.loginTitle}
+        subtitle={isSignup ? account.signupSubtitle : account.loginSubtitle}
       >
         <button
           onClick={handleGoogle}

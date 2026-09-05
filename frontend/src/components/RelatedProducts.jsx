@@ -18,7 +18,7 @@ import { fetchProductsCached } from "../services/products";
 import { useCart } from "../context/CartContext";
 import ProductCard from "./ProductCard";
 
-export default function RelatedProducts({ productId, category, gstPercent = 0 }) {
+export default function RelatedProducts({ productId, category, gstPercent = 0, title = "You may also like" }) {
   const { addItem } = useCart();
   const [related, setRelated] = useState([]);
   const [justAddedId, setJustAddedId] = useState(null);
@@ -55,7 +55,7 @@ export default function RelatedProducts({ productId, category, gstPercent = 0 })
   return (
     <section className="mx-auto mt-16 max-w-6xl border-t border-line px-5 pt-12 sm:px-6" aria-labelledby="related-heading">
       <div className="mb-6 flex items-end justify-between gap-4">
-        <h2 id="related-heading" className="font-display text-2xl font-semibold tracking-tight text-ink sm:text-3xl">You may also like</h2>
+        <h2 id="related-heading" className="font-display text-2xl font-semibold tracking-tight text-ink sm:text-3xl">{title}</h2>
         <Link to={category ? `/shop?category=${encodeURIComponent(category)}` : "/shop"} className="inline-flex items-center gap-1.5 text-sm font-semibold text-brand hover:underline underline-offset-4">
           More {category ? "in this range" : "products"}
           <ArrowRight className="h-4 w-4" strokeWidth={1.75} aria-hidden="true" />

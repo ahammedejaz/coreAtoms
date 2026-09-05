@@ -62,7 +62,14 @@ function Row({ p, onAdd, justAdded }) {
   );
 }
 
-export default function Routine({ slots, onAdd, justAddedId }) {
+export default function Routine({
+  slots,
+  onAdd,
+  justAddedId,
+  heading = "When to take what",
+  intro = "Every label carries a pairing note: what a formula goes with and when. Read together, they give the range a daily schedule from breakfast to bedtime.",
+  footnote = "Timings are general guidance drawn from each label's pairing notes, not medical advice. Follow the directions on your pack, and ask a doctor first if you are pregnant, nursing or taking medication.",
+}) {
   const shown = (slots || []).filter((s) => s.products.length > 0);
   if (shown.length === 0) return null;
 
@@ -72,10 +79,8 @@ export default function Routine({ slots, onAdd, justAddedId }) {
         <ScrollReveal>
           <div className="flex flex-col gap-5 sm:flex-row sm:items-end sm:justify-between">
             <div>
-              <RevealText id="routine-heading" text="When to take what" className="font-display text-4xl font-semibold tracking-[-0.03em] text-ink sm:text-5xl" />
-              <p className="mt-2 max-w-xl text-[15px] text-stone-600">
-                Every label carries a pairing note: what a formula goes with and when. Read together, they give the range a daily schedule from breakfast to bedtime.
-              </p>
+              <RevealText id="routine-heading" text={heading} className="font-display text-4xl font-semibold tracking-[-0.03em] text-ink sm:text-5xl" />
+              <p className="mt-2 max-w-xl text-[15px] text-stone-600">{intro}</p>
             </div>
             <Link to="/shop" className="btn-secondary hidden shrink-0 sm:inline-flex">
               Shop the full range
@@ -123,9 +128,7 @@ export default function Routine({ slots, onAdd, justAddedId }) {
             })}
           </ol>
 
-          <p className="facts-foot">
-            Timings are general guidance drawn from each label's pairing notes, not medical advice. Follow the directions on your pack, and ask a doctor first if you are pregnant, nursing or taking medication.
-          </p>
+          <p className="facts-foot">{footnote}</p>
         </ScrollReveal>
       </div>
     </section>

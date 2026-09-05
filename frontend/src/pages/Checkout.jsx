@@ -47,6 +47,7 @@ import { supabase } from "../services/supabase/client";
 import { getRazorpayKeyId, openRazorpayCheckout } from "../services/razorpay";
 import SEO from "../components/SEO";
 import RevealText from "../components/fx/RevealText";
+import { useSiteContent } from "../services/siteContent";
 import { ArrowLeft, Banknote, Check, Coins, CreditCard, Lock, MapPin, PackageCheck, TicketPercent } from "lucide-react";
 
 import { money } from "../utils/format";
@@ -73,6 +74,7 @@ function isValidAddress(a) {
 }
 
 export default function Checkout() {
+  const copy = useSiteContent("page_checkout");
   const navigate = useNavigate();
   const { user } = useAuth();
   const { items, subtotal, totalItems, clear } = useCart();
@@ -714,8 +716,8 @@ export default function Checkout() {
               <circle cx="32" cy="32" r="29" fill="none" stroke="currentColor" strokeWidth="2.5" />
               <path d="M20 33.5 28.5 42 45 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round" />
             </svg>
-            <h2 className="font-display text-3xl font-semibold tracking-tight text-ink">Order placed</h2>
-            <p className="mt-1 text-sm text-stone-500">Thank you. We're preparing your order for dispatch.</p>
+            <h2 className="font-display text-3xl font-semibold tracking-tight text-ink">{copy.successTitle}</h2>
+            <p className="mt-1 text-sm text-stone-500">{copy.successText}</p>
           </div>
 
           {/* Receipt card */}
@@ -825,7 +827,7 @@ export default function Checkout() {
       <div className="min-h-[60vh] flex items-center justify-center">
         <div className="panel w-full max-w-sm p-12 text-center">
           <div className="mx-auto mb-5 h-14 w-14 rounded-full border-4 border-[#E8E4DE] border-t-[#1e3a5f] animate-spin" />
-          <h2 className="font-display text-2xl font-semibold tracking-tight text-ink">Order placed</h2>
+          <h2 className="font-display text-2xl font-semibold tracking-tight text-ink">{copy.successTitle}</h2>
           <p className="mt-2 text-sm text-stone-500">We're confirming your order and preparing it for dispatch.</p>
           <div className="mt-6 h-1.5 w-full rounded-full bg-stone-100 overflow-hidden">
             <div className="h-full bg-[#1e3a5f] rounded-full animate-[coreatoms_progress_1.2s_ease-in-out_infinite]" />
@@ -846,7 +848,7 @@ export default function Checkout() {
           <ArrowLeft className="h-4 w-4" strokeWidth={1.75} aria-hidden="true" />
           Back to cart
         </Link>
-        <RevealText as="h1" text="Checkout" className="mt-4 font-display text-4xl font-semibold tracking-[-0.03em] text-ink sm:text-5xl" />
+        <RevealText as="h1" text={copy.title} className="mt-4 font-display text-4xl font-semibold tracking-[-0.03em] text-ink sm:text-5xl" />
         <p className="mt-2 text-sm text-stone-500">
           {selectedPaymentMethod === "prepaid" ? "Secure online payment. Ships anywhere in India." : "Cash on Delivery. Ships anywhere in India."}
         </p>

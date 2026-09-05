@@ -23,7 +23,7 @@ const FILL = {
 };
 const gap = (n, cols) => (cols - (n % cols)) % cols;
 
-export default function IngredientIndex({ items, total }) {
+export default function IngredientIndex({ items, total, heading = "What's inside", intro = "The actives across the range, what each is known for, and how many formulas carry it." }) {
   const rows = items || [];
   if (rows.length === 0) return null;
   const fillerClass = `${FILL.base[gap(rows.length, 2)]} ${FILL.sm[gap(rows.length, 3)]} ${FILL.lg[gap(rows.length, 4)]}`;
@@ -35,8 +35,8 @@ export default function IngredientIndex({ items, total }) {
         <ScrollReveal>
           <div className="flex items-end justify-between gap-6">
             <div>
-              <RevealText id="inside-heading" text="What's inside" className="font-display text-4xl font-semibold tracking-[-0.03em] text-ink sm:text-5xl" />
-              <p className="mt-2 max-w-xl text-[15px] text-stone-500">The actives across the range, what each is known for, and how many formulas carry it.</p>
+              <RevealText id="inside-heading" text={heading} className="font-display text-4xl font-semibold tracking-[-0.03em] text-ink sm:text-5xl" />
+              <p className="mt-2 max-w-xl text-[15px] text-stone-500">{intro}</p>
             </div>
             <Link to="/shop" className="hidden items-center gap-1.5 text-sm font-semibold text-brand underline-offset-4 hover:underline sm:inline-flex">
               All products

@@ -38,6 +38,7 @@ export default function CategoryIndex({
   goals,
   heading = "Shop by category",
   intro = "Start from what you need. Every range is fully disclosed on the label.",
+  goalsLabel = "Shop by goal",
 }) {
   const { stage } = useMotion();
   const [active, setActive] = useState(0);
@@ -177,7 +178,7 @@ export default function CategoryIndex({
         {goals?.length > 0 && (
           <ScrollReveal delay={80}>
             <div className="mt-10 flex flex-col gap-3 sm:flex-row sm:items-center sm:gap-6">
-              <p className="shrink-0 text-[13.5px] font-semibold text-ink">Shop by goal</p>
+              <p className="shrink-0 text-[13.5px] font-semibold text-ink">{goalsLabel}</p>
               <ul className="flex flex-wrap gap-2">
                 {goals.map((g) => (
                   <li key={g.label}>

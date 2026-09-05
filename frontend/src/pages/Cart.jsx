@@ -20,6 +20,7 @@ import ConfirmDialog from "../components/ConfirmDialog";
 import RevealText from "../components/fx/RevealText";
 import Magnetic from "../components/fx/Magnetic";
 import Cutout from "../components/Cutout";
+import { useSiteContent } from "../services/siteContent";
 import { fetchProductsCached } from "../services/products";
 import { AnimatePresence, motion } from "motion/react";
 import { fetchPricingSettings, EMPTY_PRICING } from "../services/settings";
@@ -42,6 +43,7 @@ export default function Cart() {
   const [confirmClear, setConfirmClear] = useState(false);
   const [brokenImages, setBrokenImages] = useState(() => new Set());
   const [leadProduct, setLeadProduct] = useState(null);
+  const copy = useSiteContent("page_cart");
 
   // The empty state shows the range's lead jar; a failed read simply leaves it out.
   useEffect(() => {
@@ -75,7 +77,7 @@ export default function Cart() {
 
       <div className="mb-8 flex flex-wrap items-end justify-between gap-4">
         <div className="flex flex-wrap items-baseline gap-3">
-          <RevealText as="h1" text="Your cart" className="font-display text-4xl font-semibold tracking-[-0.03em] text-ink sm:text-5xl" />
+          <RevealText as="h1" text={copy.title} className="font-display text-4xl font-semibold tracking-[-0.03em] text-ink sm:text-5xl" />
           {!empty && <span className="text-lg font-medium text-stone-400 tabular-nums">{totalItems} item{totalItems !== 1 ? "s" : ""}</span>}
         </div>
         <Link to="/shop" className="inline-flex items-center gap-1.5 text-sm font-semibold text-stone-600 transition-colors hover:text-ink">
@@ -109,8 +111,8 @@ export default function Cart() {
               </span>
             )}
           </div>
-          <h2 className="mt-6 font-display text-2xl font-semibold tracking-tight text-ink">Your cart is empty</h2>
-          <p className="mx-auto mt-2 max-w-xs text-sm text-stone-500">Every formula on the site ships anywhere in India, with Cash on Delivery.</p>
+          <h2 className="mt-6 font-display text-2xl font-semibold tracking-tight text-ink">{copy.emptyTitle}</h2>
+          <p className="mx-auto mt-2 max-w-xs text-sm text-stone-500">{copy.emptyText}</p>
           <Link to="/shop" className="btn-primary btn-lg mt-8">
             Browse the range
             <ArrowRight className="h-4 w-4" strokeWidth={1.75} aria-hidden="true" />
@@ -247,7 +249,7 @@ export default function Cart() {
                   </div>
                 )}
               </dl>
-              <p className="mt-3 text-xs text-stone-500">Coupon codes and CoreCoins are applied at checkout.</p>
+              <p className="mt-3 text-xs text-stone-500">{copy.summaryNote}</p>
 
               <div className="my-5 border-t border-line" />
 
@@ -278,7 +280,7 @@ export default function Cart() {
               </Magnetic>
 
               <ul className="mt-5 flex flex-wrap justify-center gap-x-4 gap-y-1.5">
-                {TRUST.map(({ icon: Icon, label }) => (
+                {TRUST.map(({ icon: Icon, label }, i) => ({ icon: Icon, label: copy.trust?.[i] || label })).map(({ icon: Icon, label }) => (
                   <li key={label} className="inline-flex items-center gap-1.5 text-[11.5px] text-stone-500">
                     <Icon className="h-3.5 w-3.5 text-brand" strokeWidth={1.75} aria-hidden="true" />
                     {label}

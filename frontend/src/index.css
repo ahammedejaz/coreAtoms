@@ -82,6 +82,12 @@
     scroll-behavior: smooth;
   }
 
+  /* Lenis owns the easing while it runs; native smooth scrolling would
+     double it. The rail replaces the native scrollbar on desktop. */
+  html.lenis { scroll-behavior: auto; }
+  html.has-rail { scrollbar-width: none; }
+  html.has-rail::-webkit-scrollbar { display: none; }
+
   h1, h2 {
     font-family: var(--font-display);
     letter-spacing: -0.03em;
@@ -398,6 +404,217 @@
 
   /* Route enter. */
   .page-enter { animation: var(--animate-page); }
+
+  /* ═══ PHYSICAL LAYER — scrollbar, pointer, curtain, grain, tilt ═══ */
+
+  /* Reading-progress line along the top edge of the viewport. */
+  .scroll-line {
+    position: fixed;
+    top: 0;
+    left: 0;
+    right: 0;
+    height: 2px;
+    z-index: 70;
+    background: var(--color-amber);
+    transform-origin: left center;
+    transform: scaleX(0);
+    pointer-events: none;
+  }
+
+  /* The rail: a hairline track with an ink thumb that grows under the pointer. */
+  .scroll-rail {
+    position: fixed;
+    top: 10px;
+    right: 5px;
+    bottom: 10px;
+    width: 12px;
+    z-index: 70;
+  }
+
+  .scroll-rail::before {
+    content: "";
+    position: absolute;
+    top: 0;
+    bottom: 0;
+    left: 50%;
+    width: 1px;
+    margin-left: -0.5px;
+    background: rgba(18, 27, 43, 0.1);
+  }
+
+  .scroll-rail.is-hidden { display: none; }
+
+  /* Both step aside while a drawer, sheet or dialog owns the screen. */
+  .scroll-rail,
+  .scroll-line { transition: opacity 200ms ease; }
+  html.scroll-locked .scroll-rail,
+  html.scroll-locked .scroll-line { opacity: 0; pointer-events: none; }
+
+  .scroll-thumb {
+    position: absolute;
+    top: 0;
+    left: 50%;
+    width: 4px;
+    margin-left: -2px;
+    border-radius: 9999px;
+    background: rgba(18, 27, 43, 0.3);
+    touch-action: none;
+    transition: width 160ms var(--ease-out-strong), margin-left 160ms var(--ease-out-strong), background-color 260ms ease;
+  }
+
+  .scroll-rail:hover .scroll-thumb,
+  .scroll-rail.is-active .scroll-thumb { background: var(--color-ink); }
+
+  .scroll-rail:hover .scroll-thumb,
+  .scroll-rail.is-dragging .scroll-thumb { width: 8px; margin-left: -4px; }
+
+  /* Pointer: dot under the pointer, ring a beat behind. Both invert over
+     whatever they cross so they read on bone and on navy alike. */
+  html.has-cursor,
+  html.has-cursor * { cursor: none !important; }
+
+  html.has-cursor :is(input, textarea, select, iframe, video, [contenteditable="true"]),
+  html.has-cursor :is(input, textarea, select) * { cursor: auto !important; }
+
+  .cursor-dot,
+  .cursor-ring {
+    position: fixed;
+    top: 0;
+    left: 0;
+    z-index: 120;
+    pointer-events: none;
+    opacity: 0;
+    will-change: transform;
+  }
+
+  .cursor-dot {
+    width: 6px;
+    height: 6px;
+    margin: -3px 0 0 -3px;
+    border-radius: 50%;
+    background: #fff;
+    mix-blend-mode: difference;
+    transition: opacity 200ms ease;
+  }
+
+  .cursor-ring {
+    width: 34px;
+    height: 34px;
+    margin: -17px 0 0 -17px;
+    border-radius: 50%;
+    border: 1.25px solid #fff;
+    mix-blend-mode: difference;
+    display: grid;
+    place-items: center;
+    transition:
+      opacity 200ms ease,
+      width 280ms var(--ease-out-strong),
+      height 280ms var(--ease-out-strong),
+      margin 280ms var(--ease-out-strong),
+      background-color 280ms ease,
+      border-color 280ms ease;
+  }
+
+  .cursor-dot.is-visible,
+  .cursor-ring.is-visible { opacity: 1; }
+
+  .cursor-dot.is-hidden,
+  .cursor-dot.is-native,
+  .cursor-ring.is-native { opacity: 0; }
+
+  .cursor-ring.is-down { border-width: 2px; }
+
+  .cursor-ring.is-label {
+    width: 78px;
+    height: 78px;
+    margin: -39px 0 0 -39px;
+    background: var(--color-bone);
+    border-color: transparent;
+    mix-blend-mode: normal;
+  }
+
+  .cursor-label {
+    font: 600 12.5px/1 var(--font-sans);
+    letter-spacing: -0.01em;
+    color: var(--color-ink);
+    opacity: 0;
+    transition: opacity 200ms ease 80ms;
+  }
+
+  .cursor-ring.is-label .cursor-label { opacity: 1; }
+
+  /* Route curtain: a navy field that rises over the leaving page and lifts
+     off the arriving one. */
+  .curtain {
+    position: fixed;
+    inset: 0;
+    z-index: 110;
+    pointer-events: none;
+    visibility: hidden;
+  }
+
+  .curtain.is-cover,
+  .curtain.is-reveal { visibility: visible; }
+
+  .curtain-field {
+    position: absolute;
+    inset: -2% 0;
+    display: grid;
+    place-items: center;
+    transform: translateY(104%);
+  }
+
+  .curtain.is-cover .curtain-field { animation: curtain-cover 300ms var(--ease-in-out-strong) forwards; }
+  .curtain.is-reveal .curtain-field { animation: curtain-reveal 560ms var(--ease-in-out-strong) forwards; }
+
+  .curtain-label {
+    position: relative;
+    z-index: 1;
+    font-family: var(--font-display);
+    font-weight: 600;
+    font-size: clamp(2rem, 5vw, 4rem);
+    letter-spacing: -0.035em;
+    color: var(--color-bone);
+    opacity: 0;
+  }
+
+  .curtain.is-cover .curtain-label { animation: curtain-label-in 320ms var(--ease-out-strong) 100ms forwards; }
+  .curtain.is-reveal .curtain-label { animation: curtain-label-out 260ms var(--ease-out-strong) forwards; }
+
+  /* The arriving page fades up under the lifting curtain. Opacity only: a
+     transform on <main> would re-home every position:fixed child. */
+  .page-arrive { animation: page-arrive 640ms var(--ease-out-strong) both; }
+
+  /* A film of noise over everything below the drawers and dialogs. */
+  .grain-film {
+    position: fixed;
+    inset: 0;
+    z-index: 60;
+    pointer-events: none;
+    opacity: 0.055;
+    mix-blend-mode: multiply;
+    background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='220' height='220'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='2' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)'/%3E%3C/svg%3E");
+    background-size: 220px 220px;
+  }
+
+  /* Heading reveal: the hero's word masks, held until the heading is seen. */
+  .reveal-words .word-mask > span { animation: none; transform: translateY(112%); }
+  .reveal-words.is-in .word-mask > span {
+    animation: mask-up 900ms var(--ease-out-strong) forwards;
+    animation-delay: var(--delay, 0ms);
+  }
+
+  /* Tilt: the tile leans toward the pointer and a light crosses its face. */
+  .tilt { position: relative; transform-style: preserve-3d; }
+  .tilt-sheen {
+    position: absolute;
+    inset: 0;
+    z-index: 2;
+    border-radius: inherit;
+    pointer-events: none;
+  }
+
+  .magnetic { display: inline-flex; }
 }
 
 /* ═══ KEYFRAMES ═══ */
@@ -429,6 +646,30 @@
 
 @keyframes fade-in {
   from { opacity: 0; }
+}
+
+@keyframes page-arrive {
+  from { opacity: 0; }
+}
+
+@keyframes curtain-cover {
+  from { transform: translateY(104%); }
+  to { transform: translateY(0); }
+}
+
+@keyframes curtain-reveal {
+  from { transform: translateY(0); }
+  to { transform: translateY(-104%); }
+}
+
+@keyframes curtain-label-in {
+  from { opacity: 0; transform: translateY(16px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+@keyframes curtain-label-out {
+  from { opacity: 1; transform: translateY(0); }
+  to { opacity: 0; transform: translateY(-16px); }
 }
 
 @keyframes mask-up {

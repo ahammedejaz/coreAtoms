@@ -2,33 +2,29 @@
  * MainLayout.jsx — Application shell layout.
  *
  * Wraps every page with the announcement bar, a sticky `<Navbar>`, a `<main>`
- * content area, the `<Footer>` and the slide-over `<CartDrawer>`. The
- * `<Outlet>` from react-router renders the matched child route.
+ * content area, the `<Footer>` and the slide-over `<CartDrawer>`, then the
+ * storefront's physical layer: Lenis smooth scrolling, the custom scrollbar
+ * and reading line, the grain film and the pointer (see `components/fx`).
+ * `MotionProvider` decides which of those run on this device and route.
  *
- * A route can opt out of the centred `max-w-6xl` container by setting
- * `handle: { fullBleed: true }` on its route object — read here via
- * `useMatches()`. Only the home route does this today.
- *
- * `<main>` is keyed on the pathname so each route enters with the short
- * `page-enter` rise; query-string changes (shop filters) do not re-run it.
+ * Page changes go through `RouteCurtain`: a navy field rises over the page
+ * that is leaving, the new page is swapped in and scrolled to the top
+ * underneath, then the field lifts. The curtain also holds the leaving
+ * route's `fullBleed` flag so the layout does not jump while covered. A
+ * route opts out of the centred `max-w-6xl` container by setting
+ * `handle: { fullBleed: true }` on its route object; only home does.
  *
  * @module layouts/MainLayout
  */
-import { Suspense, useEffect } from "react";
-import { Outlet, useLocation, useMatches } from "react-router-dom";
+import { Suspense } from "react";
 import Navbar from "../components/Navbar";
 import Footer from "../components/Footer";
 import ErrorBoundary from "../components/ErrorBoundary";
 import AnnouncementBar from "../components/AnnouncementBar";
 import CartDrawer from "../components/CartDrawer";
 import { useAuth } from "../context/AuthContext";
-
-/** Scrolls to top on every route change. */
-function ScrollToTop() {
-  const { pathname } = useLocation();
-  useEffect(() => { window.scrollTo({ top: 0, left: 0, behavior: "instant" }); }, [pathname]);
-  return null;
-}
+import { MotionProvider } from "../context/MotionContext";
+import { SmoothScroll, Scrollbar, Cursor, RouteCurtain, Grain } from "../components/fx";
 
 /** Minimal centred spinner shown while lazy-loaded routes are loading. */
 function PageFallback() {
@@ -41,34 +37,41 @@ function PageFallback() {
 }
 
 export default function MainLayout() {
-  const fullBleed = useMatches().some((m) => m.handle?.fullBleed);
-  const { pathname } = useLocation();
   const { isAdmin } = useAuth();
 
-  const content = (
-    <ErrorBoundary>
-      <Suspense fallback={<PageFallback />}>
-        <Outlet />
-      </Suspense>
-    </ErrorBoundary>
-  );
-
   return (
-    <div className="min-h-screen flex flex-col">
-      <a
-        href="#main"
-        className="sr-only focus:not-sr-only focus:fixed focus:left-4 focus:top-4 focus:z-[100] btn-primary"
-      >
-        Skip to content
-      </a>
-      <ScrollToTop />
-      {!isAdmin && <AnnouncementBar />}
-      <Navbar />
-      <main id="main" key={pathname} className={`page-enter ${fullBleed ? "flex-1" : "flex-1 py-10 sm:py-14"}`}>
-        {fullBleed ? content : <div className="mx-auto max-w-6xl px-5 sm:px-6">{content}</div>}
-      </main>
-      <Footer />
-      {!isAdmin && <CartDrawer />}
-    </div>
+    <MotionProvider>
+      <SmoothScroll>
+        <div className="min-h-screen flex flex-col">
+          <a
+            href="#main"
+            className="sr-only focus:not-sr-only focus:fixed focus:left-4 focus:top-4 focus:z-[100] btn-primary"
+          >
+            Skip to content
+          </a>
+          {!isAdmin && <AnnouncementBar />}
+          <Navbar />
+          <RouteCurtain>
+            {(content, arriving, curtain, fullBleed) => (
+              <main
+                id="main"
+                className={`${curtain ? (arriving ? "page-arrive" : "") : "page-enter"} ${fullBleed ? "flex-1" : "flex-1 py-10 sm:py-14"}`}
+              >
+                <ErrorBoundary>
+                  <Suspense fallback={<PageFallback />}>
+                    {fullBleed ? content : <div className="mx-auto max-w-6xl px-5 sm:px-6">{content}</div>}
+                  </Suspense>
+                </ErrorBoundary>
+              </main>
+            )}
+          </RouteCurtain>
+          <Footer />
+          {!isAdmin && <CartDrawer />}
+        </div>
+        <Grain />
+        <Scrollbar />
+        <Cursor />
+      </SmoothScroll>
+    </MotionProvider>
   );
 }

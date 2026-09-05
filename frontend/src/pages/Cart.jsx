@@ -17,6 +17,8 @@ import { useAuth } from "../context/AuthContext";
 import { useToast } from "../context/ToastContext";
 import SEO from "../components/SEO";
 import ConfirmDialog from "../components/ConfirmDialog";
+import RevealText from "../components/fx/RevealText";
+import Magnetic from "../components/fx/Magnetic";
 import { fetchPricingSettings, EMPTY_PRICING } from "../services/settings";
 import { useEffect, useState } from "react";
 
@@ -61,10 +63,10 @@ export default function Cart() {
       <SEO title="Cart | Core Atoms" description="Review your cart and proceed to checkout." />
 
       <div className="mb-8 flex flex-wrap items-end justify-between gap-4">
-        <h1 className="font-display text-4xl font-semibold tracking-[-0.03em] text-ink sm:text-5xl">
-          Your cart
-          {!empty && <span className="ml-3 align-middle text-lg font-medium text-stone-400 tabular-nums">{totalItems} item{totalItems !== 1 ? "s" : ""}</span>}
-        </h1>
+        <div className="flex flex-wrap items-baseline gap-3">
+          <RevealText as="h1" text="Your cart" className="font-display text-4xl font-semibold tracking-[-0.03em] text-ink sm:text-5xl" />
+          {!empty && <span className="text-lg font-medium text-stone-400 tabular-nums">{totalItems} item{totalItems !== 1 ? "s" : ""}</span>}
+        </div>
         <Link to="/shop" className="inline-flex items-center gap-1.5 text-sm font-semibold text-stone-600 transition-colors hover:text-ink">
           <ArrowLeft className="h-4 w-4" strokeWidth={1.75} aria-hidden="true" />
           Continue shopping
@@ -216,21 +218,23 @@ export default function Cart() {
                 </div>
               </div>
 
-              <button
-                type="button"
-                onClick={() => {
-                  if (!isAuthenticated) {
-                    showToast("Please sign in to checkout", "info");
-                    navigate("/login?redirect=%2Fcheckout");
-                  } else {
-                    navigate("/checkout");
-                  }
-                }}
-                className="btn-primary btn-lg mt-6 w-full"
-              >
-                Checkout
-                <ArrowRight className="h-4 w-4" strokeWidth={1.75} aria-hidden="true" />
-              </button>
+              <Magnetic className="mt-6 w-full" strength={0.18}>
+                <button
+                  type="button"
+                  onClick={() => {
+                    if (!isAuthenticated) {
+                      showToast("Please sign in to checkout", "info");
+                      navigate("/login?redirect=%2Fcheckout");
+                    } else {
+                      navigate("/checkout");
+                    }
+                  }}
+                  className="btn-primary btn-lg w-full"
+                >
+                  Checkout
+                  <ArrowRight className="h-4 w-4" strokeWidth={1.75} aria-hidden="true" />
+                </button>
+              </Magnetic>
 
               <ul className="mt-5 flex flex-wrap justify-center gap-x-4 gap-y-1.5">
                 {TRUST.map(({ icon: Icon, label }) => (

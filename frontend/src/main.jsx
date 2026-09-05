@@ -20,6 +20,7 @@ import { ToastProvider } from "./context/ToastContext";
 import { CartDrawerProvider } from "./context/CartDrawerContext";
 import '@fontsource-variable/bricolage-grotesque/opsz.css';
 import '@fontsource-variable/instrument-sans';
+import 'lenis/dist/lenis.css';
 import './index.css'
 
 ReactDOM.createRoot(document.getElementById('root')).render(

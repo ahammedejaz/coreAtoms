@@ -12,6 +12,7 @@ import { Link } from "react-router-dom";
 import { ArrowRight } from "lucide-react";
 import { animate, useInView } from "motion/react";
 import ScrollReveal, { usePrefersReducedMotion } from "../ScrollReveal";
+import RevealText from "../fx/RevealText";
 
 /**
  * "100%" → { prefix: "", n: 100, suffix: "%" }; "24 hrs" → n: 24, suffix " hrs".
@@ -91,9 +92,7 @@ export default function ProofBand({ whyUs }) {
       <div className="relative z-[1] mx-auto max-w-6xl px-5 sm:px-6">
         <div className="grid gap-10 lg:grid-cols-[1.05fr_0.95fr] lg:items-end lg:gap-16">
           <ScrollReveal>
-            <h2 id="proof-heading" className="font-display text-4xl font-semibold leading-[0.98] tracking-[-0.035em] text-white sm:text-5xl lg:text-6xl">
-              {whyUs.heading}
-            </h2>
+            <RevealText id="proof-heading" text={whyUs.heading} className="font-display text-4xl font-semibold leading-[0.98] tracking-[-0.035em] text-white sm:text-5xl lg:text-6xl" />
           </ScrollReveal>
           <ScrollReveal delay={100}>
             <div>

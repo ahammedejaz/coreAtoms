@@ -12,6 +12,7 @@
 import { Link } from "react-router-dom";
 import { ArrowRight, ArrowUpRight } from "lucide-react";
 import ScrollReveal from "../ScrollReveal";
+import RevealText from "../fx/RevealText";
 
 /* Literal class tables so Tailwind can see every variant. Keyed by how many
    empty cells the last row has at each breakpoint (2, 3 and 4 columns). */
@@ -34,7 +35,7 @@ export default function IngredientIndex({ items, total }) {
         <ScrollReveal>
           <div className="flex items-end justify-between gap-6">
             <div>
-              <h2 id="inside-heading" className="font-display text-4xl font-semibold tracking-[-0.03em] text-ink sm:text-5xl">What's inside</h2>
+              <RevealText id="inside-heading" text="What's inside" className="font-display text-4xl font-semibold tracking-[-0.03em] text-ink sm:text-5xl" />
               <p className="mt-2 max-w-xl text-[15px] text-stone-500">The actives across the range, what each is known for, and how many formulas carry it.</p>
             </div>
             <Link to="/shop" className="hidden items-center gap-1.5 text-sm font-semibold text-brand underline-offset-4 hover:underline sm:inline-flex">

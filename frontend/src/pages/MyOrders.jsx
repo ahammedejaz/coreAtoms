@@ -27,6 +27,7 @@ import { SkeletonOrderCard } from "../components/Skeleton";
 import OrderTimeline from "../components/OrderTimeline";
 import ShipmentTracker from "../components/ShipmentTracker";
 import ScrollReveal from "../components/ScrollReveal";
+import RevealText from "../components/fx/RevealText";
 import { Check, ChevronLeft, ChevronRight, Coins, Search, TriangleAlert, RefreshCw, Clock, Camera, PackageOpen, X } from "lucide-react";
 
 
@@ -463,7 +464,7 @@ export default function MyOrders() {
       {/* Header */}
       <ScrollReveal>
         <div className="mb-8">
-          <h1 className="font-display text-4xl font-semibold tracking-[-0.03em] text-ink sm:text-5xl">My orders</h1>
+          <RevealText as="h1" text="My orders" className="font-display text-4xl font-semibold tracking-[-0.03em] text-ink sm:text-5xl" />
           <p className="mt-2 text-sm text-stone-500">Track shipments, raise replacements and leave reviews.</p>
         </div>
       </ScrollReveal>

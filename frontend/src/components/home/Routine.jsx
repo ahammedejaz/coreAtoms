@@ -14,6 +14,7 @@
 import { Link } from "react-router-dom";
 import { ArrowRight, Check, Moon, Plus, Sun, Sunrise } from "lucide-react";
 import ScrollReveal from "../ScrollReveal";
+import RevealText from "../fx/RevealText";
 import { money } from "../../utils/format";
 import { isOutOfStock } from "../../services/products";
 
@@ -71,7 +72,7 @@ export default function Routine({ slots, onAdd, justAddedId }) {
         <ScrollReveal>
           <div className="flex flex-col gap-5 sm:flex-row sm:items-end sm:justify-between">
             <div>
-              <h2 id="routine-heading" className="font-display text-4xl font-semibold tracking-[-0.03em] text-ink sm:text-5xl">When to take what</h2>
+              <RevealText id="routine-heading" text="When to take what" className="font-display text-4xl font-semibold tracking-[-0.03em] text-ink sm:text-5xl" />
               <p className="mt-2 max-w-xl text-[15px] text-stone-600">
                 Every label carries a pairing note: what a formula goes with and when. Read together, they give the range a daily schedule from breakfast to bedtime.
               </p>

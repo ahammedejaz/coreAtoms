@@ -19,6 +19,7 @@ import { ArrowRight, ImageOff, Minus, Plus, ShoppingBag, X } from "lucide-react"
 import { useCart } from "../context/CartContext";
 import { useCartDrawer } from "../context/CartDrawerContext";
 import { fetchPricingSettings, EMPTY_PRICING } from "../services/settings";
+import { useScrollLock } from "./fx/SmoothScroll";
 import { money } from "../utils/format";
 
 function LineImage({ src, alt }) {
@@ -60,19 +61,17 @@ export default function CartDrawer() {
   // Close on navigation.
   useEffect(() => { close(); }, [location.pathname, close]);
 
-  // Scroll lock, Escape, focus in/out.
+  // Scroll lock (shared with Lenis), Escape, focus in/out.
+  useScrollLock(isOpen);
   useEffect(() => {
     if (!isOpen) return;
     restoreRef.current = document.activeElement;
-    const prev = document.body.style.overflow;
-    document.body.style.overflow = "hidden";
     const t = setTimeout(() => closeRef.current?.focus(), 60);
     const onKey = (e) => { if (e.key === "Escape") close(); };
     document.addEventListener("keydown", onKey);
     return () => {
       clearTimeout(t);
       document.removeEventListener("keydown", onKey);
-      document.body.style.overflow = prev;
       if (restoreRef.current instanceof HTMLElement) restoreRef.current.focus();
     };
   }, [isOpen, close]);
@@ -129,7 +128,7 @@ export default function CartDrawer() {
         )}
 
         {/* Lines */}
-        <div className="flex-1 overflow-y-auto px-5">
+        <div className="flex-1 overflow-y-auto px-5" data-lenis-prevent>
           {lines.length === 0 ? (
             <div className="flex h-full flex-col items-center justify-center text-center py-16">
               <span className="grid h-16 w-16 place-items-center rounded-full bg-bone text-brand">

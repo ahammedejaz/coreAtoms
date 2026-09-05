@@ -41,6 +41,7 @@ import RatingBreakdown from "../components/RatingBreakdown";
 import StickyAddToCart from "../components/StickyAddToCart";
 import { useToast } from "../context/ToastContext";
 import useRecentlyViewed from "../hooks/useRecentlyViewed";
+import Magnetic from "../components/fx/Magnetic";
 
 import { money, discountPercent } from "../utils/format";
 
@@ -377,6 +378,7 @@ export default function ProductDetail() {
               <div
                 ref={galleryRef}
                 className="aspect-square cursor-zoom-in overflow-hidden rounded-[28px] bg-bone"
+                data-cursor="Zoom"
                 onPointerMove={(e) => {
                   if (e.pointerType === "mouse") applyZoom(e.currentTarget, e.clientX, e.clientY);
                 }}
@@ -546,15 +548,17 @@ export default function ProductDetail() {
                   <Plus className="h-4 w-4" strokeWidth={2} aria-hidden="true" />
                 </button>
               </div>
-              <button
-                type="button"
-                onClick={handlePlus}
-                disabled={!canAdd}
-                className="btn-primary btn-lg flex-1 disabled:cursor-not-allowed disabled:opacity-40"
-              >
-                <ShoppingBag className="h-4 w-4 shrink-0" strokeWidth={1.75} aria-hidden="true" />
-                {!inStock ? "Sold out" : cartQty > 0 ? "Add another" : "Add to cart"}
-              </button>
+              <Magnetic className="flex-1" strength={0.2}>
+                <button
+                  type="button"
+                  onClick={handlePlus}
+                  disabled={!canAdd}
+                  className="btn-primary btn-lg w-full disabled:cursor-not-allowed disabled:opacity-40"
+                >
+                  <ShoppingBag className="h-4 w-4 shrink-0" strokeWidth={1.75} aria-hidden="true" />
+                  {!inStock ? "Sold out" : cartQty > 0 ? "Add another" : "Add to cart"}
+                </button>
+              </Magnetic>
             </div>
             {cartQty > 0 && (
               <p className="mt-3 text-[13px] text-stone-600">

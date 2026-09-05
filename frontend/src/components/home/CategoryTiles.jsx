@@ -16,6 +16,8 @@ import { useMemo, useRef } from "react";
 import { Link } from "react-router-dom";
 import { ArrowRight, ArrowUpRight, ChevronLeft, ChevronRight } from "lucide-react";
 import ScrollReveal, { ScrollRevealGroup } from "../ScrollReveal";
+import Tilt from "../fx/Tilt";
+import RevealText from "../fx/RevealText";
 
 const norm = (s) => String(s || "").trim().toLowerCase();
 
@@ -60,7 +62,7 @@ export default function CategoryTiles({ categories, products, goals }) {
         <ScrollReveal>
           <div className="flex items-end justify-between gap-6">
             <div>
-              <h2 id="categories-heading" className="font-display text-4xl font-semibold tracking-[-0.03em] text-ink sm:text-5xl">Shop by category</h2>
+              <RevealText id="categories-heading" text="Shop by category" className="font-display text-4xl font-semibold tracking-[-0.03em] text-ink sm:text-5xl" />
               <p className="mt-2 text-[15px] text-stone-500">Start from what you need. Every range is fully disclosed on the label.</p>
             </div>
             <div className="flex shrink-0 items-center gap-2">
@@ -88,8 +90,8 @@ export default function CategoryTiles({ categories, products, goals }) {
         >
           <ScrollRevealGroup stagger={50} className="w-[41vw] shrink-0 snap-start sm:w-[27vw] lg:w-[calc((100%-5rem)/6)]">
             {tiles.map((t) => (
-              <Link key={t.id} to={t.href} className="group block">
-                <span className="relative block aspect-square overflow-hidden rounded-tile bg-bone">
+              <Link key={t.id} to={t.href} className="group block" data-cursor="View">
+                <Tilt as="span" className="block aspect-square overflow-hidden rounded-tile bg-bone">
                   {t.image && (
                     <img
                       src={t.image}
@@ -105,7 +107,7 @@ export default function CategoryTiles({ categories, products, goals }) {
                   >
                     <ArrowUpRight className="h-4 w-4" strokeWidth={1.75} />
                   </span>
-                </span>
+                </Tilt>
                 <span className="mt-3 block text-[15px] font-semibold leading-snug text-ink transition-colors group-hover:text-brand">{t.label}</span>
                 <span className="mt-0.5 block text-[12.5px] text-stone-500 tabular-nums">{t.countText}</span>
               </Link>

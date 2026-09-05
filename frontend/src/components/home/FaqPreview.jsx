@@ -12,6 +12,7 @@ import { useState } from "react";
 import { Link } from "react-router-dom";
 import { ArrowRight } from "lucide-react";
 import ScrollReveal from "../ScrollReveal";
+import RevealText from "../fx/RevealText";
 import FaqItem from "../FaqItem";
 
 export default function FaqPreview({ faqs }) {
@@ -24,7 +25,7 @@ export default function FaqPreview({ faqs }) {
       <div className="mx-auto grid max-w-6xl gap-10 px-5 sm:px-6 lg:grid-cols-[0.8fr_1.2fr] lg:gap-16">
         <ScrollReveal>
           <div className="lg:sticky lg:top-36">
-            <h2 id="faq-heading" className="font-display text-4xl font-semibold tracking-[-0.03em] text-ink sm:text-5xl">Questions, answered</h2>
+            <RevealText id="faq-heading" text="Questions, answered" className="font-display text-4xl font-semibold tracking-[-0.03em] text-ink sm:text-5xl" />
             <p className="mt-4 max-w-md text-[16px] leading-relaxed text-stone-600">
               Ordering, delivery, replacements, and what our products are and are not.
             </p>

@@ -11,6 +11,7 @@
 import { Link } from "react-router-dom";
 import { ArrowRight, Beaker, BookOpen, Clock, Microscope } from "lucide-react";
 import ScrollReveal from "../ScrollReveal";
+import RevealText from "../fx/RevealText";
 import HintIcon from "../HintIcon";
 
 const ICONS = { label: BookOpen, form: Beaker, timing: Clock, testing: Microscope };
@@ -31,7 +32,7 @@ export default function Education({ cards }) {
         <ScrollReveal>
           <div className="flex items-end justify-between gap-6">
             <div>
-              <h2 id="learn-heading" className="font-display text-4xl font-semibold tracking-[-0.03em] text-ink sm:text-5xl">Know your supplements</h2>
+              <RevealText id="learn-heading" text="Know your supplements" className="font-display text-4xl font-semibold tracking-[-0.03em] text-ink sm:text-5xl" />
               <p className="mt-2 max-w-xl text-[15px] text-stone-600">Four things worth understanding before you buy a supplement, from us or anyone else.</p>
             </div>
             <Link to="/faq" className="btn-secondary hidden shrink-0 sm:inline-flex">

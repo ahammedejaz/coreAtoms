@@ -21,6 +21,7 @@ import { motion, useScroll, useTransform } from "motion/react";
 import HintIcon from "../HintIcon";
 import { usePrefersReducedMotion } from "../ScrollReveal";
 import { money } from "../../utils/format";
+import Magnetic from "../fx/Magnetic";
 
 const SLIDE_INTERVAL_MS = 6000;
 
@@ -154,13 +155,17 @@ export default function Hero({ images, copy, trust, leadProduct }) {
             {copy.body}
           </p>
           <div className="animate-rise mt-9 flex flex-wrap gap-3 [animation-delay:640ms]">
-            <Link to="/shop" className="btn-inverse btn-lg">
-              {copy.primaryCta || "Shop all products"}
-              <ArrowRight className="h-4 w-4" strokeWidth={1.75} aria-hidden="true" />
-            </Link>
-            <a href="#best-sellers" className="btn-outline-inverse btn-lg">
-              {copy.secondaryCta || "View best sellers"}
-            </a>
+            <Magnetic>
+              <Link to="/shop" className="btn-inverse btn-lg">
+                {copy.primaryCta || "Shop all products"}
+                <ArrowRight className="h-4 w-4" strokeWidth={1.75} aria-hidden="true" />
+              </Link>
+            </Magnetic>
+            <Magnetic>
+              <a href="#best-sellers" className="btn-outline-inverse btn-lg">
+                {copy.secondaryCta || "View best sellers"}
+              </a>
+            </Magnetic>
           </div>
           <ul className="animate-rise mt-12 flex flex-wrap gap-x-7 gap-y-3 [animation-delay:760ms]">
             {trust.slice(0, 3).map((t) => (

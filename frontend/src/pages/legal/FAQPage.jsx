@@ -16,6 +16,7 @@ import { Link } from "react-router-dom";
 import SEO from "../../components/SEO";
 import FaqItem from "../../components/FaqItem";
 import { FAQS } from "../../content/faqs";
+import RevealText from "../../components/fx/RevealText";
 
 export default function FAQPage() {
     const [openId, setOpenId] = useState(null);
@@ -40,7 +41,7 @@ export default function FAQPage() {
             <script type="application/ld+json">{JSON.stringify(structuredData)}</script>
 
             <div className="max-w-3xl">
-                <h1 className="font-display text-4xl font-semibold tracking-[-0.03em] text-ink sm:text-5xl">Questions, answered</h1>
+                <RevealText as="h1" text="Questions, answered" className="font-display text-4xl font-semibold tracking-[-0.03em] text-ink sm:text-5xl" />
                 <p className="mt-3 text-[15px] text-stone-600">
                     Ordering, payment, shipping, replacements and CoreCoins. Not here?{" "}
                     <Link to="/contact" className="font-semibold text-brand underline underline-offset-4">Contact us</Link>.

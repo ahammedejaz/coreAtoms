@@ -11,6 +11,7 @@
 import { Link } from "react-router-dom";
 import { ArrowRight, BadgeCheck, ClipboardCheck, FlaskConical, Scale, ShieldCheck, Truck } from "lucide-react";
 import ScrollReveal from "../ScrollReveal";
+import RevealText from "../fx/RevealText";
 import HintIcon from "../HintIcon";
 
 const ICONS = { form: FlaskConical, dose: Scale, blend: ClipboardCheck, test: ShieldCheck, dispatch: Truck, claims: BadgeCheck };
@@ -24,7 +25,7 @@ export default function Standard({ items }) {
       <div className="mx-auto grid max-w-6xl gap-10 px-5 sm:px-6 lg:grid-cols-[0.8fr_1.2fr] lg:gap-16">
         <ScrollReveal>
           <div className="lg:sticky lg:top-36">
-            <h2 id="standard-heading" className="font-display text-4xl font-semibold tracking-[-0.03em] text-ink sm:text-5xl">The Formulary standard</h2>
+            <RevealText id="standard-heading" text="The Formulary standard" className="font-display text-4xl font-semibold tracking-[-0.03em] text-ink sm:text-5xl" />
             <p className="mt-4 max-w-md text-[16px] leading-relaxed text-stone-600">
               Six rules every Core Atoms formula is held to, from the form of each nutrient to the words we use to describe it.
             </p>

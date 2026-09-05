@@ -9,6 +9,7 @@
  */
 import { Children, isValidElement } from "react";
 import SEO from "../../components/SEO";
+import RevealText from "../../components/fx/RevealText";
 
 const slug = (s) => String(s).toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/(^-|-$)/g, "");
 
@@ -21,7 +22,7 @@ export default function LegalPage({ title, updated, seoTitle, seoDescription, ca
         <div>
             <SEO title={seoTitle || title} description={seoDescription} canonical={canonical} />
             <div className="max-w-3xl">
-                <h1 className="font-display text-4xl font-semibold tracking-[-0.03em] text-ink sm:text-5xl">{title}</h1>
+                <RevealText as="h1" text={title} className="font-display text-4xl font-semibold tracking-[-0.03em] text-ink sm:text-5xl" />
                 {updated && <p className="mt-3 text-sm text-stone-500">Last updated {updated}</p>}
             </div>
 

@@ -20,6 +20,7 @@ import { Link } from "react-router-dom";
 import { ImageOff, Star, Check, Plus, ArrowRight } from "lucide-react";
 import { money, discountPercent } from "../utils/format";
 import { isOutOfStock } from "../services/products";
+import Tilt from "./fx/Tilt";
 
 const NEW_WINDOW_MS = 30 * 24 * 60 * 60 * 1000;
 /** Read once per page load; "New" is a 30-day window, so second precision is irrelevant. */
@@ -80,8 +81,8 @@ const ProductCard = React.memo(function ProductCard({ p, onAdd, justAdded, gstPe
   return (
     <article className="group relative flex h-full flex-col">
       {/* Tile */}
-      <div className="relative aspect-[4/5] overflow-hidden rounded-tile bg-bone transition-[box-shadow] duration-500 ease-out-strong can-hover:group-hover:shadow-lift-lg">
-        <Link to={href} className="absolute inset-0 block" tabIndex={-1} aria-hidden="true">
+      <Tilt className="aspect-[4/5] overflow-hidden rounded-tile bg-bone transition-[box-shadow] duration-500 ease-out-strong can-hover:group-hover:shadow-lift-lg">
+        <Link to={href} className="absolute inset-0 block" tabIndex={-1} aria-hidden="true" data-cursor="View">
           {imageBroken ? (
             <div className="grid h-full w-full place-items-center text-stone-300">
               <ImageOff className="h-8 w-8" strokeWidth={1.25} />
@@ -168,7 +169,7 @@ const ProductCard = React.memo(function ProductCard({ p, onAdd, justAdded, gstPe
             </button>
           </>
         ))}
-      </div>
+      </Tilt>
 
       {/* Copy */}
       <div className="flex flex-1 flex-col pt-3.5">

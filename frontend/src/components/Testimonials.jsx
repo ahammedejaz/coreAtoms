@@ -15,6 +15,7 @@
  */
 import { Star } from "lucide-react";
 import ScrollReveal from "./ScrollReveal";
+import RevealText from "./fx/RevealText";
 
 function ReviewStars({ rating, className = "", iconClassName = "h-3.5 w-3.5" }) {
   return (
@@ -78,7 +79,7 @@ export default function Testimonials({ reviews, summary }) {
       <div className="mx-auto max-w-6xl px-5 sm:px-6">
         <ScrollReveal>
           <div className="flex flex-col gap-4 sm:flex-row sm:items-end sm:justify-between">
-            <h2 id="testimonials-heading" className="font-display text-4xl font-semibold tracking-[-0.03em] text-ink sm:text-5xl">What customers say</h2>
+            <RevealText id="testimonials-heading" text="What customers say" className="font-display text-4xl font-semibold tracking-[-0.03em] text-ink sm:text-5xl" />
             {summary?.count > 0 && (
               <div className="flex items-center gap-3 text-[14px] text-stone-600">
                 <ReviewStars rating={Math.round(summary.average)} iconClassName="h-4 w-4" />

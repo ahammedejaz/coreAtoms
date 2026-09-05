@@ -23,6 +23,8 @@ import SEO from "../components/SEO";
 import ProductCard from "../components/ProductCard";
 import ShopFilters from "../components/ShopFilters";
 import { SkeletonGrid } from "../components/Skeleton";
+import { useScrollLock } from "../components/fx/SmoothScroll";
+import RevealText from "../components/fx/RevealText";
 import {
   FILTER_KEYS,
   PRICE_BANDS,
@@ -138,11 +140,8 @@ export default function Shop() {
     return () => document.removeEventListener("keydown", onKey);
   }, [sheetOpen]);
 
-  // Lock body scroll while the sheet is open.
-  useEffect(() => {
-    document.body.style.overflow = sheetOpen ? "hidden" : "";
-    return () => { document.body.style.overflow = ""; };
-  }, [sheetOpen]);
+  // Freeze the page behind the open sheet (through Lenis when it runs).
+  useScrollLock(sheetOpen);
 
   const activeProducts = useMemo(() => products.filter((p) => p.isActive !== false), [products]);
 
@@ -239,7 +238,7 @@ export default function Shop() {
       {/* Page header */}
       <div className="mb-8 flex flex-wrap items-end justify-between gap-x-6 gap-y-4">
         <div>
-          <h1 className="font-display text-4xl font-semibold tracking-[-0.03em] text-ink sm:text-5xl">{heading}</h1>
+          <RevealText as="h1" key={heading} text={heading} step={40} className="font-display text-4xl font-semibold tracking-[-0.03em] text-ink sm:text-5xl" />
           <p className="mt-2 text-sm text-stone-500 tabular-nums">{loading ? "Loading the range" : countLabel}</p>
         </div>
         <div className="hidden lg:block">{sortSelect}</div>
@@ -354,6 +353,7 @@ export default function Shop() {
           role="dialog"
           aria-modal="true"
           aria-label="Filters"
+          data-lenis-prevent
           className={`absolute inset-x-0 bottom-0 max-h-[85vh] overflow-y-auto rounded-t-[28px] bg-white px-5 pb-6 pt-3 shadow-lift-lg transition-transform ease-drawer ${sheetOpen ? "duration-[420ms] translate-y-0" : "duration-[260ms] translate-y-full"}`}
           style={{ paddingBottom: "max(1.5rem, env(safe-area-inset-bottom))" }}
         >

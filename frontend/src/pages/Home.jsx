@@ -35,6 +35,7 @@ import ProductCard from "../components/ProductCard";
 import SEO from "../components/SEO";
 import { SkeletonCard } from "../components/Skeleton";
 import ScrollReveal, { ScrollRevealGroup } from "../components/ScrollReveal";
+import RevealText from "../components/fx/RevealText";
 import PromoBanner from "../components/PromoBanner";
 import Testimonials from "../components/Testimonials";
 import RecentlyViewed from "../components/RecentlyViewed";
@@ -110,7 +111,7 @@ function BestSellers({ products, loading, error, onRetry, onAdd, justAddedId, gs
         <ScrollReveal>
           <div className="flex items-end justify-between gap-6">
             <div>
-              <h2 id="best-sellers-heading" className="font-display text-4xl font-semibold tracking-[-0.03em] text-ink sm:text-5xl">Best sellers</h2>
+              <RevealText id="best-sellers-heading" text="Best sellers" className="font-display text-4xl font-semibold tracking-[-0.03em] text-ink sm:text-5xl" />
               <p className="mt-2 text-[15px] text-stone-500">The formulas customers come back for.</p>
             </div>
             <div className="flex shrink-0 items-center gap-2">

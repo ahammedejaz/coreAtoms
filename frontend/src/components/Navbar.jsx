@@ -35,6 +35,7 @@ import { DEFAULT_HOME_CATEGORIES } from "../services/homepage";
 import { fetchProductsCached } from "../services/products";
 import { money } from "../utils/format";
 import HintIcon from "./HintIcon";
+import { useScrollLock } from "./fx/SmoothScroll";
 
 const navLinkClass = ({ isActive }) =>
   `text-sm transition-colors duration-150 ${isActive ? "text-ink font-semibold" : "text-stone-600 hover:text-ink"}`;
@@ -232,11 +233,8 @@ export default function Navbar() {
     return () => clearTimeout(t);
   }, [toastSignal]);
 
-  // Prevent body scroll when menu open
-  useEffect(() => {
-    document.body.style.overflow = menuOpen ? "hidden" : "";
-    return () => { document.body.style.overflow = ""; };
-  }, [menuOpen]);
+  // Freeze the page behind the open menu (through Lenis when it runs).
+  useScrollLock(menuOpen);
 
   // A global search always lands on /shop with a fresh q — other filters reset,
   // since search looks across the whole catalogue. `replace` while already on
@@ -359,6 +357,7 @@ export default function Navbar() {
         <div
           id="mobile-menu"
           inert={!menuOpen}
+          data-lenis-prevent
           className={`absolute inset-x-0 top-full max-h-[calc(100dvh-8rem)] overflow-y-auto border-t border-line bg-white shadow-lift-lg transition-[translate,opacity,visibility] ease-out-strong md:hidden ${menuOpen ? "visible translate-y-0 opacity-100 duration-250" : "invisible -translate-y-2 opacity-0 duration-150"}`}
         >
           <nav className="space-y-0.5 px-4 py-3" aria-label="Mobile">

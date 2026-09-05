@@ -46,6 +46,7 @@ import { useToast } from "../context/ToastContext";
 import { supabase } from "../services/supabase/client";
 import { getRazorpayKeyId, openRazorpayCheckout } from "../services/razorpay";
 import SEO from "../components/SEO";
+import RevealText from "../components/fx/RevealText";
 import { ArrowLeft, Banknote, Check, Coins, CreditCard, Lock, MapPin, PackageCheck, TicketPercent } from "lucide-react";
 
 import { money } from "../utils/format";
@@ -842,7 +843,7 @@ export default function Checkout() {
           <ArrowLeft className="h-4 w-4" strokeWidth={1.75} aria-hidden="true" />
           Back to cart
         </Link>
-        <h1 className="mt-4 font-display text-4xl font-semibold tracking-[-0.03em] text-ink sm:text-5xl">Checkout</h1>
+        <RevealText as="h1" text="Checkout" className="mt-4 font-display text-4xl font-semibold tracking-[-0.03em] text-ink sm:text-5xl" />
         <p className="mt-2 text-sm text-stone-500">
           {selectedPaymentMethod === "prepaid" ? "Secure online payment. Ships anywhere in India." : "Cash on Delivery. Ships anywhere in India."}
         </p>

@@ -814,6 +814,40 @@ export default function AdminProducts({ onProductsChange, isActive = true }) {
         loadProducts();
     };
 
+    // Flip a product on or off the shop from the row itself, no editor needed.
+    const [togglingId, setTogglingId] = useState(null);
+    const toggleActive = async (p) => {
+        if (togglingId) return;
+        setTogglingId(p.id);
+        const { error } = await supabase
+            .from("products")
+            .update({ is_active: !p.is_active })
+            .eq("id", p.id);
+        setTogglingId(null);
+        if (error) { showToast(error.message, "error"); return; }
+        showToast(p.is_active ? `${p.name} hidden from the shop` : `${p.name} is live`, "success");
+        loadProducts();
+    };
+    const stepInlineStock = (delta) => {
+        setInlineStockValue((v) => String(Math.max(0, (Number(v) || 0) + delta)));
+    };
+    const activeSwitch = (p) => (
+        <button
+            type="button"
+            role="switch"
+            aria-checked={!!p.is_active}
+            aria-label={p.is_active ? `Hide ${p.name} from the shop` : `Show ${p.name} in the shop`}
+            disabled={togglingId === p.id}
+            onClick={() => toggleActive(p)}
+            className={`group inline-flex h-7 shrink-0 items-center gap-1.5 rounded-full pl-1 pr-2.5 text-[11.5px] font-semibold transition-[background-color,color] duration-150 disabled:opacity-50 ${p.is_active ? "bg-emerald-50 text-emerald-700" : "bg-bone-deep text-stone-500"}`}
+        >
+            <span className={`relative h-5 w-8 rounded-full transition-colors duration-150 ${p.is_active ? "bg-emerald-500" : "bg-stone-300"}`}>
+                <span className={`absolute top-0.5 h-4 w-4 rounded-full bg-white shadow-sm transition-[left] duration-150 ease-out-strong ${p.is_active ? "left-[0.9rem]" : "left-0.5"}`} />
+            </span>
+            {p.is_active ? "Live" : "Hidden"}
+        </button>
+    );
+
     return (
         <>
             <div className="rounded-2xl border border-line bg-white p-4 sm:p-5">
@@ -1644,10 +1678,7 @@ export default function AdminProducts({ onProductsChange, isActive = true }) {
                                                         <div className="flex items-start justify-between gap-2">
                                                             <div className="min-w-0">
                                                                 <div className="truncate text-[15px] font-semibold text-ink">{p.name}</div>
-                                                                <div className="mt-0.5 truncate text-xs text-stone-500">
-                                                                    {p.category || "—"}
-                                                                    {!p.is_active && <span className="ml-1.5 rounded-full bg-bone-deep px-1.5 py-px text-[10.5px] font-semibold text-stone-600">Hidden</span>}
-                                                                </div>
+                                                                <div className="mt-0.5 truncate text-xs text-stone-500">{p.category || "—"}</div>
                                                             </div>
                                                             <button
                                                                 type="button"
@@ -1659,6 +1690,7 @@ export default function AdminProducts({ onProductsChange, isActive = true }) {
                                                         </div>
 
                                                         <div className="mt-2.5 flex flex-wrap items-center gap-1.5 text-xs">
+                                                            {activeSwitch(p)}
                                                             <span className="inline-flex h-7 items-center rounded-full bg-bone px-2.5 font-semibold tabular-nums text-ink">
                                                                 ₹{Number(p.price_inr || 0).toLocaleString("en-IN")}
                                                             </span>
@@ -1679,18 +1711,23 @@ export default function AdminProducts({ onProductsChange, isActive = true }) {
                                                                 const qty = Number(p.stock_qty || 0);
                                                                 const tone = out ? "bg-red-50 text-red-700" : qty <= LOW_STOCK_THRESHOLD ? "bg-amber-50 text-amber-700" : "bg-emerald-50 text-emerald-700";
                                                                 return inlineStockId === p.id ? (
-                                                                    <span className="inline-flex h-8 items-center gap-1.5 rounded-full border border-line-strong bg-white pl-2.5 pr-1">
-                                                                        <span className="text-stone-500">Stock</span>
+                                                                    <span className="inline-flex h-9 items-center gap-1 rounded-full border border-line-strong bg-white pl-1 pr-1">
+                                                                        <button type="button" onClick={() => stepInlineStock(-1)} aria-label="One less" className="grid h-7 w-7 place-items-center rounded-full bg-bone text-base leading-none text-ink active:scale-[0.94]">−</button>
                                                                         <input
                                                                             type="number"
                                                                             inputMode="numeric"
                                                                             value={inlineStockValue}
                                                                             onChange={(e) => setInlineStockValue(e.target.value)}
-                                                                            className="w-14 rounded-md border border-line px-1.5 py-0.5 text-xs tabular-nums text-ink outline-none focus:border-brand"
+                                                                            onKeyDown={(e) => {
+                                                                                if (e.key === "Enter") saveInlineStock(p.id);
+                                                                                if (e.key === "Escape") { setInlineStockId(null); setInlineStockValue(""); }
+                                                                            }}
+                                                                            className="w-12 rounded-md border border-line px-1 py-0.5 text-center text-sm tabular-nums text-ink outline-none focus:border-brand"
                                                                             min={0}
                                                                             autoFocus
                                                                         />
-                                                                        <button type="button" onClick={() => saveInlineStock(p.id)} disabled={savingInlineStock} className="h-6 rounded-full bg-ink px-2.5 text-[11px] font-semibold text-white disabled:opacity-40">{savingInlineStock ? "…" : "Save"}</button>
+                                                                        <button type="button" onClick={() => stepInlineStock(1)} aria-label="One more" className="grid h-7 w-7 place-items-center rounded-full bg-bone text-base leading-none text-ink active:scale-[0.94]">+</button>
+                                                                        <button type="button" onClick={() => saveInlineStock(p.id)} disabled={savingInlineStock} className="ml-0.5 h-7 rounded-full bg-ink px-3 text-[11.5px] font-semibold text-white disabled:opacity-40">{savingInlineStock ? "…" : "Save"}</button>
                                                                         <button type="button" onClick={() => { setInlineStockId(null); setInlineStockValue(""); }} aria-label="Cancel" className="grid h-6 w-6 place-items-center rounded-full text-stone-400">✕</button>
                                                                     </span>
                                                                 ) : (
@@ -1787,6 +1824,7 @@ export default function AdminProducts({ onProductsChange, isActive = true }) {
                                                                 // No variants — standard inline edit
                                                                 return inlineStockId === p.id ? (
                                                                     <div className="flex items-center gap-1">
+                                                                        <button type="button" onClick={() => stepInlineStock(-1)} aria-label="One less" className="grid h-7 w-7 place-items-center rounded-full bg-bone text-base leading-none text-ink hover:bg-bone-deep">−</button>
                                                                         <input
                                                                             type="number"
                                                                             value={inlineStockValue}
@@ -1795,10 +1833,11 @@ export default function AdminProducts({ onProductsChange, isActive = true }) {
                                                                                 if (e.key === "Enter") saveInlineStock(p.id);
                                                                                 if (e.key === "Escape") { setInlineStockId(null); setInlineStockValue(""); }
                                                                             }}
-                                                                            className="w-16 rounded-lg border border-stone-300 px-2 py-1 text-xs focus:ring-2 focus:ring-[#1e3a5f]/20 outline-none"
+                                                                            className="w-14 rounded-lg border border-stone-300 px-2 py-1 text-center text-xs tabular-nums focus:ring-2 focus:ring-[#1e3a5f]/20 outline-none"
                                                                             min={0}
                                                                             autoFocus
                                                                         />
+                                                                        <button type="button" onClick={() => stepInlineStock(1)} aria-label="One more" className="grid h-7 w-7 place-items-center rounded-full bg-bone text-base leading-none text-ink hover:bg-bone-deep">+</button>
                                                                         <button
                                                                             type="button"
                                                                             onClick={() => saveInlineStock(p.id)}
@@ -1836,15 +1875,7 @@ export default function AdminProducts({ onProductsChange, isActive = true }) {
                                                         </td>
 
                                                         <td className="py-2 pr-4">
-                                                            <span
-                                                                className={
-                                                                    p.is_active
-                                                                        ? "text-green-600 font-semibold"
-                                                                        : "text-stone-400 font-semibold"
-                                                                }
-                                                            >
-                                                                {p.is_active ? "Yes" : "No"}
-                                                            </span>
+                                                            {activeSwitch(p)}
                                                         </td>
 
                                                         <td className="py-2 pr-4 text-xs text-stone-400">

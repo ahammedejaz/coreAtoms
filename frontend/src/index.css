@@ -220,6 +220,23 @@
     box-shadow: inset 0 1px 2px rgba(18, 27, 43, 0.02), 0 0 0 3px rgba(30, 58, 95, 0.1);
   }
 
+  /* Native date pickers on iPhone Safari keep their intrinsic width and
+     ignore `width: 100%` inside a flex or grid cell, which pushed the admin's
+     From / To and Starts / Ends fields out of their cards. */
+  input[type="date"],
+  input[type="datetime-local"],
+  input[type="time"] {
+    min-width: 0;
+    max-width: 100%;
+    -webkit-appearance: none;
+    appearance: none;
+  }
+  input[type="date"]::-webkit-date-and-time-value,
+  input[type="datetime-local"]::-webkit-date-and-time-value {
+    text-align: left;
+    min-height: 1.25rem;
+  }
+
   .no-scrollbar { scrollbar-width: none; -ms-overflow-style: none; }
   .no-scrollbar::-webkit-scrollbar { display: none; }
 

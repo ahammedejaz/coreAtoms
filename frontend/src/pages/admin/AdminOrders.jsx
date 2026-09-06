@@ -695,23 +695,23 @@ export default function AdminOrders({ onOrdersChange, isActive = true }) {
                             </select>
                         </div>
 
-                        <div>
+                        <div className="min-w-0">
                             <div className="text-xs text-stone-400">From</div>
                             <input
                                 type="date"
                                 value={orderDateFrom}
                                 onChange={(e) => setOrderDateFrom(e.target.value)}
-                                className="mt-1 w-full rounded-xl border border-[#E8E4DE] bg-white px-3 py-2 text-sm text-stone-900 focus:ring-2 focus:ring-[#1e3a5f]/20 outline-none"
+                                className="mt-1 w-full min-w-0 rounded-xl border border-[#E8E4DE] bg-white px-3 py-2 text-sm text-stone-900 focus:ring-2 focus:ring-[#1e3a5f]/20 outline-none"
                             />
                         </div>
 
-                        <div>
+                        <div className="min-w-0">
                             <div className="text-xs text-stone-400">To</div>
                             <input
                                 type="date"
                                 value={orderDateTo}
                                 onChange={(e) => setOrderDateTo(e.target.value)}
-                                className="mt-1 w-full rounded-xl border border-[#E8E4DE] bg-white px-3 py-2 text-sm text-stone-900 focus:ring-2 focus:ring-[#1e3a5f]/20 outline-none"
+                                className="mt-1 w-full min-w-0 rounded-xl border border-[#E8E4DE] bg-white px-3 py-2 text-sm text-stone-900 focus:ring-2 focus:ring-[#1e3a5f]/20 outline-none"
                             />
                         </div>
                     </div>

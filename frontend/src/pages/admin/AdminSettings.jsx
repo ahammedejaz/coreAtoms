@@ -1013,13 +1013,13 @@ export default function AdminSettings({ isActive = true }) {
                                 </div>
                             </div>
                             {/* Row 2: Starts at + Ends at */}
-                            <div className="mt-3 flex gap-3">
-                                <div className="flex-1">
+                            <div className="mt-3 flex flex-col gap-3 sm:flex-row">
+                                <div className="min-w-0 flex-1">
                                     <label className="text-xs text-stone-400 block mb-1">Starts at (optional)</label>
                                     <input type="datetime-local" value={newStartsAt} onChange={(e) => setNewStartsAt(e.target.value)}
                                         className="w-full rounded-xl border border-[#E8E4DE] bg-white px-3 py-2.5 text-sm text-stone-900 focus:ring-2 focus:ring-[#1e3a5f]/20 outline-none" />
                                 </div>
-                                <div className="flex-1">
+                                <div className="min-w-0 flex-1">
                                     <label className="text-xs text-stone-400 block mb-1">Ends at (optional)</label>
                                     <input type="datetime-local" value={newEndsAt} onChange={(e) => setNewEndsAt(e.target.value)}
                                         className="w-full rounded-xl border border-[#E8E4DE] bg-white px-3 py-2.5 text-sm text-stone-900 focus:ring-2 focus:ring-[#1e3a5f]/20 outline-none" />

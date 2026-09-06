@@ -816,16 +816,11 @@ export default function AdminProducts({ onProductsChange, isActive = true }) {
 
     return (
         <>
-            <div className="rounded-2xl border border-[#E8E4DE] bg-white p-5">
-                <div className="text-base font-semibold text-stone-900">Products</div>
-
-                <div className="mt-4">
+            <div className="rounded-2xl border border-line bg-white p-4 sm:p-5">
+                <div>
                     <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
                         <div>
-                            <div className="text-sm font-semibold text-stone-900">
-                                Products
-                            </div>
-                            <div className="mt-1 text-xs text-stone-400">
+                            <div className="text-xs text-stone-400">
                                 Create, edit, delete products. Changes reflect immediately in
                                 Shop and Product Detail.
                             </div>
@@ -848,7 +843,7 @@ export default function AdminProducts({ onProductsChange, isActive = true }) {
                     </div>
 
                     {showProductForm && (
-                        <div ref={formRef} className="mt-4 rounded-2xl border border-[#E8E4DE] bg-white p-4">
+                        <div ref={formRef} className="mt-4 rounded-2xl border border-[#E8E4DE] bg-white p-4 pb-24 md:pb-4">
                             <div className="flex items-start justify-between gap-3">
                                 <div>
                                     <div className="text-sm font-semibold text-stone-900">
@@ -1533,6 +1528,36 @@ export default function AdminProducts({ onProductsChange, isActive = true }) {
                                     </div>
                                 </div>
                             )}
+                            {/* Phone action bar: the form is thousands of pixels tall, so Save, Delete and
+                                Close stay within thumb reach instead of only at the very bottom. */}
+                            <div className="glass fixed inset-x-0 bottom-0 z-40 border-t border-line px-4 pb-[max(0.75rem,env(safe-area-inset-bottom))] pt-3 md:hidden">
+                                <div className="mx-auto flex max-w-lg items-center gap-2">
+                                    <button
+                                        type="button"
+                                        onClick={() => { resetProductForm(); setShowProductForm(false); }}
+                                        className="inline-flex h-11 items-center rounded-full border border-line-strong bg-white px-4 text-[13px] font-semibold text-ink active:scale-[0.97]"
+                                    >
+                                        Close
+                                    </button>
+                                    {editingId && (
+                                        <button
+                                            type="button"
+                                            onClick={() => deleteProduct(editingId)}
+                                            className="inline-flex h-11 items-center rounded-full border border-red-200 bg-red-50 px-4 text-[13px] font-semibold text-red-700 active:scale-[0.97]"
+                                        >
+                                            Delete
+                                        </button>
+                                    )}
+                                    <button
+                                        type="button"
+                                        onClick={requestSave}
+                                        disabled={savingProduct || !isDirty}
+                                        className="btn-primary h-11 flex-1 text-[13.5px] disabled:cursor-not-allowed disabled:opacity-40"
+                                    >
+                                        {savingProduct ? "Saving…" : editingId ? "Save changes" : "Create product"}
+                                    </button>
+                                </div>
+                            </div>
                         </div>
                     )}
 
@@ -1594,21 +1619,21 @@ export default function AdminProducts({ onProductsChange, isActive = true }) {
                         ) : (
                             <div className="mt-2">
                                 {/* Mobile cards */}
-                                <div className="grid gap-3 md:hidden">
+                                <div className="grid grid-cols-[minmax(0,1fr)] gap-3 md:hidden">
                                     {paginatedProducts.map((p) => {
                                         const out = Number(p.stock_qty || 0) <= 0;
                                         return (
                                             <div
                                                 key={p.id}
-                                                className="rounded-2xl border border-[#E8E4DE] bg-white p-4"
+                                                className="rounded-2xl border border-line bg-white p-3"
                                             >
                                                 <div className="flex items-start gap-3">
-                                                    <div className="h-14 w-14 rounded-xl bg-stone-100 overflow-hidden shrink-0">
+                                                    <div className="h-16 w-16 shrink-0 overflow-hidden rounded-xl bg-bone">
                                                         {p.image_url ? (
                                                             <img
                                                                 src={p.image_url}
-                                                                alt={p.name}
-                                                                className="h-full w-full object-cover"
+                                                                alt=""
+                                                                className="product-img h-full w-full object-contain"
                                                                 style={{ objectPosition: cleanImagePosition(p.image_position) }}
                                                                 loading="lazy"
                                                             />
@@ -1616,85 +1641,73 @@ export default function AdminProducts({ onProductsChange, isActive = true }) {
                                                     </div>
 
                                                     <div className="min-w-0 flex-1">
-                                                        <div className="font-semibold text-stone-900 truncate">
-                                                            {p.name}
-                                                        </div>
-                                                        <div className="mt-0.5 text-xs text-stone-400 truncate">
-                                                            {p.category || "—"}
-                                                        </div>
-
-                                                        <div className="mt-3 grid grid-cols-2 gap-2 text-xs">
-                                                            <div className="rounded-xl border border-[#E8E4DE] bg-white px-3 py-2">
-                                                                ₹{Number(p.price_inr || 0).toLocaleString("en-IN")}
-                                                            </div>
-                                                            <div className="rounded-xl border border-[#E8E4DE] bg-white px-3 py-2 text-xs">
-                                                                {(() => {
-                                                                    const activeVariants = (p.product_variants || []).filter(v => v.is_active !== false);
-                                                                    if (activeVariants.length > 0) {
-                                                                        return (
-                                                                            <div className="space-y-1">
-                                                                                {activeVariants.map((v) => {
-                                                                                    const vOut = Number(v.stock_qty || 0) <= 0;
-                                                                                    const vLow = !vOut && Number(v.stock_qty || 0) <= LOW_STOCK_THRESHOLD;
-                                                                                    return (
-                                                                                        <div key={v.id} className="flex items-center justify-between gap-1">
-                                                                                            <span className="text-stone-500 truncate">{v.label}</span>
-                                                                                            <span className={`font-semibold shrink-0 ${vOut ? "text-red-600" : vLow ? "text-amber-600" : "text-emerald-600"}`}>
-                                                                                                {vOut ? "0" : Number(v.stock_qty || 0)}{vLow && " ⚠️"}
-                                                                                            </span>
-                                                                                        </div>
-                                                                                    );
-                                                                                })}
-                                                                            </div>
-                                                                        );
-                                                                    }
-                                                                    return inlineStockId === p.id ? (
-                                                                        <div className="flex items-center gap-1">
-                                                                            <input
-                                                                                type="number"
-                                                                                value={inlineStockValue}
-                                                                                onChange={(e) => setInlineStockValue(e.target.value)}
-                                                                                className="w-14 rounded-lg border border-stone-300 px-1.5 py-0.5 text-xs text-stone-900 outline-none"
-                                                                                min={0}
-                                                                                autoFocus
-                                                                            />
-                                                                            <button type="button" onClick={() => saveInlineStock(p.id)} disabled={savingInlineStock} className="text-[10px] font-semibold text-stone-900 disabled:opacity-40">{savingInlineStock ? "…" : "Save"}</button>
-                                                                            <button type="button" onClick={() => { setInlineStockId(null); setInlineStockValue(""); }} className="text-[10px] text-stone-400">✕</button>
-                                                                        </div>
-                                                                    ) : (
-                                                                        <button type="button" onClick={() => { setInlineStockId(p.id); setInlineStockValue(String(p.stock_qty || 0)); }} className={`w-full text-left font-semibold ${out ? "text-red-600" : Number(p.stock_qty || 0) <= LOW_STOCK_THRESHOLD ? "text-amber-600" : "text-emerald-600"}`}>
-                                                                            {out
-                                                                                ? `Out of stock (0)`
-                                                                                : Number(p.stock_qty || 0) <= LOW_STOCK_THRESHOLD
-                                                                                    ? `Low stock ⚠️ (${Number(p.stock_qty || 0)})`
-                                                                                    : `In stock (${Number(p.stock_qty || 0)})`} ✏️
-                                                                        </button>
-                                                                    );
-                                                                })()}
-                                                            </div>
-                                                        </div>
-
-                                                        <div className="mt-3 flex items-center justify-between gap-2">
-                                                            <div className="text-xs text-stone-400">
-                                                                Active:{" "}
-                                                                <span className="font-semibold text-stone-900">
-                                                                    {p.is_active ? "Yes" : "No"}
-                                                                </span>
+                                                        <div className="flex items-start justify-between gap-2">
+                                                            <div className="min-w-0">
+                                                                <div className="truncate text-[15px] font-semibold text-ink">{p.name}</div>
+                                                                <div className="mt-0.5 truncate text-xs text-stone-500">
+                                                                    {p.category || "—"}
+                                                                    {!p.is_active && <span className="ml-1.5 rounded-full bg-bone-deep px-1.5 py-px text-[10.5px] font-semibold text-stone-600">Hidden</span>}
+                                                                </div>
                                                             </div>
                                                             <button
                                                                 type="button"
                                                                 onClick={() => openEditProduct(p)}
-                                                                className="rounded-xl bg-[#1e3a5f] px-3 py-2 text-xs font-semibold text-white shadow-sm hover:bg-[#162d4a] active:scale-95 transition-all duration-150"
+                                                                className="inline-flex h-9 shrink-0 items-center rounded-full border border-line-strong bg-white px-3.5 text-[12.5px] font-semibold text-ink transition-[transform,background-color] duration-150 active:scale-[0.96]"
                                                             >
                                                                 Edit
                                                             </button>
                                                         </div>
-                                                    </div>
-                                                </div>
 
-                                                <div className="mt-3 text-[11px] text-stone-400">
-                                                    Created:{" "}
-                                                    {p.created_at ? new Date(p.created_at).toLocaleString() : "—"}
+                                                        <div className="mt-2.5 flex flex-wrap items-center gap-1.5 text-xs">
+                                                            <span className="inline-flex h-7 items-center rounded-full bg-bone px-2.5 font-semibold tabular-nums text-ink">
+                                                                ₹{Number(p.price_inr || 0).toLocaleString("en-IN")}
+                                                            </span>
+                                                            {(() => {
+                                                                const activeVariants = (p.product_variants || []).filter(v => v.is_active !== false);
+                                                                if (activeVariants.length > 0) {
+                                                                    return activeVariants.map((v) => {
+                                                                        const vOut = Number(v.stock_qty || 0) <= 0;
+                                                                        const vLow = !vOut && Number(v.stock_qty || 0) <= LOW_STOCK_THRESHOLD;
+                                                                        return (
+                                                                            <span key={v.id} className={`inline-flex h-7 max-w-full items-center gap-1 rounded-full px-2.5 font-semibold ${vOut ? "bg-red-50 text-red-700" : vLow ? "bg-amber-50 text-amber-700" : "bg-emerald-50 text-emerald-700"}`}>
+                                                                                <span className="truncate font-medium opacity-80">{v.label}</span>
+                                                                                <span className="tabular-nums">{Number(v.stock_qty || 0)}</span>
+                                                                            </span>
+                                                                        );
+                                                                    });
+                                                                }
+                                                                const qty = Number(p.stock_qty || 0);
+                                                                const tone = out ? "bg-red-50 text-red-700" : qty <= LOW_STOCK_THRESHOLD ? "bg-amber-50 text-amber-700" : "bg-emerald-50 text-emerald-700";
+                                                                return inlineStockId === p.id ? (
+                                                                    <span className="inline-flex h-8 items-center gap-1.5 rounded-full border border-line-strong bg-white pl-2.5 pr-1">
+                                                                        <span className="text-stone-500">Stock</span>
+                                                                        <input
+                                                                            type="number"
+                                                                            inputMode="numeric"
+                                                                            value={inlineStockValue}
+                                                                            onChange={(e) => setInlineStockValue(e.target.value)}
+                                                                            className="w-14 rounded-md border border-line px-1.5 py-0.5 text-xs tabular-nums text-ink outline-none focus:border-brand"
+                                                                            min={0}
+                                                                            autoFocus
+                                                                        />
+                                                                        <button type="button" onClick={() => saveInlineStock(p.id)} disabled={savingInlineStock} className="h-6 rounded-full bg-ink px-2.5 text-[11px] font-semibold text-white disabled:opacity-40">{savingInlineStock ? "…" : "Save"}</button>
+                                                                        <button type="button" onClick={() => { setInlineStockId(null); setInlineStockValue(""); }} aria-label="Cancel" className="grid h-6 w-6 place-items-center rounded-full text-stone-400">✕</button>
+                                                                    </span>
+                                                                ) : (
+                                                                    <button
+                                                                        type="button"
+                                                                        onClick={() => { setInlineStockId(p.id); setInlineStockValue(String(qty)); }}
+                                                                        className={`inline-flex h-7 items-center gap-1 rounded-full px-2.5 font-semibold transition-transform duration-150 active:scale-[0.96] ${tone}`}
+                                                                        aria-label={`Edit stock, currently ${qty}`}
+                                                                    >
+                                                                        {out ? "Out of stock" : qty <= LOW_STOCK_THRESHOLD ? "Low stock" : "In stock"}
+                                                                        <span className="tabular-nums">{qty}</span>
+                                                                        <svg className="h-3 w-3 opacity-60" viewBox="0 0 20 20" fill="currentColor" aria-hidden="true"><path d="M13.586 3.586a2 2 0 112.828 2.828l-.793.793-2.828-2.828.793-.793zM11.379 5.793L3 14.172V17h2.828l8.38-8.379-2.83-2.828z" /></svg>
+                                                                    </button>
+                                                                );
+                                                            })()}
+                                                        </div>
+                                                    </div>
                                                 </div>
                                             </div>
                                         );

@@ -110,9 +110,8 @@ export default function AdminReviews({ onCountChange, isActive = true }) {
 
     return (
         <>
-            <div className="rounded-2xl border border-[#E8E4DE] bg-white p-5">
-                <div className="text-base font-semibold text-stone-900">Customer Reviews</div>
-                <div className="mt-1 text-xs text-stone-400">View and moderate reviews. Deletion is permanent.</div>
+            <div className="rounded-2xl border border-line bg-white p-4 sm:p-5">
+                <div className="text-xs text-stone-400">View and moderate reviews. Deletion is permanent.</div>
 
                 <div className="mt-4 flex flex-wrap items-center gap-3">
                     <input value={search} onChange={(e) => setSearch(e.target.value)}

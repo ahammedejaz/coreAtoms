@@ -48,8 +48,8 @@ studio backdrop disappears and the bottle looks placed, not pasted.
   titles 2.25rem / 3rem; section titles elsewhere 1.5rem to 2.25rem;
   ingredient cells 1.15rem / 1.3rem; card names 15px semibold; body copy in
   the content sections 14px on 1.6 line-height.
-- No eyebrow labels above headings. `.section-label` survives only for the
-  admin dashboard.
+- No eyebrow labels above headings. `.section-label` survives only for data
+  labels inside the admin dashboard.
 
 ## Shape
 
@@ -272,3 +272,19 @@ studio backdrop disappears and the bottle looks placed, not pasted.
   or bone, never over another photograph's subject.
 - Effects are switches, not structure: every item in the physical layer can
   be turned off under Site content → Motion and the page must still read.
+
+## Admin
+
+The dashboard (`pages/AdminDashboard.jsx`) is a workspace, not a page of the
+shop: it renders without the storefront footer or container, on the canvas
+ground with no card around it. Its shell is a greeting, a rail of five stat
+tiles that scrolls sideways on a phone and becomes a grid from the tablet up,
+a row of order-status chips, and a strip of tab pills that sticks under the
+site header so the admin can change section from anywhere on a long editor;
+on a phone the strip scrolls with fade-out edges and the active pill scrolls
+itself into view. Tabs do not animate (they are used constantly). Phone lists
+are single-column cards with hairlines: a product row is thumbnail, name,
+category and a line of chips (price, stock as a tap-to-edit chip, one chip per
+variant); an order row is id, customer, amount and one action line (status
+select, Details, WhatsApp icon). The product editor shows a fixed bottom bar
+(Close, Delete, Save) below `md`, because the form runs thousands of pixels.

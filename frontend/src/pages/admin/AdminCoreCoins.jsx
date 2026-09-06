@@ -167,7 +167,6 @@ export default function AdminCoreCoins() {
             {/* Header */}
             <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
                 <div>
-                    <div className="text-base font-semibold text-stone-900">CoreCoins Wallets</div>
                     <div className="text-xs text-stone-400 mt-0.5">Live balances across all customers. Coins are earned and credited automatically.</div>
                 </div>
                 <button type="button" onClick={load} disabled={loading}

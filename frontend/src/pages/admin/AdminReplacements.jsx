@@ -500,30 +500,32 @@ export default function AdminReplacements({ onCountChange }) {
                             <button
                                 type="button"
                                 onClick={() => setExpandedId(isExpanded ? null : r.id)}
-                                className="w-full px-5 py-4 flex items-center justify-between gap-3 text-left"
+                                className="w-full px-4 py-3.5 sm:px-5 sm:py-4 flex items-center justify-between gap-3 text-left"
                             >
-                                <div className="flex items-center gap-3 min-w-0">
-                                    <span className={[
-                                        "inline-flex items-center rounded-full px-2.5 py-1 text-[10px] font-bold uppercase tracking-wide",
-                                        STATUS_STYLES[r.status] || "bg-stone-100 text-stone-500",
-                                    ].join(" ")}>
-                                        {STATUS_LABELS[r.status] || r.status}
-                                    </span>
-                                    <div className="min-w-0">
-                                        <span className="text-sm font-semibold text-stone-900">
+                                <div className="min-w-0 flex-1">
+                                    <div className="flex items-center gap-2 min-w-0">
+                                        <span className="truncate text-sm font-semibold text-stone-900">
                                             {profile.full_name || profile.email || "Customer"}
                                         </span>
-                                        <span className="text-xs text-stone-400 ml-2">
+                                        <span className="shrink-0 text-xs text-stone-400 tabular-nums">
                                             #{String(r.order_id).slice(0, 8)}
+                                        </span>
+                                    </div>
+                                    <div className="mt-1.5 flex items-center gap-2">
+                                        <span className={[
+                                            "inline-flex items-center rounded-full px-2 py-0.5 text-[10px] font-bold uppercase tracking-wide",
+                                            STATUS_STYLES[r.status] || "bg-stone-100 text-stone-500",
+                                        ].join(" ")}>
+                                            {STATUS_LABELS[r.status] || r.status}
+                                        </span>
+                                        <span className="text-xs text-stone-400">
+                                            {new Date(r.created_at).toLocaleDateString("en-IN", {
+                                                day: "numeric", month: "short", year: "numeric"
+                                            })}
                                         </span>
                                     </div>
                                 </div>
                                 <div className="flex items-center gap-3 shrink-0">
-                                    <span className="text-xs text-stone-400">
-                                        {new Date(r.created_at).toLocaleDateString("en-IN", {
-                                            day: "numeric", month: "short", year: "numeric"
-                                        })}
-                                    </span>
                                     <svg
                                         className={`h-4 w-4 text-stone-400 transition-transform ${isExpanded ? "rotate-180" : ""}`}
                                         viewBox="0 0 20 20" fill="currentColor"

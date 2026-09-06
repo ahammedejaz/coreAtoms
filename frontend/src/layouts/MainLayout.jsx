@@ -17,6 +17,7 @@
  * @module layouts/MainLayout
  */
 import { Suspense } from "react";
+import { useLocation } from "react-router-dom";
 import Navbar from "../components/Navbar";
 import Footer from "../components/Footer";
 import ErrorBoundary from "../components/ErrorBoundary";
@@ -38,6 +39,9 @@ function PageFallback() {
 
 export default function MainLayout() {
   const { isAdmin } = useAuth();
+  // The dashboard is a workspace, not a page of the shop: no storefront
+  // footer under it, and it manages its own vertical rhythm.
+  const isAdminRoute = useLocation().pathname.startsWith("/admin");
 
   return (
     <MotionProvider>
@@ -55,17 +59,17 @@ export default function MainLayout() {
             {(content, arriving, curtain, fullBleed) => (
               <main
                 id="main"
-                className={`${curtain ? (arriving ? "page-arrive" : "") : "page-enter"} ${fullBleed ? "flex-1" : "flex-1 py-10 sm:py-14"}`}
+                className={`${curtain ? (arriving ? "page-arrive" : "") : "page-enter"} ${fullBleed || isAdminRoute ? "flex-1" : "flex-1 py-10 sm:py-14"}`}
               >
                 <ErrorBoundary>
                   <Suspense fallback={<PageFallback />}>
-                    {fullBleed ? content : <div className="mx-auto max-w-6xl px-5 sm:px-6">{content}</div>}
+                    {fullBleed || isAdminRoute ? content : <div className="mx-auto max-w-6xl px-5 sm:px-6">{content}</div>}
                   </Suspense>
                 </ErrorBoundary>
               </main>
             )}
           </RouteCurtain>
-          <Footer />
+          {!isAdminRoute && <Footer />}
           {!isAdmin && <CartDrawer />}
         </div>
         <Grain />

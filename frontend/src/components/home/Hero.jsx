@@ -14,28 +14,16 @@
  * @param {{ images: Array<{url:string, position:string}>|null, copy: object, trust: Array<{label:string}> }} props
  * @module components/home/Hero
  */
-import { Fragment, useCallback, useMemo, useRef, useState, useEffect } from "react";
+import { useCallback, useMemo, useRef, useState, useEffect } from "react";
 import { Link } from "react-router-dom";
 import { ArrowRight } from "lucide-react";
 import { motion, useScroll, useTransform } from "motion/react";
 import HintIcon from "../HintIcon";
 import { usePrefersReducedMotion } from "../ScrollReveal";
 import Magnetic from "../fx/Magnetic";
+import MaskWords from "../fx/MaskWords";
 
 const SLIDE_INTERVAL_MS = 6000;
-
-/** Splits text into words, each revealed from its own mask in sequence. */
-function MaskWords({ text, className = "", startDelay = 80, step = 55, offset = 0 }) {
-  const words = String(text || "").split(/\s+/).filter(Boolean);
-  return words.map((w, i) => (
-    <Fragment key={`${w}-${i}`}>
-      {i > 0 && " "}
-      <span className={`word-mask ${className}`}>
-        <span style={{ "--delay": `${startDelay + (offset + i) * step}ms` }}>{w}</span>
-      </span>
-    </Fragment>
-  ));
-}
 
 export default function Hero({ images, copy, trust }) {
   const ref = useRef(null);

@@ -138,14 +138,15 @@ studio backdrop disappears and the bottle looks placed, not pasted.
   plain `<img>` (`components/Cutout`) that can stand on navy or bone with its
   own shadow. It appears on the category index's stage (the hovered
   category's jar, swapped only once the next cutout is ready so the field is
-  never empty), and on the login panel, empty cart and 404 page. It does not
-  appear on the home hero or the product page: a rendered three-dimensional
-  jar was built for both and rejected on 2026-09-05 (beside the real
-  photography it read as a plastic toy), and the cutout that replaced it
-  there was removed on 2026-09-06 at the owner's request. The hero is the
-  photograph and the words alone; the "What's inside" panel is the plain
-  Supplement Facts table. Do not bring back rendered product imagery, and do
-  not put a jar back in front of the hero.
+  never empty). That is the only place it appears. A rendered
+  three-dimensional jar was built for the hero, product page, login, cart and
+  404 and rejected on 2026-09-05 (beside the real photography it read as a
+  plastic toy); the cutout that replaced it on those pages was removed on
+  2026-09-06 at the owner's request. The hero is the photograph and the words
+  alone; the "What's inside" panel is the plain Supplement Facts table; the
+  login panel is a photograph under a navy scrim; the empty cart and the 404
+  carry an icon and a numeral. Do not bring back rendered product imagery,
+  and do not put a jar back on any of those pages.
 - Pinned stories: the Formulary standard pins its `.facts` panel while the six
   rules scroll past, each filling its row as it crosses the middle of the
   viewport; two full-bleed photo breaks (the second and third hero
@@ -189,8 +190,14 @@ studio backdrop disappears and the bottle looks placed, not pasted.
 - Product page: sticky gallery, buy column without card shells, monograph
   sections with the heading in the left column, the "What's inside"
   Supplement Facts panel, `StickyAddToCart` on phones.
-- Account: `AuthShell` split layout for login, forgot and reset, with the lead
-  jar in the navy panel's corner.
+- Account: `AuthShell` split layout for login, forgot and reset. The left
+  panel is a photograph (`page_account.panelImage`, else the first hero
+  photograph) under a navy scrim, with the logo, an eyebrow pill, the heading
+  arriving word by word (`fx/MaskWords`), three numbered points and a
+  footnote; on phones it is a short band above the form. The login form opens
+  with a segmented Sign in / Create account switch and closes with a lock-icon
+  note. Every word, the photograph included, is under Admin → Site content →
+  Account pages.
 - Documents: `LegalPage` with an "On this page" rail built from section
   titles; `LegalDocument` renders one policy from its content key;
   `FAQPage` accordion groups; `RichText` (paragraphs, bullets, monograph

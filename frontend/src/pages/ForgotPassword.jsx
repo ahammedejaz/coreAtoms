@@ -12,8 +12,10 @@ import { ArrowLeft } from "lucide-react";
 import { supabase } from "../services/supabase/client";
 import SEO from "../components/SEO";
 import AuthShell from "../components/AuthShell";
+import { useSiteContent } from "../services/siteContent";
 
 export default function ForgotPassword() {
+    const account = useSiteContent("page_account");
     const [email, setEmail] = useState("");
     const [loading, setLoading] = useState(false);
     const [sent, setSent] = useState(false);
@@ -42,10 +44,8 @@ export default function ForgotPassword() {
         <>
             <SEO title="Forgot Password | Core Atoms" description="Reset your password to regain access to your account." />
             <AuthShell
-                title={sent ? "Check your email" : "Forgot your password?"}
-                subtitle={sent
-                    ? "We've sent a reset link to your inbox."
-                    : "Enter your email and we'll send you a link to set a new one."}
+                title={sent ? account.forgotSentTitle : account.forgotTitle}
+                subtitle={sent ? account.forgotSentSubtitle : account.forgotSubtitle}
             >
                 {sent ? (
                     <div className="space-y-5">

@@ -16,6 +16,7 @@ import { Link, useNavigate } from "react-router-dom";
 import { supabase } from "../services/supabase/client";
 import SEO from "../components/SEO";
 import AuthShell from "../components/AuthShell";
+import { useSiteContent } from "../services/siteContent";
 import { ArrowLeft, TriangleAlert } from "lucide-react";
 
 const MIN_PASSWORD_LENGTH = 6;
@@ -56,6 +57,7 @@ function isRecoverySession(session) {
 }
 
 export default function ResetPassword() {
+    const account = useSiteContent("page_account");
     const navigate = useNavigate();
     const [password, setPassword] = useState("");
     const [confirm, setConfirm] = useState("");
@@ -128,7 +130,7 @@ export default function ResetPassword() {
     return (
         <>
             <SEO title="Reset Password | Core Atoms" description="Choose a new password for your account." />
-            <AuthShell title="Set a new password" subtitle="Choose a strong password for your account.">
+            <AuthShell title={account.resetTitle} subtitle={account.resetSubtitle}>
                 {status === "verifying" && (
                     <div className="space-y-3 py-6 text-center" role="status" aria-live="polite">
                         <div className="inline-block h-6 w-6 animate-spin rounded-full border-2 border-line-strong border-t-brand" />

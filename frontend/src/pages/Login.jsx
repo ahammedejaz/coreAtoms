@@ -3,12 +3,14 @@
  *
  * Supports both email+password and Google OAuth via Supabase Auth.
  * After login, admins are redirected to `/admin` and customers to `/`.
- * Toggle between sign-in and sign-up modes in the same form.
+ * A segmented switch above the form toggles between sign-in and sign-up;
+ * headings, tab labels and the closing note come from `page_account`.
  *
  * @module pages/Login
  */
 import { useEffect, useMemo, useState } from "react";
 import { Link, useNavigate, useSearchParams } from "react-router-dom";
+import { Lock } from "lucide-react";
 import { supabase } from "../services/supabase/client";
 import { useAuth } from "../context/AuthContext";
 import SEO from "../components/SEO";
@@ -107,8 +109,9 @@ export default function Login() {
     }
   };
 
-  const toggleMode = () => {
-    setIsSignup((prev) => !prev);
+  const setMode = (signup) => {
+    if (signup === isSignup) return;
+    setIsSignup(signup);
     setConfirm("");
     setMessage({ text: "", type: "" });
   };
@@ -120,6 +123,21 @@ export default function Login() {
         title={isSignup ? account.signupTitle : account.loginTitle}
         subtitle={isSignup ? account.signupSubtitle : account.loginSubtitle}
       >
+        <div role="tablist" aria-label="Sign in or create an account" className="mb-7 grid grid-cols-2 rounded-full bg-bone p-1 text-[13.5px] font-semibold">
+          {[[false, account.loginTab], [true, account.signupTab]].map(([signup, label]) => (
+            <button
+              key={label}
+              type="button"
+              role="tab"
+              aria-selected={isSignup === signup}
+              onClick={() => setMode(signup)}
+              className={`rounded-full py-2.5 transition-[background-color,color,box-shadow] duration-200 ${isSignup === signup ? "bg-white text-ink shadow-lift" : "text-stone-500 hover:text-ink"}`}
+            >
+              {label}
+            </button>
+          ))}
+        </div>
+
         <button
           onClick={handleGoogle}
           disabled={googleLoading}
@@ -187,12 +205,12 @@ export default function Login() {
           </button>
         </form>
 
-        <p className="mt-6 text-center text-sm text-stone-500">
-          {isSignup ? "Already have an account? " : "New to Core Atoms? "}
-          <button onClick={toggleMode} className="font-semibold text-brand hover:underline underline-offset-4">
-            {isSignup ? "Sign in" : "Create an account"}
-          </button>
-        </p>
+        {account.formNote && (
+          <p className="mt-6 flex items-start justify-center gap-2 text-center text-[12.5px] leading-relaxed text-stone-500">
+            <Lock className="mt-0.5 h-3.5 w-3.5 shrink-0 text-stone-400" strokeWidth={1.75} aria-hidden="true" />
+            {account.formNote}
+          </p>
+        )}
       </AuthShell>
     </>
   );

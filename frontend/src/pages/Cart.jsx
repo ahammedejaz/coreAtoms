@@ -19,9 +19,7 @@ import SEO from "../components/SEO";
 import ConfirmDialog from "../components/ConfirmDialog";
 import RevealText from "../components/fx/RevealText";
 import Magnetic from "../components/fx/Magnetic";
-import Cutout from "../components/Cutout";
 import { useSiteContent } from "../services/siteContent";
-import { fetchProductsCached } from "../services/products";
 import { AnimatePresence, motion } from "motion/react";
 import { fetchPricingSettings, EMPTY_PRICING } from "../services/settings";
 import { useEffect, useState } from "react";
@@ -42,15 +40,7 @@ export default function Cart() {
   const [pricing, setPricing] = useState(EMPTY_PRICING);
   const [confirmClear, setConfirmClear] = useState(false);
   const [brokenImages, setBrokenImages] = useState(() => new Set());
-  const [leadProduct, setLeadProduct] = useState(null);
   const copy = useSiteContent("page_cart");
-
-  // The empty state shows the range's lead jar; a failed read simply leaves it out.
-  useEffect(() => {
-    let on = true;
-    fetchProductsCached().then((list) => { if (on) setLeadProduct(list?.find((p) => p.image) || null); }).catch(() => {});
-    return () => { on = false; };
-  }, []);
 
   useEffect(() => {
     let cancelled = false;
@@ -88,29 +78,9 @@ export default function Cart() {
 
       {empty ? (
         <div className="border-t border-line py-16 text-center lg:py-20">
-          <div className="relative mx-auto h-64 w-64 sm:h-72 sm:w-72">
-            <span className="absolute inset-[8%] rounded-full bg-bone" aria-hidden="true" />
-            {leadProduct?.image ? (
-              <div className="hero-float relative flex h-full w-full items-center justify-center">
-                <Cutout
-                  src={leadProduct.image}
-                  alt=""
-                  className="hero-jar-enter max-h-[92%] w-auto max-w-full object-contain"
-                  fallback={(
-                    <span className="grid h-16 w-16 place-items-center rounded-full bg-white text-brand shadow-lift">
-                      <ShoppingBag className="h-7 w-7" strokeWidth={1.5} aria-hidden="true" />
-                    </span>
-                  )}
-                />
-              </div>
-            ) : (
-              <span className="relative grid h-full w-full place-items-center">
-                <span className="grid h-16 w-16 place-items-center rounded-full bg-white text-brand shadow-lift">
-                  <ShoppingBag className="h-7 w-7" strokeWidth={1.5} aria-hidden="true" />
-                </span>
-              </span>
-            )}
-          </div>
+          <span className="mx-auto grid h-20 w-20 place-items-center rounded-full bg-bone text-brand">
+            <ShoppingBag className="h-8 w-8" strokeWidth={1.5} aria-hidden="true" />
+          </span>
           <h2 className="mt-6 font-display text-2xl font-semibold tracking-tight text-ink">{copy.emptyTitle}</h2>
           <p className="mx-auto mt-2 max-w-xs text-sm text-stone-500">{copy.emptyText}</p>
           <Link to="/shop" className="btn-primary btn-lg mt-8">

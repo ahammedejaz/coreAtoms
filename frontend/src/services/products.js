@@ -128,6 +128,14 @@ export function mapDbProduct(p) {
 const PRODUCT_FIELDS =
   "id,name,sku,category,description,price_inr,mrp_inr,stock_qty,image_url,image_position,is_active,created_at,updated_at,about_text,best_for,pairs_well_with,recommended_stack,highlights,details,product_images(id,image_url,sort_order),product_reviews(rating),product_variants(id,label,price_inr,mrp_inr,stock_qty,sku,sort_order,is_active)";
 
+/** True when nothing on the card can be bought (all variants at 0, or base stock 0). */
+export function isOutOfStock(p) {
+  const variants = p?.variants || [];
+  return variants.length > 0
+    ? variants.every((v) => (v.stockQty ?? 0) <= 0)
+    : (p?.stockQty ?? 0) <= 0;
+}
+
 export async function fetchProducts() {
   const { data, error } = await supabase
     .from("products")
@@ -137,6 +145,24 @@ export async function fetchProducts() {
 
   if (error) throw error;
   return (data ?? []).map(mapDbProduct);
+}
+
+/* ── Short-lived catalogue cache ──────────────────────────────────────────
+   Header search suggestions, "Recently viewed" and the cross-sell strip all
+   want the same active-product list within seconds of each other. One
+   request serves them for a minute; the pages themselves keep calling
+   `fetchProducts()` so realtime refreshes stay authoritative. */
+const CACHE_TTL_MS = 60 * 1000;
+let catalogueCache = { at: 0, list: null, inflight: null };
+
+export async function fetchProductsCached() {
+  const now = Date.now();
+  if (catalogueCache.list && now - catalogueCache.at < CACHE_TTL_MS) return catalogueCache.list;
+  if (catalogueCache.inflight) return catalogueCache.inflight;
+  catalogueCache.inflight = fetchProducts()
+    .then((list) => { catalogueCache = { at: Date.now(), list, inflight: null }; return list; })
+    .catch((e) => { catalogueCache.inflight = null; throw e; });
+  return catalogueCache.inflight;
 }
 
 export async function fetchProductById(id) {

@@ -1,17 +1,14 @@
 /**
  * PincodeChecker.jsx — Check delivery availability by pincode.
  *
- * Users enter their 6-digit pincode to see:
- *   - Whether delivery is available
- *   - Estimated delivery days (3-5 metro, 5-7 others, 7-10 ODA)
- *   - COD availability
- *   - City name
- *
+ * Users enter their 6-digit pincode to see whether delivery is available,
+ * the estimated delivery days, COD availability and the city name.
  * Persists the last checked pincode in localStorage for convenience.
  *
  * @module components/PincodeChecker
  */
 import { useEffect, useState } from "react";
+import { Check, CircleAlert, MapPin } from "lucide-react";
 import { supabase } from "../services/supabase/client";
 
 const LS_KEY = "coreatoms_pincode";
@@ -75,18 +72,15 @@ export default function PincodeChecker() {
     };
 
     return (
-        <div className="rounded-xl border border-[#E8E4DE] bg-stone-50/50 p-4">
-            {/* Header */}
-            <div className="flex items-center gap-2 mb-3">
-                <svg className="h-4 w-4 text-[#1e3a5f]" viewBox="0 0 20 20" fill="currentColor">
-                    <path fillRule="evenodd" d="M5.05 4.05a7 7 0 119.9 9.9L10 18.9l-4.95-4.95a7 7 0 010-9.9zM10 11a2 2 0 100-4 2 2 0 000 4z" clipRule="evenodd" />
-                </svg>
-                <span className="text-xs font-semibold text-stone-700">Check Delivery Availability</span>
-            </div>
+        <div>
+            <label htmlFor="pincode-check" className="flex items-center gap-2 text-[13px] font-semibold text-ink">
+                <MapPin className="h-4 w-4 text-brand" strokeWidth={1.75} aria-hidden="true" />
+                Check delivery to your pincode
+            </label>
 
-            {/* Input row */}
-            <div className="flex gap-2 max-w-xs">
+            <div className="mt-2.5 flex max-w-sm gap-2">
                 <input
+                    id="pincode-check"
                     type="text"
                     inputMode="numeric"
                     maxLength={6}
@@ -94,86 +88,65 @@ export default function PincodeChecker() {
                     onChange={(e) => {
                         const val = e.target.value.replace(/\D/g, "").slice(0, 6);
                         setPincode(val);
-                        // Clear previous result when typing
                         if (result) setResult(null);
                         if (error) setError("");
                     }}
                     onKeyDown={handleKeyDown}
-                    placeholder="Enter pincode"
-                    className="flex-1 rounded-lg border border-[#E8E4DE] bg-white px-3 py-2 text-sm text-stone-900 placeholder:text-stone-400 focus:border-[#1e3a5f] focus:ring-1 focus:ring-[#1e3a5f]/20 focus:outline-none transition-colors"
+                    placeholder="6-digit pincode"
+                    aria-describedby="pincode-status"
+                    className="h-11 flex-1 rounded-full border border-line-strong bg-white px-4 text-sm text-ink placeholder:text-stone-400 outline-none transition-[border-color,box-shadow] duration-150 focus:border-brand focus:shadow-[0_0_0_4px_rgba(30,58,95,0.08)] tabular-nums"
                 />
                 <button
                     type="button"
                     onClick={() => checkPincode()}
                     disabled={loading || pincode.length !== 6}
-                    className="rounded-lg bg-[#1e3a5f] px-4 py-2 text-xs font-semibold text-white hover:bg-[#1e3a5f]/90 active:scale-95 transition-all disabled:opacity-40 disabled:cursor-not-allowed flex items-center gap-1.5"
+                    className="btn-secondary h-11 px-5 disabled:cursor-not-allowed disabled:opacity-50"
                 >
                     {loading ? (
-                        <div className="h-3.5 w-3.5 rounded-full border-2 border-white/30 border-t-white animate-spin" />
-                    ) : (
-                        <svg className="h-3.5 w-3.5" viewBox="0 0 20 20" fill="currentColor">
-                            <path fillRule="evenodd" d="M8 4a4 4 0 100 8 4 4 0 000-8zM2 8a6 6 0 1110.89 3.476l4.817 4.817a1 1 0 01-1.414 1.414l-4.816-4.816A6 6 0 012 8z" clipRule="evenodd" />
-                        </svg>
-                    )}
-                    <span className="hidden sm:inline">Check</span>
+                        <span className="h-4 w-4 rounded-full border-2 border-stone-300 border-t-ink animate-spin" aria-hidden="true" />
+                    ) : "Check"}
                 </button>
             </div>
 
-            {/* Error */}
-            {error && (
-                <p className="mt-2 text-xs text-red-600">{error}</p>
-            )}
-
-            {/* Result — Serviceable */}
-            {result?.serviceable && (
-                <div className="mt-3 rounded-lg bg-emerald-50 border border-emerald-100 p-3 space-y-2">
-                    {/* Delivery estimate */}
-                    <div className="flex items-center gap-2">
-                        <span className="flex h-5 w-5 items-center justify-center rounded-full bg-emerald-500 text-white text-[10px]">✓</span>
-                        <span className="text-sm font-semibold text-emerald-800">
-                            Delivery in {result.estimated_days} business days
-                        </span>
-                    </div>
-
-                    {/* City info */}
-                    {result.city && (
-                        <p className="text-xs text-emerald-700 ml-7">
-                            📍 {result.city}{result.state_code ? `, ${result.state_code}` : ""}
-                        </p>
-                    )}
-
-                    {/* COD / Prepaid badges */}
-                    <div className="flex gap-2 ml-7">
-                        {result.cod && (
-                            <span className="inline-flex items-center gap-1 rounded-full bg-white border border-emerald-200 px-2 py-0.5 text-[10px] font-medium text-emerald-700">
-                                <span className="h-1 w-1 rounded-full bg-emerald-500" />
-                                COD Available
-                            </span>
-                        )}
-                        {result.prepaid && (
-                            <span className="inline-flex items-center gap-1 rounded-full bg-white border border-emerald-200 px-2 py-0.5 text-[10px] font-medium text-emerald-700">
-                                <span className="h-1 w-1 rounded-full bg-emerald-500" />
-                                Prepaid
-                            </span>
-                        )}
-                    </div>
-                </div>
-            )}
-
-            {/* Result — Not Serviceable */}
-            {result && !result.serviceable && (
-                <div className="mt-3 rounded-lg bg-red-50 border border-red-100 p-3">
-                    <div className="flex items-center gap-2">
-                        <span className="flex h-5 w-5 items-center justify-center rounded-full bg-red-500 text-white text-[10px]">✕</span>
-                        <span className="text-sm font-semibold text-red-700">
-                            Delivery not available
-                        </span>
-                    </div>
-                    <p className="text-xs text-red-600 mt-1.5 ml-7">
-                        Sorry, we don't deliver to pincode {result.pincode} yet. Try a nearby pincode.
+            <div id="pincode-status" aria-live="polite">
+                {error && (
+                    <p className="mt-2 flex items-center gap-1.5 text-xs text-red-700">
+                        <CircleAlert className="h-3.5 w-3.5" strokeWidth={2} aria-hidden="true" />
+                        {error}
                     </p>
-                </div>
-            )}
+                )}
+
+                {result?.serviceable && (
+                    <div className="mt-3 flex items-start gap-2.5">
+                        <span className="mt-0.5 grid h-5 w-5 shrink-0 place-items-center rounded-full bg-emerald-600 text-white">
+                            <Check className="h-3 w-3" strokeWidth={3} aria-hidden="true" />
+                        </span>
+                        <div className="text-[13px] leading-snug">
+                            <p className="font-semibold text-ink">
+                                Delivery in {result.estimated_days} business days
+                                {result.city && <span className="font-normal text-stone-500"> to {result.city}{result.state_code ? `, ${result.state_code}` : ""}</span>}
+                            </p>
+                            {(result.cod || result.prepaid) && (
+                                <p className="mt-0.5 text-stone-500">
+                                    {[result.cod && "Cash on Delivery", result.prepaid && "Prepaid"].filter(Boolean).join(" and ")} available
+                                </p>
+                            )}
+                        </div>
+                    </div>
+                )}
+
+                {result && !result.serviceable && (
+                    <div className="mt-3 flex items-start gap-2.5">
+                        <span className="mt-0.5 grid h-5 w-5 shrink-0 place-items-center rounded-full bg-red-600 text-white">
+                            <CircleAlert className="h-3.5 w-3.5" strokeWidth={2.5} aria-hidden="true" />
+                        </span>
+                        <p className="text-[13px] leading-snug text-ink">
+                            <span className="font-semibold">We don't deliver to {result.pincode} yet.</span>
+                            <span className="text-stone-500"> Try a nearby pincode.</span>
+                        </p>
+                    </div>
+                )}
+            </div>
         </div>
     );
 }

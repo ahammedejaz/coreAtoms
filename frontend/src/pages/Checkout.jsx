@@ -46,6 +46,9 @@ import { useToast } from "../context/ToastContext";
 import { supabase } from "../services/supabase/client";
 import { getRazorpayKeyId, openRazorpayCheckout } from "../services/razorpay";
 import SEO from "../components/SEO";
+import RevealText from "../components/fx/RevealText";
+import { useSiteContent } from "../services/siteContent";
+import { ArrowLeft, Banknote, Check, Coins, CreditCard, Lock, MapPin, PackageCheck, TicketPercent } from "lucide-react";
 
 import { money } from "../utils/format";
 
@@ -71,6 +74,7 @@ function isValidAddress(a) {
 }
 
 export default function Checkout() {
+  const copy = useSiteContent("page_checkout");
   const navigate = useNavigate();
   const { user } = useAuth();
   const { items, subtotal, totalItems, clear } = useCart();
@@ -708,21 +712,24 @@ export default function Checkout() {
         <div className="w-full max-w-md space-y-4">
           {/* Success header */}
           <div className="text-center">
-            <div className="mx-auto mb-3 h-14 w-14 rounded-full bg-emerald-50 border-2 border-emerald-200 flex items-center justify-center text-2xl">✓</div>
-            <h2 className="text-xl font-semibold text-stone-900">Order Placed!</h2>
-            <p className="mt-1 text-sm text-stone-500">Thank you. We're preparing your order for dispatch.</p>
+            <svg className="draw-check mx-auto mb-4 h-16 w-16" viewBox="0 0 64 64" aria-hidden="true">
+              <circle cx="32" cy="32" r="29" fill="none" stroke="currentColor" strokeWidth="2.5" />
+              <path d="M20 33.5 28.5 42 45 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round" />
+            </svg>
+            <h2 className="font-display text-3xl font-semibold tracking-tight text-ink">{copy.successTitle}</h2>
+            <p className="mt-1 text-sm text-stone-500">{copy.successText}</p>
           </div>
 
           {/* Receipt card */}
-          <div className="rounded-2xl border border-[#E8E4DE] bg-white overflow-hidden">
+          <div className="panel overflow-hidden">
             {/* Header */}
-            <div className="bg-stone-50 border-b border-[#E8E4DE] px-5 py-3 flex items-center justify-between">
-              <span className="text-xs font-semibold uppercase tracking-wide text-stone-400">Order Summary</span>
+            <div className="flex items-center justify-between border-b border-line bg-bone px-5 py-3">
+              <span className="text-xs font-semibold text-stone-600">Order summary</span>
               <span className={`inline-flex items-center gap-1 rounded-full px-2.5 py-0.5 text-[10px] font-bold uppercase tracking-wide ${r.paymentMethod === 'prepaid'
                 ? 'bg-emerald-50 text-emerald-700 border border-emerald-200'
                 : 'bg-amber-50 text-amber-700 border border-amber-200'
                 }`}>
-                {r.paymentMethod === 'prepaid' ? '💳 Online paid' : '💵 Cash on Delivery'}
+                {r.paymentMethod === 'prepaid' ? 'Paid online' : 'Cash on Delivery'}
               </span>
             </div>
 
@@ -776,7 +783,7 @@ export default function Checkout() {
               {r.coupon && r.discountAmount > 0 && (
                 <div className="flex justify-between text-sm">
                   <span className="text-emerald-600 flex items-center gap-1">
-                    🎉 Coupon <span className="font-mono font-bold">{r.coupon.code}</span> ({r.coupon.percentage}% off)
+                    Coupon <span className="font-mono font-bold">{r.coupon.code}</span> ({r.coupon.percentage}% off)
                   </span>
                   <span className="text-emerald-700 font-medium">−{money(r.discountAmount)}</span>
                 </div>
@@ -818,9 +825,9 @@ export default function Checkout() {
   if (placed) {
     return (
       <div className="min-h-[60vh] flex items-center justify-center">
-        <div className="card p-12 text-center max-w-sm w-full">
+        <div className="panel w-full max-w-sm p-12 text-center">
           <div className="mx-auto mb-5 h-14 w-14 rounded-full border-4 border-[#E8E4DE] border-t-[#1e3a5f] animate-spin" />
-          <h2 className="text-xl font-semibold text-stone-900">Order placed!</h2>
+          <h2 className="font-display text-2xl font-semibold tracking-tight text-ink">{copy.successTitle}</h2>
           <p className="mt-2 text-sm text-stone-500">We're confirming your order and preparing it for dispatch.</p>
           <div className="mt-6 h-1.5 w-full rounded-full bg-stone-100 overflow-hidden">
             <div className="h-full bg-[#1e3a5f] rounded-full animate-[coreatoms_progress_1.2s_ease-in-out_infinite]" />
@@ -831,16 +838,19 @@ export default function Checkout() {
     );
   }
 
-  const inputCls = "w-full rounded-xl border border-[#E8E4DE] bg-white px-4 py-3 text-sm text-stone-900 placeholder:text-stone-400 outline-none focus:border-[#1e3a5f] focus:ring-2 focus:ring-[#1e3a5f]/10 transition";
+  const inputCls = "input";
 
   return (
     <div>
       <SEO title="Checkout | Core Atoms" description="Complete your order with cash on delivery." noIndex />
       <div className="mb-8">
-        <Link to="/cart" className="text-sm text-stone-500 hover:text-stone-900 transition-colors">← Back to Cart</Link>
-        <h1 className="mt-3 text-2xl font-semibold tracking-tight text-stone-900">Checkout</h1>
-        <p className="text-sm text-stone-500 mt-1">
-          {selectedPaymentMethod === "prepaid" ? "Secure online payment · India only" : "Cash on Delivery · India only"}
+        <Link to="/cart" className="inline-flex items-center gap-1.5 text-sm font-semibold text-stone-600 transition-colors hover:text-ink">
+          <ArrowLeft className="h-4 w-4" strokeWidth={1.75} aria-hidden="true" />
+          Back to cart
+        </Link>
+        <RevealText as="h1" text={copy.title} className="mt-4 font-display text-4xl font-semibold tracking-[-0.03em] text-ink sm:text-5xl" />
+        <p className="mt-2 text-sm text-stone-500">
+          {selectedPaymentMethod === "prepaid" ? "Secure online payment. Ships anywhere in India." : "Cash on Delivery. Ships anywhere in India."}
         </p>
       </div>
 
@@ -848,17 +858,17 @@ export default function Checkout() {
 
         {/* ── Address panel ── */}
         <div className="lg:col-span-3 space-y-5">
-          <div className="card p-6">
-            <h2 className="text-base font-semibold text-stone-900">Delivery Address</h2>
-            <p className="text-xs text-stone-400 mt-1">Select a saved address or add a new one.</p>
+          <div>
+            <h2 className="font-display text-xl font-semibold tracking-tight text-ink">Delivery address</h2>
+            <p className="mt-1 text-sm text-stone-500">Select a saved address or add a new one.</p>
           </div>
 
           {/* Saved addresses */}
           {loadingAddresses ? (
-            <div className="card p-5 text-sm text-stone-400">Loading saved addresses…</div>
+            <div className="panel p-5 text-sm text-stone-500">Loading saved addresses…</div>
           ) : savedAddresses.length > 0 && (
-            <div className="card p-5 space-y-3">
-              <p className="text-xs font-semibold text-stone-500 uppercase tracking-wide">Saved</p>
+            <div className="panel p-5 space-y-3">
+              <p className="text-[13px] font-semibold text-ink">Saved addresses</p>
               <div role="radiogroup" aria-label="Saved addresses" className="space-y-3">
                 {savedAddresses.map((addr) => (
                 <div key={addr.id}
@@ -869,9 +879,9 @@ export default function Checkout() {
                   onKeyDown={(e) => {
                     if (e.key === "Enter" || e.key === " ") { e.preventDefault(); selectSavedAddress(addr); }
                   }}
-                  className={`flex items-start gap-3 rounded-xl border p-4 cursor-pointer transition-all outline-none focus-visible:ring-2 focus-visible:ring-[#1e3a5f]/30 ${selectedAddressId === addr.id
-                    ? "border-[#1e3a5f] bg-[#EFF6FF]"
-                    : "border-[#E8E4DE] hover:border-stone-300"
+                  className={`flex cursor-pointer items-start gap-3 rounded-2xl border p-4 outline-none transition-colors focus-visible:ring-2 focus-visible:ring-brand/30 ${selectedAddressId === addr.id
+                    ? "border-brand bg-brand-soft"
+                    : "border-line-strong hover:border-ink"
                     }`}
                 >
                   <div className={`mt-0.5 h-4 w-4 rounded-full border-2 flex items-center justify-center shrink-0 transition-colors ${selectedAddressId === addr.id ? "border-[#1e3a5f]" : "border-stone-300"
@@ -907,9 +917,9 @@ export default function Checkout() {
                 ))}
               </div>
               <button type="button" onClick={startNewAddress}
-                className={`w-full rounded-xl border-2 border-dashed px-4 py-3 text-sm font-medium transition-all ${selectedAddressId === null
-                  ? "border-[#1e3a5f] text-[#1e3a5f] bg-[#EFF6FF]"
-                  : "border-[#E8E4DE] text-stone-400 hover:border-stone-300 hover:text-stone-600"
+                className={`w-full rounded-2xl border border-dashed px-4 py-3 text-sm font-semibold transition-colors ${selectedAddressId === null
+                  ? "border-brand bg-brand-soft text-brand"
+                  : "border-line-strong text-stone-500 hover:border-ink hover:text-ink"
                   }`}
               >
                 + Add a new address
@@ -919,10 +929,10 @@ export default function Checkout() {
 
           {/* Address form — shown for new address OR when editing (hidden while addresses are loading) */}
           {!loadingAddresses && (selectedAddressId === null || savedAddresses.length === 0 || editingAddressId) && (
-            <div className="card p-6 space-y-4">
+            <div className="panel p-6 space-y-4">
               <div className="flex items-center justify-between">
-                <p className="text-xs font-semibold text-stone-500 uppercase tracking-wide">
-                  {editingAddressId ? "Edit address" : savedAddresses.length > 0 ? "New address" : ""}
+                <p className="text-[13px] font-semibold text-ink">
+                  {editingAddressId ? "Edit address" : savedAddresses.length > 0 ? "New address" : "Delivery details"}
                 </p>
                 {editingAddressId && (
                   <button type="button" onClick={() => {
@@ -1032,8 +1042,8 @@ export default function Checkout() {
 
         {/* ── Order summary ── */}
         <div className="lg:col-span-2">
-          <div className="card p-6 sticky top-24">
-            <h2 className="text-base font-semibold text-stone-900 mb-5">Order Summary</h2>
+          <div className="panel sticky top-32 p-6">
+            <h2 className="mb-5 font-display text-xl font-semibold tracking-tight text-ink">Order summary</h2>
             <div className="space-y-3 text-sm">
               {(items || []).map((x) => (
                 <div key={x.id} className="flex items-start justify-between gap-3">
@@ -1053,12 +1063,12 @@ export default function Checkout() {
               {appliedCoupon ? (
                 <div className="flex items-center justify-between rounded-xl border border-emerald-200 bg-emerald-50 px-4 py-3">
                   <div className="flex items-center gap-2">
-                    <span className="text-xs font-bold text-emerald-700">🎉</span>
+                    <TicketPercent className="h-4 w-4 text-emerald-700" strokeWidth={1.75} aria-hidden="true" />
                     <span className="font-mono text-sm font-semibold text-emerald-800">{appliedCoupon.code}</span>
                     <span className="text-xs text-emerald-600">{appliedCoupon.percentage}% off</span>
                   </div>
                   <button type="button" onClick={removeCoupon}
-                    className="text-xs text-emerald-600 hover:text-red-500 transition-colors">✕ Remove</button>
+                    className="text-xs font-semibold text-emerald-700 hover:text-red-600 transition-colors">Remove</button>
                 </div>
               ) : (
                 <div>
@@ -1078,24 +1088,28 @@ export default function Checkout() {
             {/* Payment method selector — always visible */}
             {(codAvailable || razorpayAvailable) && (
               <div className="mb-5">
-                <p className="text-xs font-semibold text-stone-500 uppercase tracking-wider mb-2">Payment Method</p>
+                <p className="mb-2 text-[13px] font-semibold text-ink">Payment method</p>
                 <div className="flex gap-2">
                   {codAvailable && (
                     <button type="button" onClick={() => setSelectedPaymentMethod("cod")}
-                      className={`flex-1 rounded-xl border px-4 py-3 text-sm font-semibold transition-all duration-200 ${selectedPaymentMethod === "cod"
-                        ? "border-[#1e3a5f] bg-[#1e3a5f]/5 text-[#1e3a5f] ring-2 ring-[#1e3a5f]/10"
-                        : "border-[#E8E4DE] bg-white text-stone-500 hover:border-stone-300"
+                      aria-pressed={selectedPaymentMethod === "cod"}
+                      className={`flex flex-1 items-center justify-center gap-2 rounded-2xl border px-4 py-3 text-sm font-semibold transition-[border-color,background-color,color] duration-150 ${selectedPaymentMethod === "cod"
+                        ? "border-ink bg-ink text-white"
+                        : "border-line-strong bg-white text-stone-600 hover:border-ink"
                         }`}>
-                      💵 Cash on Delivery
+                      <Banknote className="h-4 w-4" strokeWidth={1.75} aria-hidden="true" />
+                      Cash on Delivery
                     </button>
                   )}
                   {razorpayAvailable && (
                     <button type="button" onClick={() => setSelectedPaymentMethod("prepaid")}
-                      className={`flex-1 rounded-xl border px-4 py-3 text-sm font-semibold transition-all duration-200 ${selectedPaymentMethod === "prepaid"
-                        ? "border-[#2563EB] bg-[#2563EB]/5 text-[#2563EB] ring-2 ring-[#2563EB]/10"
-                        : "border-[#E8E4DE] bg-white text-stone-500 hover:border-stone-300"
+                      aria-pressed={selectedPaymentMethod === "prepaid"}
+                      className={`flex flex-1 items-center justify-center gap-2 rounded-2xl border px-4 py-3 text-sm font-semibold transition-[border-color,background-color,color] duration-150 ${selectedPaymentMethod === "prepaid"
+                        ? "border-ink bg-ink text-white"
+                        : "border-line-strong bg-white text-stone-600 hover:border-ink"
                         }`}>
-                      💳 Pay Online
+                      <CreditCard className="h-4 w-4" strokeWidth={1.75} aria-hidden="true" />
+                      Pay online
                     </button>
                   )}
                 </div>
@@ -1125,17 +1139,17 @@ export default function Checkout() {
               {/* Show warning when pincode-based shipping is not yet resolved */}
               {!shippingLoading && !shippingResolved && isValidAddress(activeAddress) && (
                 <div className="rounded-lg bg-rose-50 border border-rose-200 px-3 py-2 text-xs text-rose-700">
-                  ⚠️ Enter a <strong>valid 6-digit pincode</strong> to see shipping charges before placing your order.
+                  Enter a <strong>valid 6-digit pincode</strong> to see shipping charges before placing your order.
                 </div>
               )}
               {amountToFreeShipping > 0 && (
                 <div className="rounded-lg bg-amber-50 border border-amber-200 px-3 py-2 text-xs text-amber-700">
-                  🚚 Add {money(amountToFreeShipping)} more for <span className="font-semibold">free shipping!</span>
+                  Add {money(amountToFreeShipping)} more for <span className="font-semibold">free shipping!</span>
                 </div>
               )}
               {qualifiesFreeShipping && effectiveBase > 0 && (
                 <div className="rounded-lg bg-emerald-50 border border-emerald-200 px-3 py-2 text-xs text-emerald-700">
-                  ✅ You qualify for <span className="font-semibold">free shipping!</span>
+                  You qualify for <span className="font-semibold">free shipping!</span>
                 </div>
               )}
               {gstPercent > 0 && (
@@ -1179,9 +1193,7 @@ export default function Checkout() {
                 if (willEarn <= 0) return null;
                 return (
                   <div className="flex items-center gap-1.5 mt-1 pt-2 border-t border-dashed border-amber-200">
-                    <svg className="h-3.5 w-3.5 text-amber-400 shrink-0" viewBox="0 0 20 20" fill="currentColor">
-                      <path d="M10 2a8 8 0 100 16A8 8 0 0010 2zm1 11H9v-1.5l3-2V8H9V6.5h4V10l-2 1.5V13z" />
-                    </svg>
+                    <Coins className="h-3.5 w-3.5 shrink-0 text-amber-deep" strokeWidth={1.75} aria-hidden="true" />
                     <span className="text-xs text-amber-700">You'll earn <strong>{willEarn} CoreCoins</strong> with this purchase</span>
                   </div>
                 );
@@ -1191,10 +1203,10 @@ export default function Checkout() {
             {/* CoreCoins redemption */}
             {corecoinsEnabled && corecoinsConfig && (
               <div className="mb-5">
-                <div className={`rounded-xl border px-4 py-3 ${canUseCoins ? "border-amber-200 bg-amber-50" : "border-[#E8E4DE] bg-stone-50"}`}>
+                <div className={`rounded-2xl border px-4 py-3 ${canUseCoins ? "border-amber-200 bg-amber-soft/60" : "border-line bg-bone"}`}>
                   <div className="flex items-center justify-between">
                     <div className="flex items-center gap-2">
-                      <span className="text-base">🪙</span>
+                      <Coins className="h-5 w-5 text-amber-deep" strokeWidth={1.75} aria-hidden="true" />
                       <div>
                         <p className="text-sm font-semibold text-stone-900">
                           {coinBalance} CoreCoin{coinBalance !== 1 ? "s" : ""}
@@ -1225,14 +1237,14 @@ export default function Checkout() {
               {/* Single action button based on selected payment method */}
               {selectedPaymentMethod === "cod" && codAvailable && (
                 <button onClick={onPlaceOrder} disabled={!canPlace || loading || payingOnline}
-                  className="btn-primary w-full py-3 text-[14px] disabled:opacity-40 disabled:cursor-not-allowed disabled:hover:translate-y-0">
-                  {loading ? "Placing order…" : "Place Order · Cash on Delivery"}
+                  className="btn-primary btn-lg w-full disabled:opacity-40 disabled:cursor-not-allowed">
+                  {loading ? "Placing order…" : "Place order with Cash on Delivery"}
                 </button>
               )}
 
               {selectedPaymentMethod === "prepaid" && razorpayAvailable && (
                 <button onClick={onPayOnline} disabled={!canPlace || loading || payingOnline}
-                  className="w-full rounded-xl bg-[#2563EB] px-4 py-3 text-[14px] font-semibold text-white shadow-md hover:bg-[#1d4ed8] active:scale-[0.98] transition-all duration-150 disabled:opacity-40 disabled:cursor-not-allowed flex items-center justify-center gap-2">
+                  className="btn-primary btn-lg w-full disabled:opacity-40 disabled:cursor-not-allowed">
                   {payingOnline ? (
                     <>
                       <svg className="h-4 w-4 animate-spin" viewBox="0 0 24 24" fill="none"><circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" /><path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" /></svg>
@@ -1240,8 +1252,8 @@ export default function Checkout() {
                     </>
                   ) : (
                     <>
-                      <svg className="h-4 w-4" viewBox="0 0 20 20" fill="currentColor"><path fillRule="evenodd" d="M4 4a2 2 0 00-2 2v4a2 2 0 002 2V6h10a2 2 0 00-2-2H4zm2 6a2 2 0 012-2h8a2 2 0 012 2v4a2 2 0 01-2 2H8a2 2 0 01-2-2v-4zm6 4a2 2 0 100-4 2 2 0 000 4z" clipRule="evenodd" /></svg>
-                      Pay Now · Online
+                      <CreditCard className="h-4 w-4" strokeWidth={1.75} aria-hidden="true" />
+                      Pay now online
                     </>
                   )}
                 </button>
@@ -1264,8 +1276,11 @@ export default function Checkout() {
             )}
 
             <div className="mt-5 flex flex-wrap gap-x-4 gap-y-1.5 justify-center">
-              {["🔒 Secure checkout", "📦 Quality packing", "🇮🇳 India only"].map((t) => (
-                <span key={t} className="text-[11px] text-stone-400">{t}</span>
+              {[[Lock, "Secure checkout"], [PackageCheck, "Quality packing"], [MapPin, "Ships across India"]].map(([Icon, t]) => (
+                <span key={t} className="inline-flex items-center gap-1.5 text-[11.5px] text-stone-500">
+                  <Icon className="h-3.5 w-3.5 text-brand" strokeWidth={1.75} aria-hidden="true" />
+                  {t}
+                </span>
               ))}
             </div>
           </div>

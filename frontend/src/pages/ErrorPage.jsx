@@ -8,49 +8,41 @@
  * @module pages/ErrorPage
  */
 import { Link, useRouteError } from "react-router-dom";
-
+import { ArrowRight, TriangleAlert } from "lucide-react";
 import useDocumentTitle from "../hooks/useDocumentTitle";
+import { useSiteContent } from "../services/siteContent";
 
 export default function ErrorPage() {
   useDocumentTitle("Error | Core Atoms");
   const err = useRouteError();
-  const message =
-    err?.statusText ||
-    err?.message ||
-    "Something went wrong while loading this page.";
+  const copy = useSiteContent("page_errors");
+  const message = err?.statusText || err?.message || copy.errorText;
 
   return (
-    <div className="min-h-[70vh] grid place-items-center px-4">
-      <div className="w-full max-w-xl rounded-2xl border border-[#E8E4DE] bg-white p-8 shadow-sm">
-        <div className="text-sm text-stone-500">Core Atoms</div>
-        <h1 className="mt-2 text-2xl font-semibold text-stone-900 tracking-tight">Page error</h1>
-        <p className="mt-2 text-sm text-stone-600 leading-relaxed">{message}</p>
+    <div className="mx-auto flex min-h-[70vh] max-w-2xl flex-col items-center justify-center px-5 py-16 text-center">
+      <span className="grid h-16 w-16 place-items-center rounded-full bg-amber-soft text-amber-deep">
+        <TriangleAlert className="h-7 w-7" strokeWidth={1.5} aria-hidden="true" />
+      </span>
+      <h1 className="mt-8 font-display text-3xl font-semibold tracking-[-0.03em] text-ink sm:text-4xl">{copy.errorTitle}</h1>
+      <p className="mt-3 max-w-md text-sm leading-relaxed text-stone-600">{message}</p>
 
-        <div className="mt-6 flex flex-wrap gap-3">
-          <Link
-            to="/"
-            className="rounded-xl bg-[#1e3a5f] px-5 py-2.5 text-sm font-semibold text-white shadow-sm hover:bg-[#16304f] transition"
-          >
-            Go Home
-          </Link>
-          <Link
-            to="/shop"
-            className="rounded-xl border border-[#E8E4DE] bg-white px-5 py-2.5 text-sm font-semibold text-stone-700 hover:bg-stone-50 transition"
-          >
-            Shop
-          </Link>
-        </div>
-
-        {/* Stack traces leak internals — dev builds only */}
-        {import.meta.env.DEV && (
-          <details className="mt-6 text-xs text-stone-500">
-            <summary className="cursor-pointer hover:text-stone-700 transition">Technical details</summary>
-            <pre className="mt-2 overflow-auto rounded-xl border border-[#E8E4DE] bg-stone-50 p-3">
-              {String(err?.stack || err?.message || err)}
-            </pre>
-          </details>
-        )}
+      <div className="mt-8 flex flex-wrap items-center justify-center gap-3">
+        <Link to="/" className="btn-primary btn-lg">
+          Go home
+          <ArrowRight className="h-4 w-4" strokeWidth={1.75} aria-hidden="true" />
+        </Link>
+        <Link to="/shop" className="btn-secondary btn-lg">Browse the range</Link>
       </div>
+
+      {/* Stack traces leak internals — dev builds only */}
+      {import.meta.env.DEV && (
+        <details className="mt-10 w-full text-left text-xs text-stone-500">
+          <summary className="cursor-pointer transition hover:text-ink">Technical details</summary>
+          <pre className="mt-2 overflow-auto rounded-xl border border-line bg-bone p-3">
+            {String(err?.stack || err?.message || err)}
+          </pre>
+        </details>
+      )}
     </div>
   );
 }

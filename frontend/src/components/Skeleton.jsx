@@ -14,7 +14,7 @@
 export function SkeletonLine({ className = "", style = {} }) {
     return (
         <div
-            className={`animate-pulse rounded-lg bg-stone-200 ${className}`}
+            className={`animate-pulse rounded-lg bg-bone-deep ${className}`}
             style={style}
         />
     );
@@ -23,15 +23,14 @@ export function SkeletonLine({ className = "", style = {} }) {
 /** Product card skeleton matching ProductCard layout. */
 export function SkeletonCard() {
     return (
-        <div className="rounded-2xl border border-stone-200 bg-white p-4 space-y-3">
-            <SkeletonLine className="w-full" style={{ height: 180 }} />
-            <SkeletonLine className="w-3/4 h-4" />
-            <SkeletonLine className="w-1/2 h-3" />
-            <SkeletonLine className="w-1/3 h-4" />
-            <div className="flex gap-2 pt-1">
-                <SkeletonLine className="flex-1 h-10" />
-                <SkeletonLine className="w-20 h-10" />
+        <div className="flex flex-col">
+            <SkeletonLine className="w-full aspect-[4/5] rounded-tile bg-bone" />
+            <div className="mt-4 flex justify-between gap-4">
+                <SkeletonLine className="w-2/3 h-4" />
+                <SkeletonLine className="w-1/6 h-4" />
             </div>
+            <SkeletonLine className="mt-2 w-1/2 h-3" />
+            <SkeletonLine className="mt-2 w-1/3 h-3" />
         </div>
     );
 }
@@ -39,7 +38,7 @@ export function SkeletonCard() {
 /** Grid of SkeletonCards for product listing pages. */
 export function SkeletonGrid({ count = 6 }) {
     return (
-        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-5">
+        <div className="grid grid-cols-2 gap-x-4 gap-y-8 lg:grid-cols-3 lg:gap-x-6 lg:gap-y-10">
             {Array.from({ length: count }).map((_, i) => (
                 <SkeletonCard key={i} />
             ))}
@@ -70,28 +69,31 @@ export function SkeletonOrderCard() {
 /** Product detail page skeleton. */
 export function SkeletonProductDetail() {
     return (
-        <div className="max-w-5xl mx-auto px-4 py-8">
-            <div className="grid md:grid-cols-2 gap-8">
-                {/* Image area */}
+        <div className="mx-auto max-w-6xl px-5 py-8 sm:px-6">
+            <SkeletonLine className="w-48 h-3" />
+            <div className="mt-6 grid gap-8 lg:grid-cols-2 lg:gap-14">
                 <div className="space-y-3">
-                    <SkeletonLine className="w-full rounded-2xl" style={{ height: 400 }} />
+                    <SkeletonLine className="w-full aspect-square rounded-[28px] bg-bone" />
                     <div className="flex gap-2">
-                        {[1, 2, 3, 4].map((i) => (
-                            <SkeletonLine key={i} className="w-16 h-16 rounded-lg" />
+                        {[1, 2, 3].map((i) => (
+                            <SkeletonLine key={i} className="w-[72px] h-[72px] rounded-2xl" />
                         ))}
                     </div>
                 </div>
-                {/* Info area */}
                 <div className="space-y-4 pt-2">
+                    <SkeletonLine className="w-1/4 h-3" />
+                    <SkeletonLine className="w-3/4 h-9" />
                     <SkeletonLine className="w-1/3 h-3" />
-                    <SkeletonLine className="w-3/4 h-7" />
-                    <SkeletonLine className="w-1/4 h-6" />
                     <SkeletonLine className="w-full h-3" />
-                    <SkeletonLine className="w-full h-3" />
-                    <SkeletonLine className="w-2/3 h-3" />
+                    <SkeletonLine className="w-5/6 h-3" />
                     <div className="flex gap-2 pt-4">
-                        <SkeletonLine className="w-32 h-12 rounded-xl" />
-                        <SkeletonLine className="flex-1 h-12 rounded-xl" />
+                        <SkeletonLine className="w-28 h-11 rounded-full" />
+                        <SkeletonLine className="w-28 h-11 rounded-full" />
+                    </div>
+                    <SkeletonLine className="w-1/3 h-10 mt-4" />
+                    <div className="flex gap-3 pt-2">
+                        <SkeletonLine className="w-32 h-12 rounded-full" />
+                        <SkeletonLine className="flex-1 h-12 rounded-full" />
                     </div>
                 </div>
             </div>

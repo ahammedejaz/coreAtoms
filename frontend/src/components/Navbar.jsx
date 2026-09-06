@@ -1,41 +1,193 @@
 /**
- * Navbar.jsx — Sticky navigation bar with mobile drawer.
+ * Navbar.jsx — Sticky header: logo, global search with live suggestions, a
+ * category row, account links and the cart trigger.
  *
- * Features:
- * - Dynamic logo (fetched from `app_settings.site_logo` or fallback "CA" monogram)
- * - Role-aware nav links (admin sees Admin link, customers see Home/Shop/Orders)
- * - Cart badge with bounce animation on add
- * - Inline toast for cart notifications (driven by `lastAction` from CartContext)
- * - Responsive mobile hamburger menu with backdrop overlay
- * - Prevents body scroll when mobile menu is open
+ * - Global product search submits to `/shop?q=<term>`; while typing it shows
+ *   up to six matching products from the cached catalogue (arrow keys, Enter
+ *   and Escape all work). The header owns search — Shop only reads the URL.
+ * - The category row (desktop) / drawer section (mobile) comes from
+ *   `app_settings.homepage_categories`, falling back to `DEFAULT_HOME_CATEGORIES`.
+ * - The cart button opens the slide-over `CartDrawer`; the count bumps on add.
+ * - The order-limit warning from `CartContext.lastAction` shows as a toast.
+ * - Mobile menu: full-width sheet under the header, links reveal with a
+ *   short stagger; `inert` while closed.
  *
  * @module components/Navbar
  */
-import { Link, NavLink, useLocation } from "react-router-dom";
+import { Link, NavLink, useLocation, useNavigate, useSearchParams } from "react-router-dom";
 import { useEffect, useMemo, useState } from "react";
+import {
+  Search,
+  ShoppingBag,
+  House,
+  ClipboardList,
+  LayoutDashboard,
+  LogOut,
+  LogIn,
+  ArrowRight,
+  ImageOff,
+} from "lucide-react";
 import { useCart } from "../context/CartContext";
+import { useCartDrawer } from "../context/CartDrawerContext";
 import { useAuth } from "../context/AuthContext";
 import { supabase } from "../services/supabase/client";
+import { DEFAULT_HOME_CATEGORIES } from "../services/homepage";
+import { fetchProductsCached } from "../services/products";
+import { money } from "../utils/format";
+import HintIcon from "./HintIcon";
+import { useScrollLock } from "./fx/SmoothScroll";
 
 const navLinkClass = ({ isActive }) =>
-  `nav-shine text-sm transition ${isActive ? "text-neutral-950 font-semibold" : "text-neutral-600 hover:text-neutral-950"}`;
+  `-mx-1 px-1 py-2 text-sm transition-colors duration-150 ${isActive ? "text-ink font-semibold" : "text-stone-600 hover:text-ink"}`;
 
+const mobileNavLinkActiveClass = "bg-brand-soft text-brand font-semibold";
+const mobileNavLinkInactiveClass = "text-stone-700 hover:bg-bone hover:text-ink";
 const mobileNavLinkClass = ({ isActive }) =>
-  `block px-4 py-3 rounded-xl text-sm font-medium transition ${isActive
-    ? "bg-[#1e3a5f]/8 text-[#1e3a5f] font-semibold"
-    : "text-neutral-700 hover:bg-neutral-50 hover:text-neutral-950"
-  }`;
+  `block px-4 py-3 rounded-2xl text-[15px] font-medium transition-colors duration-150 ${isActive ? mobileNavLinkActiveClass : mobileNavLinkInactiveClass}`;
+
+/** Bolds the matched substring inside a suggestion label. */
+function Highlight({ text, q }) {
+  const i = text.toLowerCase().indexOf(q);
+  if (i < 0) return text;
+  return (
+    <>
+      {text.slice(0, i)}
+      <mark className="bg-transparent font-semibold text-ink">{text.slice(i, i + q.length)}</mark>
+      {text.slice(i + q.length)}
+    </>
+  );
+}
+
+function SuggestionImage({ src }) {
+  const [broken, setBroken] = useState(false);
+  if (!src || broken) return <div className="grid h-full w-full place-items-center text-stone-300"><ImageOff className="h-4 w-4" strokeWidth={1.5} /></div>;
+  return <img src={src} alt="" className="product-img h-full w-full object-cover" loading="lazy" onError={() => setBroken(true)} />;
+}
+
+/**
+ * Search input with live suggestions. Keyed by `location.key` from the
+ * parent so it resets to the URL's `q` on every navigation.
+ */
+function SearchForm({ id, className, initialQuery, onSubmit }) {
+  const navigate = useNavigate();
+  const [term, setTerm] = useState(initialQuery);
+  const [open, setOpen] = useState(false);
+  const [active, setActive] = useState(-1);
+  const [catalogue, setCatalogue] = useState(null);
+  const q = term.trim().toLowerCase();
+
+  useEffect(() => {
+    if (q.length < 2 || catalogue !== null) return;
+    let on = true;
+    fetchProductsCached().then((list) => { if (on) setCatalogue(list); }).catch(() => { if (on) setCatalogue([]); });
+    return () => { on = false; };
+  }, [q, catalogue]);
+
+  const matches = useMemo(() => {
+    if (q.length < 2 || !catalogue) return [];
+    return catalogue
+      .filter((p) => p.isActive !== false && (p.name?.toLowerCase().includes(q) || p.category?.toLowerCase().includes(q)))
+      .slice(0, 6);
+  }, [q, catalogue]);
+
+  const showList = open && q.length >= 2;
+  const listId = `${id}-listbox`;
+
+  const pick = (p) => {
+    setOpen(false);
+    navigate(`/product/${p.id}`);
+  };
+
+  const onKeyDown = (e) => {
+    if (!showList) return;
+    if (e.key === "ArrowDown") { e.preventDefault(); setActive((a) => Math.min(matches.length - 1, a + 1)); }
+    else if (e.key === "ArrowUp") { e.preventDefault(); setActive((a) => Math.max(-1, a - 1)); }
+    else if (e.key === "Enter" && active >= 0 && matches[active]) { e.preventDefault(); pick(matches[active]); }
+    else if (e.key === "Escape") { setOpen(false); }
+  };
+
+  return (
+    <form
+      role="search"
+      className={`relative ${className}`}
+      onSubmit={(e) => { e.preventDefault(); setOpen(false); onSubmit(term.trim()); }}
+    >
+      <label htmlFor={id} className="sr-only">Search products</label>
+      <div className="relative">
+        <Search className="pointer-events-none absolute left-4 top-1/2 h-4 w-4 -translate-y-1/2 text-stone-400" strokeWidth={1.75} aria-hidden="true" />
+        <input
+          id={id}
+          type="search"
+          role="combobox"
+          aria-expanded={showList}
+          aria-controls={listId}
+          aria-autocomplete="list"
+          aria-activedescendant={active >= 0 ? `${listId}-${active}` : undefined}
+          autoComplete="off"
+          value={term}
+          onChange={(e) => { setTerm(e.target.value); setOpen(true); setActive(-1); }}
+          onFocus={() => setOpen(true)}
+          onBlur={() => setTimeout(() => setOpen(false), 120)}
+          onKeyDown={onKeyDown}
+          placeholder="Search formulas, e.g. magnesium"
+          className="h-11 w-full rounded-full border border-line-strong bg-bone/70 pl-11 pr-4 text-sm text-ink placeholder:text-stone-400 outline-none transition-[border-color,background-color,box-shadow] duration-150 focus:border-brand focus:bg-white focus:shadow-[0_0_0_4px_rgba(30,58,95,0.08)]"
+        />
+        <button type="submit" className="sr-only">Search</button>
+      </div>
+
+      {showList && (
+        <div className="absolute left-0 right-0 top-[calc(100%+8px)] z-30 overflow-hidden rounded-panel border border-line bg-white shadow-lift-lg">
+          <ul id={listId} role="listbox" aria-label="Suggestions">
+            {matches.length === 0 ? (
+              <li className="px-4 py-3.5 text-sm text-stone-500">{catalogue ? `Nothing named "${term.trim()}" yet.` : "Searching…"}</li>
+            ) : matches.map((p, i) => (
+              <li
+                key={p.id}
+                id={`${listId}-${i}`}
+                role="option"
+                aria-selected={i === active}
+                onMouseDown={(e) => e.preventDefault()}
+                onMouseEnter={() => setActive(i)}
+                onClick={() => pick(p)}
+                className={`flex cursor-pointer items-center gap-3 px-3 py-2.5 ${i === active ? "bg-bone" : ""}`}
+              >
+                <div className="h-11 w-11 shrink-0 overflow-hidden rounded-xl bg-bone"><SuggestionImage src={p.image} /></div>
+                <div className="min-w-0 flex-1">
+                  <p className="truncate text-sm text-ink"><Highlight text={p.name} q={q} /></p>
+                  {p.category && <p className="truncate text-xs text-stone-500">{p.category}</p>}
+                </div>
+                <span className="shrink-0 font-display text-sm font-semibold tabular-nums text-ink">{money(p.price)}</span>
+              </li>
+            ))}
+          </ul>
+          <button
+            type="submit"
+            onMouseDown={(e) => e.preventDefault()}
+            className="flex w-full items-center justify-between border-t border-line px-4 py-3 text-sm font-semibold text-brand transition-colors hover:bg-bone"
+          >
+            See all results for "{term.trim()}"
+            <ArrowRight className="h-4 w-4" strokeWidth={1.75} aria-hidden="true" />
+          </button>
+        </div>
+      )}
+    </form>
+  );
+}
 
 export default function Navbar() {
   const { totalItems, lastAction, maxItems } = useCart();
+  const { open: openDrawer } = useCartDrawer();
   const { isAuthenticated, user, isAdmin, signOut } = useAuth();
   const homePath = isAdmin ? "/admin" : "/";
   const location = useLocation();
+  const navigate = useNavigate();
+  const [searchParams] = useSearchParams();
+  const initialQuery = searchParams.get("q") || "";
 
-  const [bump, setBump] = useState(false);
   const [toast, setToast] = useState(null);
   const [menuOpen, setMenuOpen] = useState(false);
   const [logoUrl, setLogoUrl] = useState("");
+  const [categories, setCategories] = useState(DEFAULT_HOME_CATEGORIES);
 
   // Close mobile menu on route change
   useEffect(() => { setMenuOpen(false); }, [location.pathname]);
@@ -47,23 +199,28 @@ export default function Navbar() {
     return () => document.removeEventListener("keydown", onKey);
   }, [menuOpen]);
 
-  // Load site logo
+  // Load site logo + category row content
   useEffect(() => {
     supabase
       .from("app_settings")
-      .select("value")
-      .eq("key", "site_logo")
-      .maybeSingle()
+      .select("key,value")
+      .in("key", ["site_logo", "homepage_categories"])
       .then(({ data }) => {
-        if (data?.value && typeof data.value === "string" && data.value.startsWith("http")) {
-          setLogoUrl(data.value);
+        const map = {};
+        (data || []).forEach((row) => { map[row.key] = row.value; });
+        if (map.site_logo && typeof map.site_logo === "string" && map.site_logo.startsWith("http")) {
+          setLogoUrl(map.site_logo);
         }
+        setCategories(
+          Array.isArray(map.homepage_categories) && map.homepage_categories.length > 0
+            ? map.homepage_categories
+            : DEFAULT_HOME_CATEGORIES
+        );
       });
   }, []);
 
-  // Wraps the message in a fresh object per cart event. Keying the effect on the
-  // message string alone swallowed a second identical limit warning, because the
-  // dependency never changed.
+  // Wraps the message in a fresh object per cart event so a repeated identical
+  // limit warning still registers.
   const toastSignal = useMemo(() => {
     if (lastAction?.type !== "limit") return null;
     return { source: lastAction, text: lastAction.message || `Max ${maxItems} items per order` };
@@ -71,177 +228,240 @@ export default function Navbar() {
 
   useEffect(() => {
     if (!toastSignal) return;
-    setBump(true);
     setToast(toastSignal.text);
-    const t1 = setTimeout(() => setBump(false), 220);
-    const t2 = setTimeout(() => setToast(null), 2200);
-    return () => { clearTimeout(t1); clearTimeout(t2); };
+    const t = setTimeout(() => setToast(null), 2400);
+    return () => clearTimeout(t);
   }, [toastSignal]);
 
-  // Prevent body scroll when menu open
-  useEffect(() => {
-    document.body.style.overflow = menuOpen ? "hidden" : "";
-    return () => { document.body.style.overflow = ""; };
-  }, [menuOpen]);
+  // Freeze the page behind the open menu (through Lenis when it runs).
+  useScrollLock(menuOpen);
+
+  // A global search always lands on /shop with a fresh q — other filters reset,
+  // since search looks across the whole catalogue. `replace` while already on
+  // /shop so retyping a search doesn't pile up history.
+  const submitSearch = (q) => {
+    navigate(
+      { pathname: "/shop", search: q ? `?q=${encodeURIComponent(q)}` : "" },
+      { replace: location.pathname === "/shop" }
+    );
+  };
+
+  const isShopPath = location.pathname === "/shop";
+  const activeCategoryParam = searchParams.get("category");
+  const catClass = (active) =>
+    `relative inline-flex h-full items-center whitespace-nowrap text-[13.5px] transition-colors duration-150 ${active
+      ? "font-semibold text-ink after:absolute after:inset-x-0 after:-bottom-px after:h-[2px] after:bg-ink"
+      : "text-stone-600 hover:text-ink"}`;
+
+  const cartButton = (extra = "") => (
+    <button
+      type="button"
+      onClick={openDrawer}
+      aria-label={`Open cart, ${totalItems} ${totalItems === 1 ? "item" : "items"}`}
+      className={`relative inline-flex h-10 items-center gap-2 rounded-full border border-line-strong bg-white pl-3.5 pr-2.5 text-sm font-semibold text-ink transition-[scale,border-color,background-color] duration-200 ease-out-strong hover:border-ink hover:bg-bone active:scale-[0.96] ${extra}`}
+    >
+      <ShoppingBag className="h-[18px] w-[18px]" strokeWidth={1.6} aria-hidden="true" />
+      <span className="hidden lg:inline">Cart</span>
+      {/* Keyed on the count so the badge re-runs its pop each time the cart changes. */}
+      <span key={totalItems} className={`grid h-6 min-w-6 place-items-center rounded-full px-1.5 text-[11px] font-semibold tabular-nums transition-colors duration-200 ${totalItems > 0 ? "animate-[pop_320ms_var(--ease-out-strong)] bg-ink text-white" : "bg-bone text-stone-500"}`}>
+        {totalItems}
+      </span>
+    </button>
+  );
 
   return (
     <>
-      <header className="sticky top-0 z-50 bg-white/70 backdrop-blur-xl backdrop-saturate-[180%] shadow-[0_1px_3px_rgba(0,0,0,0.05),0_8px_30px_-12px_rgba(30,58,95,0.15)]" style={{ borderBottom: '1px solid rgba(232,228,222,0.6)' }}>
-        {/* Subtle gradient glow line at bottom */}
-        <div className="absolute bottom-0 left-0 right-0 h-px bg-gradient-to-r from-transparent via-[#1e3a5f]/15 to-transparent" />
-        <div className="mx-auto flex max-w-6xl items-center justify-between px-4 py-3">
+      <header className="sticky top-0 z-50 border-b border-line bg-white/85 backdrop-blur-xl">
+        <div className="mx-auto max-w-6xl px-5 sm:px-6">
+          <div className="flex h-16 items-center gap-4">
 
-          {/* Logo */}
-          <Link to={homePath} className="flex items-center gap-2.5">
-            <img src={logoUrl || "/logo.png"} alt="Core Atoms" className="h-8 w-auto max-w-[140px] object-contain" />
-          </Link>
+            {/* Logo */}
+            <Link to={homePath} className="flex shrink-0 items-center" aria-label="Core Atoms home">
+              <img src={logoUrl || "/logo.png"} alt="Core Atoms" className="h-8 w-auto max-w-[150px] object-contain" />
+            </Link>
 
-          {/* Desktop nav */}
-          <nav className="hidden md:flex items-center gap-5">
+            {/* Desktop search */}
             {!isAdmin && (
-              <>
-                <NavLink to="/" className={navLinkClass}>Home</NavLink>
-                <NavLink to="/shop" className={navLinkClass}>Shop</NavLink>
-              </>
-            )}
-            {isAuthenticated ? (
-              <>
-                {!isAdmin && <NavLink to="/orders" className={navLinkClass}>My Orders</NavLink>}
-                {isAdmin && <NavLink to="/admin" className={navLinkClass}>Admin</NavLink>}
-                <button onClick={signOut} className="nav-shine text-sm text-neutral-600 hover:text-neutral-950 transition">Logout</button>
-                <span className="hidden lg:inline text-xs text-neutral-400 max-w-[140px] truncate">{user?.email}</span>
-              </>
-            ) : (
-              <NavLink to="/login" className={navLinkClass}>Login</NavLink>
+              <SearchForm
+                key={`desktop-${location.key}`}
+                id="navbar-search-desktop"
+                className="hidden md:block flex-1 max-w-xl"
+                initialQuery={initialQuery}
+                onSubmit={submitSearch}
+              />
             )}
 
-            {!isAdmin && (
-              <Link to="/cart"
-                className={`cart-shine ml-1 inline-flex items-center gap-2 rounded-full border border-neutral-200 bg-white px-3 py-1.5 text-xs font-medium text-neutral-900 relative overflow-hidden transition-all duration-300 hover:border-[#1e3a5f]/20 hover:shadow-[0_2px_12px_rgba(30,58,95,0.12)] hover:-translate-y-px active:translate-y-0.5 active:scale-[0.97] ${bump ? "scale-[1.06]" : "scale-100"}`}
-                title="Cart">
-                <svg className="h-3.5 w-3.5" viewBox="0 0 20 20" fill="currentColor"><path d="M3 3a1 1 0 000 2h1.22l.305 1.222a.997.997 0 00.01.042l1.358 5.43-.893.892C3.74 13.846 4.632 15 6.414 15H15a1 1 0 000-2H6.414l1-1H14a1 1 0 00.894-.553l3-6A1 1 0 0017 5H6.28l-.31-1.243A1 1 0 005 3H3zM16 16.5a1.5 1.5 0 11-3 0 1.5 1.5 0 013 0zM6.5 18a1.5 1.5 0 100-3 1.5 1.5 0 000 3z" /></svg>
-                Cart
-                <span className="grid h-5 min-w-5 place-items-center rounded-full bg-neutral-900 text-white px-1 text-[10px]">{totalItems}</span>
-              </Link>
-            )}
-          </nav>
-
-          {/* Mobile right-side: cart + hamburger */}
-          <div className="flex md:hidden items-center gap-2">
-            {!isAdmin && (
-              <Link to="/cart"
-                aria-label={`Cart, ${totalItems} ${totalItems === 1 ? "item" : "items"}`}
-                className={`inline-flex items-center gap-1.5 rounded-full border border-neutral-200 bg-white px-3 py-1.5 text-xs text-neutral-900 shadow-sm transition ${bump ? "scale-[1.06]" : "scale-100"}`}>
-                <svg className="h-3.5 w-3.5" viewBox="0 0 20 20" fill="currentColor"><path d="M3 3a1 1 0 000 2h1.22l.305 1.222a.997.997 0 00.01.042l1.358 5.43-.893.892C3.74 13.846 4.632 15 6.414 15H15a1 1 0 000-2H6.414l1-1H14a1 1 0 00.894-.553l3-6A1 1 0 0017 5H6.28l-.31-1.243A1 1 0 005 3H3zM16 16.5a1.5 1.5 0 11-3 0 1.5 1.5 0 013 0zM6.5 18a1.5 1.5 0 100-3 1.5 1.5 0 000 3z" /></svg>
-                <span className="grid h-5 min-w-5 place-items-center rounded-full bg-neutral-900 text-white px-1 text-[10px]">{totalItems}</span>
-              </Link>
-            )}
-
-            {/* Hamburger */}
-            <button
-              type="button"
-              onClick={() => setMenuOpen((o) => !o)}
-              className="h-9 w-9 rounded-xl border border-neutral-200 bg-white flex items-center justify-center text-neutral-700 hover:bg-neutral-50 transition shadow-sm"
-              aria-label={menuOpen ? "Close menu" : "Open menu"}
-              aria-expanded={menuOpen}
-              aria-controls="mobile-menu"
-            >
-              {menuOpen ? (
-                <svg className="h-4 w-4" viewBox="0 0 20 20" fill="currentColor"><path fillRule="evenodd" d="M4.293 4.293a1 1 0 011.414 0L10 8.586l4.293-4.293a1 1 0 111.414 1.414L11.414 10l4.293 4.293a1 1 0 01-1.414 1.414L10 11.414l-4.293 4.293a1 1 0 01-1.414-1.414L8.586 10 4.293 5.707a1 1 0 010-1.414z" clipRule="evenodd" /></svg>
+            {/* Desktop nav */}
+            <nav className="ml-auto hidden items-center gap-5 md:flex" aria-label="Account">
+              {isAuthenticated ? (
+                <>
+                  {!isAdmin && <NavLink to="/orders" className={navLinkClass}>My orders</NavLink>}
+                  {isAdmin && <NavLink to="/admin" className={navLinkClass}>Admin</NavLink>}
+                  <button onClick={signOut} className="text-sm text-stone-600 transition-colors duration-150 hover:text-ink">Log out</button>
+                  <span className="hidden max-w-[140px] truncate text-xs text-stone-400 lg:inline">{user?.email}</span>
+                </>
               ) : (
-                <svg className="h-4 w-4" viewBox="0 0 20 20" fill="currentColor"><path fillRule="evenodd" d="M3 5a1 1 0 011-1h12a1 1 0 110 2H4a1 1 0 01-1-1zM3 10a1 1 0 011-1h12a1 1 0 110 2H4a1 1 0 01-1-1zM3 15a1 1 0 011-1h12a1 1 0 110 2H4a1 1 0 01-1-1z" clipRule="evenodd" /></svg>
+                <NavLink to="/login" className={navLinkClass}>Log in</NavLink>
               )}
-            </button>
+              {!isAdmin && cartButton()}
+            </nav>
+
+            {/* Mobile right-side: cart + hamburger */}
+            <div className="ml-auto flex items-center gap-2 md:hidden">
+              {!isAdmin && cartButton()}
+              <button
+                type="button"
+                onClick={() => setMenuOpen((o) => !o)}
+                className="relative flex h-10 w-10 items-center justify-center rounded-full border border-line-strong bg-white text-ink transition-colors duration-150 hover:bg-bone"
+                aria-label={menuOpen ? "Close menu" : "Open menu"}
+                aria-expanded={menuOpen}
+                aria-controls="mobile-menu"
+              >
+                <span aria-hidden="true" className={`absolute left-1/2 top-1/2 h-[1.5px] w-4 -translate-x-1/2 rounded-full bg-current transition-transform duration-200 ease-out-strong ${menuOpen ? "rotate-45" : "-translate-y-[4px]"}`} />
+                <span aria-hidden="true" className={`absolute left-1/2 top-1/2 h-[1.5px] w-4 -translate-x-1/2 rounded-full bg-current transition-transform duration-200 ease-out-strong ${menuOpen ? "-rotate-45" : "translate-y-[4px]"}`} />
+              </button>
+            </div>
           </div>
+
+          {/* Mobile search row */}
+          {!isAdmin && (
+            <SearchForm
+              key={`mobile-${location.key}`}
+              id="navbar-search-mobile"
+              className="pb-3 md:hidden"
+              initialQuery={initialQuery}
+              onSubmit={submitSearch}
+            />
+          )}
         </div>
 
-        {/* Mobile drawer — slides down below the header. `inert` while collapsed so
-            keyboard users can't tab into links that are visually clipped away. */}
+        {/* Desktop category row */}
+        {!isAdmin && (
+          <div className="hidden border-t border-line md:block">
+            <nav aria-label="Shop by category" className="mx-auto flex h-10 max-w-6xl items-center gap-7 overflow-x-auto px-5 no-scrollbar sm:px-6">
+              <Link to="/shop" className={catClass(isShopPath && !activeCategoryParam)}>All products</Link>
+              {categories.map((cat) => (
+                <Link
+                  key={cat.category}
+                  to={`/shop?category=${encodeURIComponent(cat.category)}`}
+                  className={catClass(isShopPath && activeCategoryParam === cat.category)}
+                >
+                  {cat.label}
+                </Link>
+              ))}
+            </nav>
+          </div>
+        )}
+
+        {/* Mobile menu sheet */}
         <div
           id="mobile-menu"
           inert={!menuOpen}
-          className={`md:hidden overflow-hidden transition-all duration-300 ease-in-out ${menuOpen ? "max-h-screen border-t border-neutral-100" : "max-h-0"}`}
+          data-lenis-prevent
+          className={`absolute inset-x-0 top-full max-h-[calc(100dvh-8rem)] overflow-y-auto border-t border-line bg-white shadow-lift-lg transition-[translate,opacity,visibility] ease-out-strong md:hidden ${menuOpen ? "visible translate-y-0 opacity-100 duration-250" : "invisible -translate-y-2 opacity-0 duration-150"}`}
         >
-          <nav className="px-4 py-3 space-y-1 bg-white">
-            {!isAdmin && (
-              <>
-                <NavLink to="/" className={mobileNavLinkClass}>
-                  <span className="flex items-center gap-3">
-                    <svg className="h-4 w-4 text-neutral-400" viewBox="0 0 20 20" fill="currentColor"><path d="M10.707 2.293a1 1 0 00-1.414 0l-7 7a1 1 0 001.414 1.414L4 10.414V17a1 1 0 001 1h2a1 1 0 001-1v-2a1 1 0 011-1h2a1 1 0 011 1v2a1 1 0 001 1h2a1 1 0 001-1v-6.586l.293.293a1 1 0 001.414-1.414l-7-7z" /></svg>
-                    Home
-                  </span>
-                </NavLink>
-                <NavLink to="/shop" className={mobileNavLinkClass}>
-                  <span className="flex items-center gap-3">
-                    <svg className="h-4 w-4 text-neutral-400" viewBox="0 0 20 20" fill="currentColor"><path d="M3 3a1 1 0 000 2h1.22l.305 1.222a.997.997 0 00.01.042l1.358 5.43-.893.892C3.74 13.846 4.632 15 6.414 15H15a1 1 0 000-2H6.414l1-1H14a1 1 0 00.894-.553l3-6A1 1 0 0017 5H6.28l-.31-1.243A1 1 0 005 3H3zM16 16.5a1.5 1.5 0 11-3 0 1.5 1.5 0 013 0zM6.5 18a1.5 1.5 0 100-3 1.5 1.5 0 000 3z" /></svg>
-                    Shop
-                  </span>
-                </NavLink>
-              </>
-            )}
+          <nav className="space-y-0.5 px-4 py-3" aria-label="Mobile">
+            {(() => {
+              let i = 0;
+              const reveal = () => ({
+                className: `transition-[translate,opacity] duration-300 ease-out-strong ${menuOpen ? "translate-y-0 opacity-100" : "translate-y-1.5 opacity-0"}`,
+                style: { transitionDelay: menuOpen ? `${40 + i++ * 25}ms` : "0ms" },
+              });
+              return (
+                <>
+                  {!isAdmin && (
+                    <>
+                      <div {...reveal()}>
+                        <NavLink to="/" className={mobileNavLinkClass}>
+                          <span className="flex items-center gap-3"><House className="h-4 w-4 text-stone-400" strokeWidth={1.75} aria-hidden="true" />Home</span>
+                        </NavLink>
+                      </div>
+                      <div {...reveal()}>
+                        <NavLink to="/shop" end className={mobileNavLinkClass}>
+                          <span className="flex items-center gap-3"><ShoppingBag className="h-4 w-4 text-stone-400" strokeWidth={1.75} aria-hidden="true" />All products</span>
+                        </NavLink>
+                      </div>
+                      <div {...reveal()} >
+                        <p className="px-4 pb-1 pt-4 text-xs font-semibold text-stone-400">Shop by need</p>
+                      </div>
+                      {categories.map((cat) => {
+                        const isActive = isShopPath && activeCategoryParam === cat.category;
+                        return (
+                          <div key={cat.category} {...reveal()}>
+                            <Link
+                              to={`/shop?category=${encodeURIComponent(cat.category)}`}
+                              className={`block rounded-2xl px-4 py-3 text-[15px] font-medium transition-colors duration-150 ${isActive ? mobileNavLinkActiveClass : mobileNavLinkInactiveClass}`}
+                              aria-current={isActive ? "page" : undefined}
+                            >
+                              <span className="flex items-center gap-3">
+                                <HintIcon hint={cat.label} className="h-4 w-4 text-stone-400" strokeWidth={1.75} />
+                                {cat.label}
+                              </span>
+                            </Link>
+                          </div>
+                        );
+                      })}
+                      <div {...reveal()}><div className="my-2 border-t border-line" /></div>
+                    </>
+                  )}
 
-            {isAuthenticated ? (
-              <>
-                {!isAdmin && (
-                  <NavLink to="/orders" className={mobileNavLinkClass}>
-                    <span className="flex items-center gap-3">
-                      <svg className="h-4 w-4 text-neutral-400" viewBox="0 0 20 20" fill="currentColor"><path d="M9 2a1 1 0 000 2h2a1 1 0 100-2H9z" /><path fillRule="evenodd" d="M4 5a2 2 0 012-2 3 3 0 003 3h2a3 3 0 003-3 2 2 0 012 2v11a2 2 0 01-2 2H6a2 2 0 01-2-2V5zm3 4a1 1 0 000 2h.01a1 1 0 100-2H7zm3 0a1 1 0 000 2h3a1 1 0 100-2h-3zm-3 4a1 1 0 100 2h.01a1 1 0 100-2H7zm3 0a1 1 0 100 2h3a1 1 0 100-2h-3z" clipRule="evenodd" /></svg>
-                      My Orders
-                    </span>
-                  </NavLink>
-                )}
-                {isAdmin && (
-                  <NavLink to="/admin" className={mobileNavLinkClass}>
-                    <span className="flex items-center gap-3">
-                      <svg className="h-4 w-4 text-neutral-400" viewBox="0 0 20 20" fill="currentColor"><path fillRule="evenodd" d="M11.49 3.17c-.38-1.56-2.6-1.56-2.98 0a1.532 1.532 0 01-2.286.948c-1.372-.836-2.942.734-2.106 2.106.54.886.061 2.042-.947 2.287-1.561.379-1.561 2.6 0 2.978a1.532 1.532 0 01.947 2.287c-.836 1.372.734 2.942 2.106 2.106a1.532 1.532 0 012.287.947c.379 1.561 2.6 1.561 2.978 0a1.533 1.533 0 012.287-.947c1.372.836 2.942-.734 2.106-2.106a1.533 1.533 0 01.947-2.287c1.561-.379 1.561-2.6 0-2.978a1.532 1.532 0 01-.947-2.287c.836-1.372-.734-2.942-2.106-2.106a1.532 1.532 0 01-2.287-.947zM10 13a3 3 0 100-6 3 3 0 000 6z" clipRule="evenodd" /></svg>
-                      Admin Dashboard
-                    </span>
-                  </NavLink>
-                )}
-
-                {/* User info */}
-                <div className="px-4 py-2 rounded-xl bg-stone-50 flex items-center justify-between mt-1">
-                  <div className="text-xs text-neutral-500 truncate max-w-[200px]">{user?.email}</div>
-                  {isAdmin && <span className="text-[10px] rounded-full bg-[#1e3a5f]/10 text-[#1e3a5f] px-2 py-0.5 font-semibold">Admin</span>}
-                </div>
-
-                <button
-                  onClick={signOut}
-                  className="w-full flex items-center gap-3 px-4 py-3 rounded-xl text-sm font-medium text-red-600 hover:bg-red-50 transition mt-1"
-                >
-                  <svg className="h-4 w-4" viewBox="0 0 20 20" fill="currentColor"><path fillRule="evenodd" d="M3 3a1 1 0 00-1 1v12a1 1 0 102 0V4a1 1 0 00-1-1zm10.293 9.293a1 1 0 001.414 1.414l3-3a1 1 0 000-1.414l-3-3a1 1 0 10-1.414 1.414L14.586 9H7a1 1 0 100 2h7.586l-1.293 1.293z" clipRule="evenodd" /></svg>
-                  Logout
-                </button>
-              </>
-            ) : (
-              <NavLink to="/login" className={mobileNavLinkClass}>
-                <span className="flex items-center gap-3">
-                  <svg className="h-4 w-4 text-neutral-400" viewBox="0 0 20 20" fill="currentColor"><path fillRule="evenodd" d="M3 3a1 1 0 011 1v12a1 1 0 11-2 0V4a1 1 0 011-1zm7.707 3.293a1 1 0 010 1.414L9.414 9H17a1 1 0 110 2H9.414l1.293 1.293a1 1 0 01-1.414 1.414l-3-3a1 1 0 010-1.414l3-3a1 1 0 011.414 0z" clipRule="evenodd" /></svg>
-                  Login
-                </span>
-              </NavLink>
-            )}
+                  {isAuthenticated ? (
+                    <>
+                      {!isAdmin && (
+                        <div {...reveal()}>
+                          <NavLink to="/orders" className={mobileNavLinkClass}>
+                            <span className="flex items-center gap-3"><ClipboardList className="h-4 w-4 text-stone-400" strokeWidth={1.75} aria-hidden="true" />My orders</span>
+                          </NavLink>
+                        </div>
+                      )}
+                      {isAdmin && (
+                        <div {...reveal()}>
+                          <NavLink to="/admin" className={mobileNavLinkClass}>
+                            <span className="flex items-center gap-3"><LayoutDashboard className="h-4 w-4 text-stone-400" strokeWidth={1.75} aria-hidden="true" />Admin dashboard</span>
+                          </NavLink>
+                        </div>
+                      )}
+                      <div {...reveal()}>
+                        <div className="mt-1 flex items-center justify-between rounded-2xl bg-bone px-4 py-2.5">
+                          <div className="max-w-[220px] truncate text-xs text-stone-500">{user?.email}</div>
+                          {isAdmin && <span className="rounded-full bg-brand/10 px-2 py-0.5 text-[10px] font-semibold text-brand">Admin</span>}
+                        </div>
+                      </div>
+                      <div {...reveal()}>
+                        <button onClick={signOut} className="mt-1 flex w-full items-center gap-3 rounded-2xl px-4 py-3 text-[15px] font-medium text-red-600 transition-colors duration-150 hover:bg-red-50">
+                          <LogOut className="h-4 w-4" strokeWidth={1.75} aria-hidden="true" />Log out
+                        </button>
+                      </div>
+                    </>
+                  ) : (
+                    <div {...reveal()}>
+                      <NavLink to="/login" className={mobileNavLinkClass}>
+                        <span className="flex items-center gap-3"><LogIn className="h-4 w-4 text-stone-400" strokeWidth={1.75} aria-hidden="true" />Log in</span>
+                      </NavLink>
+                    </div>
+                  )}
+                </>
+              );
+            })()}
           </nav>
         </div>
       </header>
 
-      {/* Toast notification */}
+      {/* Order-limit toast */}
       {toast && (
-        <div className="pointer-events-none fixed right-4 top-20 z-[60]">
-          <div className="rounded-xl border border-neutral-200 bg-white px-4 py-2 text-sm text-neutral-900 shadow-lg animate-toast-in">
+        <div className="pointer-events-none fixed right-4 top-24 z-[80]">
+          <div className="animate-toast-in rounded-full border border-line bg-white px-4 py-2.5 text-sm font-medium text-ink shadow-lift-lg">
             {toast}
           </div>
         </div>
       )}
 
-      {/* Mobile menu backdrop — full height, sitting behind the sticky header
-          (z-50) rather than guessing the header's pixel height. */}
-      {menuOpen && (
-        <div
-          className="fixed inset-0 z-40 bg-black/20 md:hidden"
-          onClick={() => setMenuOpen(false)}
-        />
-      )}
+      {/* Mobile menu scrim — sits behind the sticky header. */}
+      <div
+        aria-hidden="true"
+        className={`fixed inset-0 z-40 bg-navy-950/30 transition-opacity duration-200 md:hidden ${menuOpen ? "opacity-100" : "pointer-events-none opacity-0"}`}
+        onClick={() => setMenuOpen(false)}
+      />
     </>
   );
 }

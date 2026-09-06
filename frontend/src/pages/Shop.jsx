@@ -1,29 +1,42 @@
 /**
- * Shop.jsx — Product listing page with search, category filter, and add-to-cart.
+ * Shop.jsx — Product listing page with a 1mg-style filter rail.
  *
- * Fetches all active products from Supabase and displays them in a responsive
- * grid. Includes a search bar, category filter dropdown, skeleton loading
- * states, and an inline toast notification on add-to-cart.
+ * Search (`q`) is owned by the header (`components/Navbar.jsx`) — this page
+ * only reads it from the URL and shows it as a removable chip. The left rail
+ * (desktop) / bottom sheet (mobile) filters on category, price band, customer
+ * rating, offers and stock — all URL-synced via `utils/shopFilters.js` so
+ * links from Home and the header's category row work without extra state.
+ * Phones also get a scrollable category chip row above the grid.
  *
- * Also fetches `gst_percentage` from `app_settings` to conditionally show
- * "Excl. GST & Shipping" or "Excl. Shipping" on product cards.
- *
- * The product card itself lives in `components/ProductCard.jsx` so that Home can
- * reuse it without importing this page.
+ * Also fetches `gst_percentage` from `app_settings` so cards can note
+ * "excl. GST" only when it applies. Adding to cart opens the cart drawer.
+ * The grid enters with a short stagger and re-sorts in place when a filter
+ * or sort changes (Motion `layout` with `AnimatePresence`).
  *
  * @module pages/Shop
  */
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useSearchParams } from "react-router-dom";
+import { SlidersHorizontal, ChevronDown, SearchX, X } from "lucide-react";
 import { fetchProducts } from "../services/products";
 import { useCart } from "../context/CartContext";
 import { supabase } from "../services/supabase/client";
-import useDebounce from "../hooks/useDebounce";
 import SEO from "../components/SEO";
-import { useToast } from "../context/ToastContext";
-import ScrollReveal from "../components/ScrollReveal";
 import ProductCard from "../components/ProductCard";
+import ShopFilters from "../components/ShopFilters";
 import { SkeletonGrid } from "../components/Skeleton";
+import { useScrollLock } from "../components/fx/SmoothScroll";
+import RevealText from "../components/fx/RevealText";
+import { useSiteContent } from "../services/siteContent";
+import { AnimatePresence, motion } from "motion/react";
+import {
+  FILTER_KEYS,
+  PRICE_BANDS,
+  RATING_OPTIONS,
+  applyFilters,
+  countActiveFilters,
+  readFilters,
+} from "../utils/shopFilters";
 
 const PAGE_TITLE = "Shop | Core Atoms";
 const PAGE_DESCRIPTION =
@@ -31,21 +44,31 @@ const PAGE_DESCRIPTION =
 /** Generic load failure copy — the raw Supabase message stays in the console. */
 const LOAD_ERROR_MESSAGE = "We couldn't load the catalogue just now. Please try again.";
 
+const SORT_OPTIONS = [
+  { value: "featured", label: "Featured" },
+  { value: "price-asc", label: "Price: low to high" },
+  { value: "price-desc", label: "Price: high to low" },
+  { value: "rating", label: "Top rated" },
+  { value: "newest", label: "Newest first" },
+];
+
 export default function Shop() {
   const { addItem } = useCart();
-  const { showToast } = useToast();
   const [searchParams, setSearchParams] = useSearchParams();
   const [products, setProducts] = useState([]);
   const [loading, setLoading] = useState(true);
   const [err, setErr] = useState("");
+  const [sheetOpen, setSheetOpen] = useState(false);
 
-  // URL-synced filters — survive refresh and are shareable
-  const category = searchParams.get("category") || "All";
+  // URL-synced — survive refresh and are shareable. `q` is owned by the header.
   const query = searchParams.get("q") || "";
   const sort = searchParams.get("sort") || "featured";
-  const setCategory = (cat) => {
+  const filters = useMemo(() => readFilters(searchParams), [searchParams]);
+
+  const setFilter = (key, value) => {
     setSearchParams((prev) => {
-      if (cat === "All") prev.delete("category"); else prev.set("category", cat);
+      const v = value === true ? "1" : value;
+      if (!v || v === "All") prev.delete(key); else prev.set(key, String(v));
       return prev;
     });
   };
@@ -55,17 +78,21 @@ export default function Shop() {
       return prev;
     });
   };
-  // `replace` so a search doesn't push one history entry per keystroke —
-  // typing "collagen" used to need eight back presses to leave the page.
-  const setQuery = (q) => {
+  const clearFilters = () => {
     setSearchParams((prev) => {
-      if (!q.trim()) prev.delete("q"); else prev.set("q", q);
+      [...FILTER_KEYS, "q"].forEach((k) => prev.delete(k));
       return prev;
-    }, { replace: true });
+    });
   };
-
-  // Debounce search for performance
-  const debouncedQuery = useDebounce(query, 300);
+  const removeChip = (key) => {
+    if (key === "q") {
+      setSearchParams((prev) => { prev.delete("q"); return prev; });
+    } else if (key === "offer" || key === "stock") {
+      setFilter(key, false);
+    } else {
+      setFilter(key, "");
+    }
+  };
 
   const [justAddedId, setJustAddedId] = useState(null);
   const [gstPercent, setGstPercent] = useState(0);
@@ -73,8 +100,6 @@ export default function Shop() {
   const loadProducts = useCallback(async () => {
     try {
       setLoading(true);
-      // Clear first: a failed initial fetch used to leave the red banner up
-      // forever, even after the realtime handler refetched successfully.
       setErr("");
       const [list, settingsRes] = await Promise.all([
         fetchProducts(),
@@ -112,27 +137,43 @@ export default function Shop() {
     };
   }, [loadProducts]);
 
+  // Escape closes the mobile filter sheet.
+  useEffect(() => {
+    const onKey = (e) => { if (e.key === "Escape" && sheetOpen) setSheetOpen(false); };
+    document.addEventListener("keydown", onKey);
+    return () => document.removeEventListener("keydown", onKey);
+  }, [sheetOpen]);
+
+  // Freeze the page behind the open sheet (through Lenis when it runs).
+  useScrollLock(sheetOpen);
+
+  const activeProducts = useMemo(() => products.filter((p) => p.isActive !== false), [products]);
+
   const categories = useMemo(() => {
     const set = new Set();
-    products.forEach((p) => { const c = (p.category || "").trim(); if (c) set.add(c); });
-    return ["All", ...Array.from(set).sort()];
-  }, [products]);
+    activeProducts.forEach((p) => { const c = (p.category || "").trim(); if (c) set.add(c); });
+    return Array.from(set).sort();
+  }, [activeProducts]);
+
+  const categoryCounts = useMemo(() => {
+    const counts = {};
+    activeProducts.forEach((p) => {
+      const c = (p.category || "").trim();
+      if (c) counts[c] = (counts[c] || 0) + 1;
+    });
+    return counts;
+  }, [activeProducts]);
+
+  const total = activeProducts.length;
 
   const active = useMemo(() => {
-    let list = products.filter((p) => p.isActive !== false);
-    if (category !== "All") list = list.filter((p) => p.category === category);
-    const q = debouncedQuery.trim().toLowerCase();
-    if (q) list = list.filter((p) => p.name?.toLowerCase().includes(q) || p.category?.toLowerCase().includes(q));
-
-    // "featured" keeps the catalogue order the store was curated in.
+    let list = applyFilters(products, filters, query);
     if (sort !== "featured") {
       list = [...list];
       const num = (v) => (Number.isFinite(Number(v)) ? Number(v) : 0);
       if (sort === "price-asc") list.sort((a, b) => num(a.price) - num(b.price));
       else if (sort === "price-desc") list.sort((a, b) => num(b.price) - num(a.price));
       else if (sort === "rating") {
-        // Rated products first (by average, review count breaking ties),
-        // unrated ones keep their curated order at the end.
         list.sort((a, b) =>
           (num(b.avgRating) - num(a.avgRating)) ||
           (num(b.reviewCount) - num(a.reviewCount))
@@ -143,33 +184,55 @@ export default function Shop() {
       }
     }
     return list;
-  }, [products, category, debouncedQuery, sort]);
+  }, [products, filters, query, sort]);
 
-  /** Ref for button feedback timer. */
+  const chips = useMemo(() => {
+    const list = [];
+    if (query) list.push({ key: "q", label: `"${query}"` });
+    if (filters.category !== "All") list.push({ key: "category", label: filters.category });
+    if (filters.price) {
+      const band = PRICE_BANDS.find((b) => b.id === filters.price);
+      if (band) list.push({ key: "price", label: band.label });
+    }
+    if (filters.rating) {
+      const option = RATING_OPTIONS.find((r) => r.id === filters.rating);
+      if (option) list.push({ key: "rating", label: option.label });
+    }
+    if (filters.offer) list.push({ key: "offer", label: "On offer" });
+    if (filters.stock) list.push({ key: "stock", label: "In stock" });
+    return list;
+  }, [query, filters]);
+
+  const activeFilterCount = countActiveFilters(filters);
+
   const btnTimerRef = useRef(null);
+  useEffect(() => () => clearTimeout(btnTimerRef.current), []);
 
-  /** Cleanup timer on unmount. */
-  useEffect(() => {
-    return () => clearTimeout(btnTimerRef.current);
-  }, []);
-
-  /** Handles adding a product to cart with toast + button feedback.
-   *  Memoised so `ProductCard`'s React.memo isn't defeated by a fresh callback
-   *  identity on every keystroke in the search box. */
+  /** Adds with button feedback; the cart drawer is the confirmation. Memoised
+   *  so `ProductCard`'s React.memo isn't defeated by a fresh callback. */
   const handleAdd = useCallback((p) => {
     addItem(p, 1);
     setJustAddedId(p.id);
-    showToast(`${p.name} added to cart`, "success");
     clearTimeout(btnTimerRef.current);
     btnTimerRef.current = setTimeout(() => setJustAddedId(null), 1000);
-  }, [addItem, showToast]);
+  }, [addItem]);
 
-  // Loading state still emits <SEO> — a crawler that catches the page mid-load
-  // used to find no title or description at all.
-  if (loading) return (
-    <div className="py-4">
-      <SEO title={PAGE_TITLE} description={PAGE_DESCRIPTION} canonical="/shop" />
-      <SkeletonGrid count={6} />
+  const shopCopy = useSiteContent("page_shop");
+  const heading = filters.category !== "All" ? filters.category : query ? `Results for "${query}"` : shopCopy.title;
+  const countLabel = `${active.length} formula${active.length !== 1 ? "s" : ""}`;
+
+  const sortSelect = (
+    <div className="relative">
+      <label htmlFor="shop-sort" className="sr-only">Sort products</label>
+      <select
+        id="shop-sort"
+        value={sort}
+        onChange={(e) => setSort(e.target.value)}
+        className="h-10 cursor-pointer appearance-none rounded-full border border-line-strong bg-white pl-4 pr-10 text-[13.5px] font-medium text-ink outline-none transition-[border-color,box-shadow] duration-150 hover:border-ink focus:border-brand focus:shadow-[0_0_0_4px_rgba(30,58,95,0.08)]"
+      >
+        {SORT_OPTIONS.map((o) => <option key={o.value} value={o.value}>{o.label}</option>)}
+      </select>
+      <ChevronDown className="pointer-events-none absolute right-3.5 top-1/2 h-4 w-4 -translate-y-1/2 text-stone-400" strokeWidth={1.75} aria-hidden="true" />
     </div>
   );
 
@@ -178,130 +241,153 @@ export default function Shop() {
       <SEO title={PAGE_TITLE} description={PAGE_DESCRIPTION} canonical="/shop" />
 
       {/* Page header */}
-      <ScrollReveal>
-        <div className="mb-8">
-          <p className="section-label">Our Collection</p>
-          <h1 className="mt-2 text-3xl font-semibold tracking-tight text-stone-900">Shop</h1>
-          <p className="mt-2 text-sm text-stone-500">Premium supplements, clean labels, COD available across India.</p>
+      <div className="mb-8 flex flex-wrap items-end justify-between gap-x-6 gap-y-4">
+        <div>
+          <RevealText as="h1" key={heading} text={heading} step={40} className="font-display text-4xl font-semibold tracking-[-0.03em] text-ink sm:text-5xl" />
+          <p className="mt-2 text-sm text-stone-500 tabular-nums">{loading ? "Loading the range" : countLabel}</p>
         </div>
-      </ScrollReveal>
-
-      {/* Filters — Premium glass bar */}
-      <div
-        className="mb-8 rounded-2xl p-4 sm:p-5 flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between"
-        style={{
-          background: "rgba(255,255,255,0.75)",
-          backdropFilter: "blur(16px) saturate(180%)",
-          WebkitBackdropFilter: "blur(16px) saturate(180%)",
-          border: "1px solid rgba(232,228,222,0.6)",
-          boxShadow: "0 4px 24px rgba(0,0,0,0.04), 0 1px 3px rgba(0,0,0,0.03), inset 0 1px 0 rgba(255,255,255,0.9)",
-        }}
-      >
-        <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:gap-3">
-          {/* Search input with integrated icon */}
-          <div className="relative group">
-            <div className="absolute left-3.5 top-1/2 -translate-y-1/2 pointer-events-none">
-              <svg className="h-4 w-4 text-stone-400 group-focus-within:text-[#1e3a5f] transition-colors" viewBox="0 0 20 20" fill="currentColor">
-                <path fillRule="evenodd" d="M8 4a4 4 0 100 8 4 4 0 000-8zM2 8a6 6 0 1110.89 3.476l4.817 4.817a1 1 0 01-1.414 1.414l-4.816-4.816A6 6 0 012 8z" clipRule="evenodd" />
-              </svg>
-            </div>
-            <input
-              id="shop-search"
-              type="search"
-              aria-label="Search products"
-              value={query}
-              onChange={(e) => setQuery(e.target.value)}
-              placeholder="Search products…"
-              className="w-full sm:w-64 rounded-xl border border-[#E8E4DE]/80 bg-white/90 pl-10 pr-4 py-2.5 text-sm text-stone-900 placeholder:text-stone-400 outline-none transition-all duration-200 focus:border-[#1e3a5f]/40 focus:ring-[3px] focus:ring-[#1e3a5f]/8 focus:bg-white hover:border-stone-300"
-              style={{ boxShadow: "inset 0 1px 2px rgba(0,0,0,0.04)" }}
-            />
-          </div>
-
-          {/* Category dropdown with integrated icon */}
-          <div className="relative group">
-            <div className="absolute left-3.5 top-1/2 -translate-y-1/2 pointer-events-none">
-              <svg className="h-4 w-4 text-stone-400 group-focus-within:text-[#1e3a5f] transition-colors" viewBox="0 0 20 20" fill="currentColor">
-                <path fillRule="evenodd" d="M3 3a1 1 0 011-1h12a1 1 0 011 1v3a1 1 0 01-.293.707L13 10.414V17a1 1 0 01-.553.894l-4 2A1 1 0 017 19v-8.586L3.293 6.707A1 1 0 013 6V3z" clipRule="evenodd" />
-              </svg>
-            </div>
-            <select
-              id="shop-category"
-              aria-label="Filter by category"
-              value={category}
-              onChange={(e) => setCategory(e.target.value)}
-              className="appearance-none rounded-xl border border-[#E8E4DE]/80 bg-white/90 pl-10 pr-10 py-2.5 text-sm text-stone-900 outline-none transition-all duration-200 focus:border-[#1e3a5f]/40 focus:ring-[3px] focus:ring-[#1e3a5f]/8 focus:bg-white hover:border-stone-300 cursor-pointer"
-              style={{ boxShadow: "inset 0 1px 2px rgba(0,0,0,0.04)" }}
-            >
-              {categories.map((c) => (
-                <option key={c} value={c}>{c}</option>
-              ))}
-            </select>
-            {/* Custom chevron */}
-            <div className="absolute right-3.5 top-1/2 -translate-y-1/2 pointer-events-none">
-              <svg className="h-4 w-4 text-stone-400" viewBox="0 0 20 20" fill="currentColor">
-                <path fillRule="evenodd" d="M5.293 7.293a1 1 0 011.414 0L10 10.586l3.293-3.293a1 1 0 111.414 1.414l-4 4a1 1 0 01-1.414 0l-4-4a1 1 0 010-1.414z" clipRule="evenodd" />
-              </svg>
-            </div>
-          </div>
-
-          {/* Sort dropdown — mirrors the category control's styling */}
-          <div className="relative group">
-            <div className="absolute left-3.5 top-1/2 -translate-y-1/2 pointer-events-none">
-              <svg className="h-4 w-4 text-stone-400 group-focus-within:text-[#1e3a5f] transition-colors" viewBox="0 0 20 20" fill="currentColor">
-                <path d="M3 4a1 1 0 000 2h11a1 1 0 100-2H3zM3 8a1 1 0 000 2h7a1 1 0 100-2H3zM3 12a1 1 0 100 2h4a1 1 0 100-2H3zM13 16a1 1 0 102 0v-5.586l1.293 1.293a1 1 0 001.414-1.414l-3-3a1 1 0 00-1.414 0l-3 3a1 1 0 101.414 1.414L13 10.414V16z" />
-              </svg>
-            </div>
-            <select
-              id="shop-sort"
-              aria-label="Sort products"
-              value={sort}
-              onChange={(e) => setSort(e.target.value)}
-              className="appearance-none rounded-xl border border-[#E8E4DE]/80 bg-white/90 pl-10 pr-10 py-2.5 text-sm text-stone-900 outline-none transition-all duration-200 focus:border-[#1e3a5f]/40 focus:ring-[3px] focus:ring-[#1e3a5f]/8 focus:bg-white hover:border-stone-300 cursor-pointer"
-              style={{ boxShadow: "inset 0 1px 2px rgba(0,0,0,0.04)" }}
-            >
-              <option value="featured">Sort: Featured</option>
-              <option value="price-asc">Price: Low to High</option>
-              <option value="price-desc">Price: High to Low</option>
-              <option value="rating">Top Rated</option>
-              <option value="newest">Newest First</option>
-            </select>
-            {/* Custom chevron */}
-            <div className="absolute right-3.5 top-1/2 -translate-y-1/2 pointer-events-none">
-              <svg className="h-4 w-4 text-stone-400" viewBox="0 0 20 20" fill="currentColor">
-                <path fillRule="evenodd" d="M5.293 7.293a1 1 0 011.414 0L10 10.586l3.293-3.293a1 1 0 111.414 1.414l-4 4a1 1 0 01-1.414 0l-4-4a1 1 0 010-1.414z" clipRule="evenodd" />
-              </svg>
-            </div>
-          </div>
-        </div>
-
-        {/* Product count pill */}
-        <div className="inline-flex items-center gap-1.5 rounded-full border border-[#E8E4DE]/60 bg-white/80 px-3 py-1.5 self-start sm:self-auto">
-          <span className="inline-block h-1.5 w-1.5 rounded-full bg-[#1e3a5f]/50" />
-          <span className="text-xs font-medium text-stone-500">
-            {active.length} product{active.length !== 1 ? "s" : ""}
-          </span>
-        </div>
+        <div className="hidden lg:block">{sortSelect}</div>
       </div>
 
-
-      {err && (
-        <div className="card p-6 mb-6 text-sm text-red-600" role="alert">{err}</div>
-      )}
-
-      {active.length === 0 ? (
-        <div className="card p-12 text-center">
-          <p className="text-base font-semibold text-stone-900">No products found</p>
-          <p className="mt-1 text-sm text-stone-500">Try a different search or category.</p>
-          <button onClick={() => { setCategory("All"); setQuery(""); }} className="btn-ghost mt-5">Reset filters</button>
-        </div>
-      ) : (
-        <div className="grid gap-5 sm:grid-cols-2 lg:grid-cols-3">
-          {active.map((p) => (
-            <ProductCard key={p.id} p={p} onAdd={handleAdd} justAdded={justAddedId === p.id} gstPercent={gstPercent} />
+      {/* Phone category chips */}
+      {!loading && categories.length > 0 && (
+        <div className="-mx-5 mb-5 flex snap-x gap-2 overflow-x-auto px-5 pb-1 scroll-px-5 no-scrollbar lg:hidden sm:-mx-6 sm:px-6 sm:scroll-px-6">
+          <button
+            type="button"
+            onClick={() => setFilter("category", "All")}
+            className={`shrink-0 snap-start rounded-full border px-3.5 py-2 text-[13px] font-medium transition-colors ${filters.category === "All" ? "border-ink bg-ink text-white" : "border-line-strong bg-white text-stone-700"}`}
+          >
+            All
+          </button>
+          {categories.map((c) => (
+            <button
+              key={c}
+              type="button"
+              onClick={() => setFilter("category", c)}
+              className={`shrink-0 snap-start rounded-full border px-3.5 py-2 text-[13px] font-medium transition-colors ${filters.category === c ? "border-ink bg-ink text-white" : "border-line-strong bg-white text-stone-700"}`}
+            >
+              {c}
+            </button>
           ))}
         </div>
       )}
 
+      <div className="lg:grid lg:grid-cols-[232px_minmax(0,1fr)] lg:items-start lg:gap-12">
+        {/* Desktop rail */}
+        <div className="hidden lg:sticky lg:top-32 lg:block">
+          <ShopFilters
+            idPrefix="rail"
+            categories={categories}
+            categoryCounts={categoryCounts}
+            total={total}
+            filters={filters}
+            onChange={setFilter}
+            onClear={clearFilters}
+          />
+        </div>
+
+        <div>
+          {/* Toolbar (phones and tablets) */}
+          <div className="mb-5 flex items-center gap-3 lg:hidden">
+            <button type="button" onClick={() => setSheetOpen(true)} className="btn-secondary btn-sm">
+              <SlidersHorizontal className="h-4 w-4" strokeWidth={1.75} aria-hidden="true" />
+              Filters
+              {activeFilterCount > 0 && (
+                <span className="inline-flex h-5 min-w-5 items-center justify-center rounded-full bg-ink px-1 text-[10px] font-semibold text-white tabular-nums">
+                  {activeFilterCount}
+                </span>
+              )}
+            </button>
+            <div className="ml-auto">{sortSelect}</div>
+          </div>
+
+          {/* Active filter chips */}
+          {(query || activeFilterCount > 0) && (
+            <div className="mb-6 flex flex-wrap items-center gap-2">
+              {chips.map((chip) => (
+                <button
+                  key={chip.key}
+                  type="button"
+                  onClick={() => removeChip(chip.key)}
+                  className="inline-flex items-center gap-1.5 rounded-full border border-line-strong bg-white px-3 py-1.5 text-xs font-medium text-ink transition-colors duration-150 hover:border-ink"
+                  aria-label={`Remove filter ${chip.label}`}
+                >
+                  {chip.label}
+                  <X className="h-3 w-3 text-stone-400" strokeWidth={2} aria-hidden="true" />
+                </button>
+              ))}
+              <button type="button" onClick={clearFilters} className="py-1.5 text-xs font-semibold text-brand hover:underline underline-offset-4">
+                Clear all
+              </button>
+            </div>
+          )}
+
+          {err && (
+            <div className="panel mb-6 p-6 text-sm text-red-700" role="alert">{err}</div>
+          )}
+
+          {loading ? (
+            <SkeletonGrid count={6} />
+          ) : active.length === 0 ? (
+            <div className="border-t border-line py-20 text-center">
+              <span className="mx-auto grid h-14 w-14 place-items-center rounded-full bg-bone text-brand">
+                <SearchX className="h-6 w-6" strokeWidth={1.5} aria-hidden="true" />
+              </span>
+              <p className="mt-5 font-display text-2xl font-semibold tracking-tight text-ink">{shopCopy.emptyTitle}</p>
+              <p className="mx-auto mt-1.5 max-w-sm text-sm text-stone-500">{shopCopy.emptyText}</p>
+              <button onClick={clearFilters} className="btn-secondary mt-6">Clear all filters</button>
+            </div>
+          ) : (
+            <motion.div layout className="grid grid-cols-2 gap-x-4 gap-y-8 lg:grid-cols-3 lg:gap-x-6 lg:gap-y-10">
+              <AnimatePresence mode="popLayout">
+                {active.map((p, i) => (
+                  <motion.div
+                    key={p.id}
+                    layout
+                    initial={{ opacity: 0, y: 28 }}
+                    animate={{ opacity: 1, y: 0 }}
+                    exit={{ opacity: 0, scale: 0.96 }}
+                    transition={{ duration: 0.5, ease: [0.23, 1, 0.32, 1], delay: Math.min(i, 8) * 0.045 }}
+                  >
+                    <ProductCard p={p} onAdd={handleAdd} justAdded={justAddedId === p.id} gstPercent={gstPercent} />
+                  </motion.div>
+                ))}
+              </AnimatePresence>
+            </motion.div>
+          )}
+        </div>
+      </div>
+
+      {/* Mobile filter sheet — always mounted so the exit can animate. */}
+      <div className={`fixed inset-0 z-[60] lg:hidden ${sheetOpen ? "" : "pointer-events-none"}`} inert={!sheetOpen}>
+        <div
+          aria-hidden="true"
+          onClick={() => setSheetOpen(false)}
+          className={`absolute inset-0 bg-navy-950/45 transition-opacity ${sheetOpen ? "duration-300 opacity-100" : "duration-200 opacity-0"}`}
+        />
+        <div
+          role="dialog"
+          aria-modal="true"
+          aria-label="Filters"
+          data-lenis-prevent
+          className={`absolute inset-x-0 bottom-0 max-h-[85vh] overflow-y-auto rounded-t-[28px] bg-white px-5 pb-6 pt-3 shadow-lift-lg transition-transform ease-drawer ${sheetOpen ? "duration-[420ms] translate-y-0" : "duration-[260ms] translate-y-full"}`}
+          style={{ paddingBottom: "max(1.5rem, env(safe-area-inset-bottom))" }}
+        >
+          <div aria-hidden="true" className="mx-auto mb-5 h-1 w-10 rounded-full bg-line-strong" />
+          <ShopFilters
+            idPrefix="sheet"
+            categories={categories}
+            categoryCounts={categoryCounts}
+            total={total}
+            filters={filters}
+            onChange={setFilter}
+            onClear={clearFilters}
+          />
+          <button type="button" onClick={() => setSheetOpen(false)} className="btn-primary btn-lg mt-6 w-full">
+            Show {active.length} formula{active.length !== 1 ? "s" : ""}
+          </button>
+        </div>
+      </div>
     </div>
   );
 }

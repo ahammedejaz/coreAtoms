@@ -3,15 +3,19 @@
  *
  * Supports both email+password and Google OAuth via Supabase Auth.
  * After login, admins are redirected to `/admin` and customers to `/`.
- * Toggle between sign-in and sign-up modes in the same card.
+ * A segmented switch above the form toggles between sign-in and sign-up;
+ * headings, tab labels and the closing note come from `page_account`.
  *
  * @module pages/Login
  */
 import { useEffect, useMemo, useState } from "react";
 import { Link, useNavigate, useSearchParams } from "react-router-dom";
+import { Lock } from "lucide-react";
 import { supabase } from "../services/supabase/client";
 import { useAuth } from "../context/AuthContext";
 import SEO from "../components/SEO";
+import AuthShell from "../components/AuthShell";
+import { useSiteContent } from "../services/siteContent";
 
 /** Minimum password length — mirrors the rule enforced on ResetPassword. */
 const MIN_PASSWORD_LENGTH = 6;
@@ -35,6 +39,7 @@ function safeRedirect(raw) {
 }
 
 export default function Login() {
+  const account = useSiteContent("page_account");
   const navigate = useNavigate();
   const [searchParams] = useSearchParams();
   const redirectTo = useMemo(() => safeRedirect(searchParams.get("redirect")), [searchParams]);
@@ -104,111 +109,109 @@ export default function Login() {
     }
   };
 
-  const toggleMode = () => {
-    setIsSignup((prev) => !prev);
+  const setMode = (signup) => {
+    if (signup === isSignup) return;
+    setIsSignup(signup);
     setConfirm("");
     setMessage({ text: "", type: "" });
   };
 
   return (
-    <div className="min-h-[80vh] flex items-center justify-center py-12">
+    <>
       <SEO title="Login | Core Atoms" description="Sign in or create an account to manage your orders." />
-      <div className="w-full max-w-md">
-
-        {/* Header */}
-        <div className="text-center mb-8">
-          <div className="inline-block mx-auto mb-5">
-            <img src="/logo.png" alt="Core Atoms" className="h-14 w-auto object-contain" />
-          </div>
-          <h1 className="text-2xl font-semibold text-stone-900 tracking-tight">
-            {isSignup ? "Create your account" : "Welcome back"}
-          </h1>
-          <p className="mt-2 text-sm text-stone-500">
-            {isSignup
-              ? "Start your wellness journey with Core Atoms."
-              : "Sign in to manage your orders and preferences."}
-          </p>
+      <AuthShell
+        title={isSignup ? account.signupTitle : account.loginTitle}
+        subtitle={isSignup ? account.signupSubtitle : account.loginSubtitle}
+      >
+        <div role="tablist" aria-label="Sign in or create an account" className="mb-7 grid grid-cols-2 rounded-full bg-bone p-1 text-[13.5px] font-semibold">
+          {[[false, account.loginTab], [true, account.signupTab]].map(([signup, label]) => (
+            <button
+              key={label}
+              type="button"
+              role="tab"
+              aria-selected={isSignup === signup}
+              onClick={() => setMode(signup)}
+              className={`rounded-full py-2.5 transition-[background-color,color,box-shadow] duration-200 ${isSignup === signup ? "bg-white text-ink shadow-lift" : "text-stone-500 hover:text-ink"}`}
+            >
+              {label}
+            </button>
+          ))}
         </div>
 
-        <div className="card p-8 space-y-6">
-          {/* Google */}
-          <button
-            onClick={handleGoogle}
-            disabled={googleLoading}
-            className="w-full inline-flex items-center justify-center gap-3 rounded-xl border border-[#E8E4DE] bg-white px-5 py-3 text-sm font-semibold text-stone-700 shadow-sm hover:bg-stone-50 hover:shadow transition-all duration-200 disabled:opacity-60 disabled:cursor-not-allowed"
-          >
-            <svg width="18" height="18" viewBox="0 0 48 48">
-              <path fill="#EA4335" d="M24 9.5c3.4 0 6.4 1.2 8.7 3.2l6.5-6.5C35.2 2.3 29.9 0 24 0 14.7 0 6.7 5.4 2.7 13.3l7.6 5.9C12.1 13.3 17.6 9.5 24 9.5z" />
-              <path fill="#4285F4" d="M46.1 24.5c0-1.6-.1-3.1-.4-4.5H24v8.5h12.4c-.5 2.7-2 5-4.2 6.6l6.6 5.1c3.8-3.5 6.3-8.6 6.3-15.7z" />
-              <path fill="#FBBC05" d="M10.3 28.2c-.5-1.5-.8-3.1-.8-4.7s.3-3.2.8-4.7l-7.6-5.9C1 17.1 0 20.4 0 23.5s1 6.4 2.7 9.1l7.6-5.9z" />
-              <path fill="#34A853" d="M24 47c6 0 11.1-2 14.8-5.4l-6.6-5.1c-2 1.3-4.6 2.1-8.2 2.1-6.4 0-11.9-3.8-13.8-9.7l-7.6 5.9C6.7 42.6 14.7 47 24 47z" />
-            </svg>
-            {googleLoading ? "Opening Google…" : "Continue with Google"}
-          </button>
+        <button
+          onClick={handleGoogle}
+          disabled={googleLoading}
+          className="btn-secondary h-12 w-full disabled:cursor-not-allowed disabled:opacity-60"
+        >
+          <svg width="18" height="18" viewBox="0 0 48 48" aria-hidden="true">
+            <path fill="#EA4335" d="M24 9.5c3.4 0 6.4 1.2 8.7 3.2l6.5-6.5C35.2 2.3 29.9 0 24 0 14.7 0 6.7 5.4 2.7 13.3l7.6 5.9C12.1 13.3 17.6 9.5 24 9.5z" />
+            <path fill="#4285F4" d="M46.1 24.5c0-1.6-.1-3.1-.4-4.5H24v8.5h12.4c-.5 2.7-2 5-4.2 6.6l6.6 5.1c3.8-3.5 6.3-8.6 6.3-15.7z" />
+            <path fill="#FBBC05" d="M10.3 28.2c-.5-1.5-.8-3.1-.8-4.7s.3-3.2.8-4.7l-7.6-5.9C1 17.1 0 20.4 0 23.5s1 6.4 2.7 9.1l7.6-5.9z" />
+            <path fill="#34A853" d="M24 47c6 0 11.1-2 14.8-5.4l-6.6-5.1c-2 1.3-4.6 2.1-8.2 2.1-6.4 0-11.9-3.8-13.8-9.7l-7.6 5.9C6.7 42.6 14.7 47 24 47z" />
+          </svg>
+          {googleLoading ? "Opening Google…" : "Continue with Google"}
+        </button>
 
-          <div className="flex items-center gap-3">
-            <div className="flex-1 h-px bg-[#E8E4DE]" />
-            <span className="text-xs text-stone-400 font-medium">or continue with email</span>
-            <div className="flex-1 h-px bg-[#E8E4DE]" />
+        <div className="my-6 flex items-center gap-3">
+          <div className="h-px flex-1 bg-line" />
+          <span className="text-xs text-stone-400">or with email</span>
+          <div className="h-px flex-1 bg-line" />
+        </div>
+
+        <form onSubmit={handleEmailAuth} className="space-y-4">
+          <div>
+            <label htmlFor="login-email" className="mb-1.5 block text-[13px] font-semibold text-ink">Email address</label>
+            <input id="login-email" name="email" type="email" autoComplete="email" value={email} onChange={(e) => setEmail(e.target.value)} required placeholder="you@example.com" className="input" />
           </div>
-
-          <form onSubmit={handleEmailAuth} className="space-y-4">
-            <div>
-              <label htmlFor="login-email" className="block text-xs font-semibold text-stone-600 mb-1.5">Email address</label>
-              <input id="login-email" name="email" type="email" autoComplete="email" value={email} onChange={(e) => setEmail(e.target.value)} required placeholder="you@example.com" className="input" />
-            </div>
-            <div>
-              <label htmlFor="login-password" className="block text-xs font-semibold text-stone-600 mb-1.5">Password</label>
-              <input
-                id="login-password"
-                name="password"
-                type="password"
-                autoComplete={isSignup ? "new-password" : "current-password"}
-                minLength={isSignup ? MIN_PASSWORD_LENGTH : undefined}
-                value={password}
-                onChange={(e) => setPassword(e.target.value)}
-                required
-                placeholder="••••••••"
-                className="input"
-              />
-              {isSignup ? (
-                <p className="mt-1.5 text-xs text-stone-400">At least {MIN_PASSWORD_LENGTH} characters.</p>
-              ) : (
-                <div className="mt-1.5 text-right">
-                  <Link to="/forgot-password" className="text-xs text-[#1e3a5f] hover:underline font-medium">Forgot password?</Link>
-                </div>
+          <div>
+            <div className="mb-1.5 flex items-baseline justify-between">
+              <label htmlFor="login-password" className="block text-[13px] font-semibold text-ink">Password</label>
+              {!isSignup && (
+                <Link to="/forgot-password" className="-my-1 py-1 text-xs font-semibold text-brand hover:underline underline-offset-4">Forgot password?</Link>
               )}
             </div>
+            <input
+              id="login-password"
+              name="password"
+              type="password"
+              autoComplete={isSignup ? "new-password" : "current-password"}
+              minLength={isSignup ? MIN_PASSWORD_LENGTH : undefined}
+              value={password}
+              onChange={(e) => setPassword(e.target.value)}
+              required
+              placeholder={isSignup ? `At least ${MIN_PASSWORD_LENGTH} characters` : "Your password"}
+              className="input"
+            />
+          </div>
 
-            {isSignup && (
-              <div>
-                <label htmlFor="login-confirm" className="block text-xs font-semibold text-stone-600 mb-1.5">Confirm password</label>
-                <input id="login-confirm" name="confirm-password" type="password" autoComplete="new-password" minLength={MIN_PASSWORD_LENGTH} value={confirm} onChange={(e) => setConfirm(e.target.value)} required placeholder="••••••••" className="input" />
-              </div>
-            )}
+          {isSignup && (
+            <div>
+              <label htmlFor="login-confirm" className="mb-1.5 block text-[13px] font-semibold text-ink">Confirm password</label>
+              <input id="login-confirm" name="confirm-password" type="password" autoComplete="new-password" minLength={MIN_PASSWORD_LENGTH} value={confirm} onChange={(e) => setConfirm(e.target.value)} required placeholder="Repeat your password" className="input" />
+            </div>
+          )}
 
-            {message.text && (
-              <div className={`rounded-xl px-4 py-3 text-sm ${message.type === "success"
-                ? "bg-emerald-50 border border-emerald-200 text-emerald-700"
-                : "bg-red-50 border border-red-200 text-red-600"
-                }`}>
-                {message.text}
-              </div>
-            )}
+          {message.text && (
+            <div role="alert" className={`rounded-xl px-4 py-3 text-sm ${message.type === "success"
+              ? "border border-emerald-200 bg-emerald-50 text-emerald-800"
+              : "border border-red-200 bg-red-50 text-red-700"
+              }`}>
+              {message.text}
+            </div>
+          )}
 
-            <button type="submit" disabled={loading} className="btn-primary w-full py-3">
-              {loading ? "Please wait…" : isSignup ? "Create account" : "Sign in"}
-            </button>
-          </form>
+          <button type="submit" disabled={loading} className="btn-primary btn-lg w-full disabled:opacity-60">
+            {loading ? "Please wait…" : isSignup ? "Create account" : "Sign in"}
+          </button>
+        </form>
 
-          <p className="text-center text-sm text-stone-500">
-            {isSignup ? "Already have an account? " : "Don't have an account? "}
-            <button onClick={toggleMode} className="font-semibold text-[#1e3a5f] hover:underline">
-              {isSignup ? "Sign in" : "Sign up"}
-            </button>
+        {account.formNote && (
+          <p className="mt-6 flex items-start justify-center gap-2 text-center text-[12.5px] leading-relaxed text-stone-500">
+            <Lock className="mt-0.5 h-3.5 w-3.5 shrink-0 text-stone-400" strokeWidth={1.75} aria-hidden="true" />
+            {account.formNote}
           </p>
-        </div>
-      </div>
-    </div>
+        )}
+      </AuthShell>
+    </>
   );
 }

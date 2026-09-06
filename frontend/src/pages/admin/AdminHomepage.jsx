@@ -10,8 +10,10 @@
  *   3. Hero Copy & CTAs — headline, body, buttons, trust icons
  *   4. Value Pillars — the 4 brand pillar cards
  *   5. Featured Products — pin/unpin products to homepage
- *   6. Shop by Category — category tiles with emoji, label, category value
+ *   6. Shop by Category — category tiles with emoji, label, category value,
+ *      and an optional photo (shown instead of the emoji; web only)
  *   7. Our Philosophy — brand statement section
+ *   8. Why Core Atoms — proof band with up to four stats
  *
  * Each section includes inline live preview. Ctrl+S saves all sections at once.
  *
@@ -22,6 +24,7 @@ import { supabase } from "../../services/supabase/client";
 import ImagePositionAdjuster from "../../components/ImagePositionAdjuster";
 import useKeyboardShortcut from "../../hooks/useKeyboardShortcut";
 import { useToast } from "../../context/ToastContext";
+import { DEFAULT_WHY_US } from "../../services/homepage";
 
 const DEFAULT_COPY = {
     headline: "Engineered for",
@@ -115,6 +118,9 @@ export default function AdminHomepage({ products = [], isActive = true }) {
     const [philoBody, setPhiloBody] = useState(DEFAULT_PHILOSOPHY.body);
     const [philoCta, setPhiloCta] = useState(DEFAULT_PHILOSOPHY.cta);
 
+    // ── Why Core Atoms ───────────────────────────────────────────────────────
+    const [whyUs, setWhyUs] = useState(DEFAULT_WHY_US);
+
     // ── UI ───────────────────────────────────────────────────────────────────
     const [saving, setSaving] = useState(false);
     const [msg, setMsg] = useState("");
@@ -132,6 +138,7 @@ export default function AdminHomepage({ products = [], isActive = true }) {
             .in("key", [
                 "homepage_hero_images", "homepage_hero_copy", "homepage_featured_products",
                 "homepage_pillars", "homepage_categories", "homepage_philosophy", "site_logo",
+                "homepage_why_us",
             ]);
 
         // Every field below falls back to a hardcoded default. If the read
@@ -187,6 +194,17 @@ export default function AdminHomepage({ products = [], isActive = true }) {
         setPhiloHeading(ph.heading || DEFAULT_PHILOSOPHY.heading);
         setPhiloBody(ph.body || DEFAULT_PHILOSOPHY.body);
         setPhiloCta(ph.cta || DEFAULT_PHILOSOPHY.cta);
+
+        // Why Core Atoms
+        if (map.homepage_why_us && typeof map.homepage_why_us === "object") {
+            setWhyUs({
+                ...DEFAULT_WHY_US,
+                ...map.homepage_why_us,
+                stats: Array.isArray(map.homepage_why_us.stats) && map.homepage_why_us.stats.length > 0
+                    ? map.homepage_why_us.stats
+                    : DEFAULT_WHY_US.stats,
+            });
+        }
 
         setLoaded(true);
         setLoading(false);
@@ -246,22 +264,43 @@ export default function AdminHomepage({ products = [], isActive = true }) {
                 }
             }
 
+            // 2b. Upload new category tile images
+            const finalCategories = [];
+            for (const cat of categories) {
+                const { _file, _preview, ...rest } = cat;
+                if (_file) {
+                    setImgUploading(true);
+                    const ext = _file.name.split(".").pop();
+                    const path = `categories/${Date.now()}_${Math.random().toString(36).slice(2)}.${ext}`;
+                    const { error: upErr } = await supabase.storage.from("hero-images").upload(path, _file, { cacheControl: "3600", upsert: false });
+                    setImgUploading(false);
+                    if (upErr) { setImgErr(upErr.message); setSaving(false); return; }
+                    const { data: pd } = supabase.storage.from("hero-images").getPublicUrl(path);
+                    finalCategories.push({ ...rest, image: pd?.publicUrl || "" });
+                } else {
+                    finalCategories.push(rest);
+                }
+            }
+
             // 3. Upsert all
             const upsert = (key, value) => supabase.from("app_settings").upsert({ key, value }, { onConflict: "key" });
+            const whyUsStats = whyUs.stats.filter((s) => s.value || s.label).slice(0, 4);
             const results = await Promise.all([
                 upsert("site_logo", finalLogoUrl),
                 upsert("homepage_hero_images", finalImages),
                 upsert("homepage_hero_copy", { headline, headlineAccent: accent, body, primaryCta, secondaryCta, trustIcons: trust }),
                 upsert("homepage_pillars", pillars),
                 upsert("homepage_featured_products", featuredIds),
-                upsert("homepage_categories", categories),
+                upsert("homepage_categories", finalCategories),
                 upsert("homepage_philosophy", { label: philoLabel, heading: philoHeading, body: philoBody, cta: philoCta }),
+                upsert("homepage_why_us", { label: whyUs.label, heading: whyUs.heading, body: whyUs.body, cta: whyUs.cta, stats: whyUsStats }),
             ]);
 
             const err = results.find((r) => r.error)?.error;
             if (err) { setMsg(`Save failed: ${err.message}`); showToast(err.message, "error"); setSaving(false); return; }
 
             setImages(finalImages.map((img, i) => ({ ...img, _key: String(i) })));
+            setCategories(finalCategories);
             setMsg("Saved ✅ — all changes are live.");
             showToast("Homepage saved — all changes are live", "success");
         } catch (e) {
@@ -404,11 +443,11 @@ export default function AdminHomepage({ products = [], isActive = true }) {
                     </div>
                     <div>
                         <div className="text-xs text-stone-400 mb-2">Trust icons (3 shown below CTAs)</div>
-                        <div className="grid gap-2 sm:grid-cols-3">
+                        <div className="grid gap-2 sm:grid-cols-2 md:grid-cols-3">
                             {trust.map((t, i) => (
-                                <div key={i} className="flex items-center gap-2 rounded-xl border border-[#E8E4DE] bg-stone-50 px-3 py-2">
+                                <div key={i} className="flex min-w-0 items-center gap-2 rounded-xl border border-[#E8E4DE] bg-stone-50 px-3 py-2">
                                     <input value={t.icon} onChange={(e) => setTrust((p) => p.map((x, j) => j === i ? { ...x, icon: e.target.value } : x))} className="w-10 text-center rounded-lg border border-[#E8E4DE] bg-white px-1 py-1 text-base outline-none" />
-                                    <input value={t.label} onChange={(e) => setTrust((p) => p.map((x, j) => j === i ? { ...x, label: e.target.value } : x))} className="flex-1 rounded-lg border border-[#E8E4DE] bg-white px-2 py-1 text-xs text-stone-900 outline-none" placeholder="Label" />
+                                    <input value={t.label} onChange={(e) => setTrust((p) => p.map((x, j) => j === i ? { ...x, label: e.target.value } : x))} className="min-w-0 flex-1 rounded-lg border border-[#E8E4DE] bg-white px-2 py-1 text-xs text-stone-900 outline-none" placeholder="Label" />
                                 </div>
                             ))}
                         </div>
@@ -432,7 +471,7 @@ export default function AdminHomepage({ products = [], isActive = true }) {
                 <SectionHeader step="4" title="Value Pillars" desc='The 4 cards shown below the hero — "Clean Labels", "Lab Tested", etc.' />
                 <div className="space-y-3">
                     {pillars.map((p, i) => (
-                        <div key={i} className="grid gap-2 grid-cols-1 sm:grid-cols-[48px_1fr_2fr_32px] items-start sm:items-center rounded-xl border border-[#E8E4DE] bg-stone-50 px-3 py-2.5">
+                        <div key={i} className="grid gap-2 grid-cols-1 *:min-w-0 sm:grid-cols-[48px_minmax(0,1fr)_minmax(0,2fr)_32px] items-start sm:items-center rounded-xl border border-[#E8E4DE] bg-stone-50 px-3 py-2.5">
                             <input value={p.icon} onChange={(e) => setPillars((prev) => prev.map((x, j) => j === i ? { ...x, icon: e.target.value } : x))}
                                 className="w-10 text-center rounded-lg border border-[#E8E4DE] bg-white px-1 py-1.5 text-lg outline-none" title="Icon/emoji" />
                             <input value={p.title} onChange={(e) => setPillars((prev) => prev.map((x, j) => j === i ? { ...x, title: e.target.value } : x))}
@@ -501,16 +540,40 @@ export default function AdminHomepage({ products = [], isActive = true }) {
 
             {/* ══ 6 · CATEGORIES ═════════════════════════════════════════════ */}
             <div className="rounded-2xl border border-[#E8E4DE] bg-white p-6">
-                <SectionHeader step="6" title="Shop by Category" desc="The category tiles shown on the homepage. The 'Category' value must match your product categories exactly." />
+                <SectionHeader step="6" title="Shop by Category" desc="The category index on the home page, the category row in the header and the shop filters. The photograph is the bottle shown on the home page's category stage when that category is hovered; shoot it on a plain white sweep so it can be lifted off the backdrop. Leave it empty to show the first product photograph in that category." />
                 <div className="space-y-2 mb-3">
                     {categories.map((cat, i) => (
-                        <div key={i} className="grid gap-2 grid-cols-1 sm:grid-cols-[48px_1fr_1fr_32px] items-start sm:items-center rounded-xl border border-[#E8E4DE] bg-stone-50 px-3 py-2.5">
+                        <div key={i} className="grid gap-2 grid-cols-1 *:min-w-0 md:grid-cols-[48px_minmax(0,1fr)_minmax(0,1fr)_auto_32px] items-start md:items-center rounded-xl border border-[#E8E4DE] bg-stone-50 px-3 py-2.5">
                             <input value={cat.emoji} onChange={(e) => setCategories((prev) => prev.map((x, j) => j === i ? { ...x, emoji: e.target.value } : x))}
                                 className="w-10 text-center rounded-lg border border-[#E8E4DE] bg-white px-1 py-1.5 text-lg outline-none" title="Emoji" />
                             <input value={cat.label} onChange={(e) => setCategories((prev) => prev.map((x, j) => j === i ? { ...x, label: e.target.value } : x))}
                                 className="rounded-lg border border-[#E8E4DE] bg-white px-2 py-1.5 text-sm font-semibold text-stone-900 outline-none" placeholder="Display label" />
                             <input value={cat.category} onChange={(e) => setCategories((prev) => prev.map((x, j) => j === i ? { ...x, category: e.target.value } : x))}
                                 className="rounded-lg border border-[#E8E4DE] bg-white px-2 py-1.5 text-xs text-stone-500 outline-none font-mono" placeholder="Product category value" title="Must match the category field in your products" />
+                            <div className="flex min-w-0 flex-wrap items-center gap-2">
+                                {(cat._preview || cat.image) ? (
+                                    <img src={cat._preview || cat.image} alt="" className="h-10 w-10 rounded-lg object-cover border border-[#E8E4DE]" />
+                                ) : (
+                                    <div className="h-10 w-10 rounded-lg bg-white border border-[#E8E4DE] flex items-center justify-center text-lg">{cat.emoji}</div>
+                                )}
+                                <label className="cursor-pointer rounded-lg border border-[#E8E4DE] bg-white hover:border-[#1e3a5f]/40 hover:bg-[#EFF6FF] px-2 py-1.5 text-[11px] font-medium text-stone-700 transition whitespace-nowrap">
+                                    {cat._file ? `✓ ${cat._file.name}` : (cat.image ? "Change bottle photo…" : "Bottle photo…")}
+                                    <input type="file" accept="image/*" className="hidden"
+                                        onChange={(e) => {
+                                            const f = e.target.files?.[0];
+                                            if (!f) return;
+                                            setCategories((prev) => prev.map((x, j) => j === i ? { ...x, _file: f, _preview: URL.createObjectURL(f) } : x));
+                                            e.target.value = "";
+                                        }} />
+                                </label>
+                                {(cat.image || cat._preview) && (
+                                    <button type="button"
+                                        onClick={() => setCategories((prev) => prev.map((x, j) => j === i ? { ...x, image: "", _file: null, _preview: "" } : x))}
+                                        className="text-xs text-red-500 hover:underline whitespace-nowrap">
+                                        Remove photo
+                                    </button>
+                                )}
+                            </div>
                             <button type="button" onClick={() => setCategories((prev) => prev.filter((_, j) => j !== i))}
                                 className="h-7 w-7 rounded-lg border border-red-200 bg-red-50 text-red-400 hover:bg-red-100 flex items-center justify-center text-xs">✕</button>
                         </div>
@@ -526,7 +589,11 @@ export default function AdminHomepage({ products = [], isActive = true }) {
                     <div className="flex flex-wrap gap-2">
                         {categories.map((cat, i) => (
                             <div key={i} className="flex flex-col items-center gap-1.5 rounded-xl border border-[#E8E4DE] bg-white px-3 py-2.5 text-center min-w-[64px]">
-                                <div className="h-9 w-9 rounded-xl bg-[#EFF6FF] flex items-center justify-center text-xl">{cat.emoji}</div>
+                                {(cat._preview || cat.image) ? (
+                                    <img src={cat._preview || cat.image} alt="" className="h-9 w-9 rounded-xl object-cover" />
+                                ) : (
+                                    <div className="h-9 w-9 rounded-xl bg-[#EFF6FF] flex items-center justify-center text-xl">{cat.emoji}</div>
+                                )}
                                 <span className="text-[11px] font-semibold text-stone-700 leading-snug">{cat.label || "—"}</span>
                             </div>
                         ))}
@@ -565,6 +632,68 @@ export default function AdminHomepage({ products = [], isActive = true }) {
                         <h3 className="text-xl font-semibold tracking-tight text-stone-900 leading-snug whitespace-pre-line">{philoHeading}</h3>
                         <p className="mt-3 text-[13px] text-stone-500 leading-relaxed max-w-lg mx-auto">{philoBody}</p>
                         <div className="mt-4 inline-flex rounded-xl bg-[#1e3a5f] text-white px-5 py-2 text-xs font-semibold">{philoCta}</div>
+                    </div>
+                </div>
+            </div>
+
+            {/* ══ 8 · WHY CORE ATOMS ═════════════════════════════════════════ */}
+            <div className="rounded-2xl border border-[#E8E4DE] bg-white p-6">
+                <SectionHeader step="8" title="Why Core Atoms" desc="The navy proof band between best sellers and reviews — heading, body, button text and up to four stats." />
+                <div className="space-y-3">
+                    <div className="grid gap-3 sm:grid-cols-2">
+                        <div>
+                            <div className="text-xs text-stone-400 mb-1">Section label (small caps above heading)</div>
+                            <input value={whyUs.label} onChange={(e) => setWhyUs((w) => ({ ...w, label: e.target.value }))} className="w-full rounded-xl border border-[#E8E4DE] bg-stone-50 px-3 py-2.5 text-sm text-stone-900 focus:ring-2 focus:ring-[#1e3a5f]/20 outline-none" placeholder="e.g. Why Core Atoms" />
+                        </div>
+                        <div>
+                            <div className="text-xs text-stone-400 mb-1">CTA button text</div>
+                            <input value={whyUs.cta} onChange={(e) => setWhyUs((w) => ({ ...w, cta: e.target.value }))} className="w-full rounded-xl border border-[#E8E4DE] bg-stone-50 px-3 py-2.5 text-sm text-stone-900 focus:ring-2 focus:ring-[#1e3a5f]/20 outline-none" placeholder="e.g. Shop the range" />
+                        </div>
+                    </div>
+                    <div>
+                        <div className="text-xs text-stone-400 mb-1">Heading</div>
+                        <textarea value={whyUs.heading} onChange={(e) => setWhyUs((w) => ({ ...w, heading: e.target.value }))} rows={2}
+                            className="w-full rounded-xl border border-[#E8E4DE] bg-stone-50 px-3 py-2.5 text-sm text-stone-900 focus:ring-2 focus:ring-[#1e3a5f]/20 outline-none resize-none" />
+                    </div>
+                    <div>
+                        <div className="text-xs text-stone-400 mb-1">Body text</div>
+                        <textarea value={whyUs.body} onChange={(e) => setWhyUs((w) => ({ ...w, body: e.target.value }))} rows={4}
+                            className="w-full rounded-xl border border-[#E8E4DE] bg-stone-50 px-3 py-2.5 text-sm text-stone-900 focus:ring-2 focus:ring-[#1e3a5f]/20 outline-none resize-none" />
+                    </div>
+                    <div>
+                        <div className="text-xs text-stone-400 mb-2">Stats (up to 4, shown as a 2×2 grid)</div>
+                        <div className="space-y-2">
+                            {whyUs.stats.map((s, i) => (
+                                <div key={i} className="grid gap-2 grid-cols-[88px_minmax(0,1fr)_32px] items-center *:min-w-0">
+                                    <input value={s.value} onChange={(e) => setWhyUs((w) => ({ ...w, stats: w.stats.map((x, j) => j === i ? { ...x, value: e.target.value } : x) }))}
+                                        className="rounded-lg border border-[#E8E4DE] bg-stone-50 px-2 py-1.5 text-sm font-semibold text-stone-900 outline-none" placeholder="e.g. 100%" />
+                                    <input value={s.label} onChange={(e) => setWhyUs((w) => ({ ...w, stats: w.stats.map((x, j) => j === i ? { ...x, label: e.target.value } : x) }))}
+                                        className="rounded-lg border border-[#E8E4DE] bg-stone-50 px-2 py-1.5 text-xs text-stone-600 outline-none" placeholder="e.g. Fully disclosed labels" />
+                                    <button type="button" onClick={() => setWhyUs((w) => ({ ...w, stats: w.stats.filter((_, j) => j !== i) }))}
+                                        className="h-7 w-7 rounded-lg border border-red-200 bg-red-50 text-red-400 hover:bg-red-100 flex items-center justify-center text-xs">✕</button>
+                                </div>
+                            ))}
+                            {whyUs.stats.length < 4 && (
+                                <button type="button" onClick={() => setWhyUs((w) => ({ ...w, stats: [...w.stats, { value: "", label: "" }] }))}
+                                    className="w-full rounded-xl border-2 border-dashed border-stone-300 py-2 text-xs font-medium text-stone-400 hover:border-[#1e3a5f] hover:text-[#1e3a5f] transition">
+                                    + Add stat
+                                </button>
+                            )}
+                        </div>
+                    </div>
+                    {/* Preview */}
+                    <div className="rounded-xl bg-[#1e3a5f] text-white p-5">
+                        <div className="text-[10px] font-semibold uppercase tracking-wide text-white/50 mb-3">Preview</div>
+                        <p className="text-[10px] font-semibold uppercase tracking-widest text-white/60 mb-2">{whyUs.label}</p>
+                        <h3 className="text-xl font-semibold tracking-tight leading-snug">{whyUs.heading}</h3>
+                        <div className="mt-4 grid grid-cols-2 gap-3">
+                            {whyUs.stats.slice(0, 4).map((s, i) => (
+                                <div key={i} className="rounded-lg border border-white/15 bg-white/10 p-3">
+                                    <div className="text-lg font-semibold">{s.value || "—"}</div>
+                                    <div className="text-[11px] text-white/75">{s.label || "—"}</div>
+                                </div>
+                            ))}
+                        </div>
                     </div>
                 </div>
             </div>

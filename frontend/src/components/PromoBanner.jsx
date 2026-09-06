@@ -14,6 +14,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { Link } from "react-router-dom";
 import { supabase } from "../services/supabase/client";
+import { useScrollLock } from "./fx/SmoothScroll";
 
 const DISMISS_KEY = "coreatoms_promo_dismissed";
 /** Must match the exit transition below. */
@@ -63,13 +64,12 @@ export default function PromoBanner() {
 
     const open = !dismissed && !!banner;
 
-    // Modal behaviour: scroll lock, Escape, focus trap, focus restore
+    // Modal behaviour: scroll lock (shared with Lenis), Escape, focus trap, focus restore
+    useScrollLock(open);
     useEffect(() => {
         if (!open) return;
 
-        const previousOverflow = document.body.style.overflow;
         const previouslyFocused = document.activeElement;
-        document.body.style.overflow = "hidden";
         closeRef.current?.focus();
 
         const onKey = (e) => {
@@ -93,7 +93,6 @@ export default function PromoBanner() {
         document.addEventListener("keydown", onKey);
         return () => {
             document.removeEventListener("keydown", onKey);
-            document.body.style.overflow = previousOverflow;
             if (previouslyFocused instanceof HTMLElement) previouslyFocused.focus();
         };
     }, [open, dismiss]);

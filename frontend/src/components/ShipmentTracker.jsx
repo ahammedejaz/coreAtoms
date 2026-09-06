@@ -12,6 +12,7 @@
  * @module components/ShipmentTracker
  */
 import { useCallback, useEffect, useRef, useState } from "react";
+import { ClipboardList, Package, Truck, MapPin, PackageCheck, X, Undo2, Check, ChevronDown, RefreshCw, ArrowUpRight } from "lucide-react";
 import { supabase } from "../services/supabase/client";
 
 /** A result younger than this is reused instead of re-hitting the edge function. */
@@ -19,17 +20,17 @@ const REFRESH_AFTER_MS = 60_000;
 
 /** Canonical tracking stages in order */
 const STAGES = [
-    { key: "placed", label: "Order Placed", icon: "📦" },
-    { key: "picked_up", label: "Picked Up", icon: "🏭" },
-    { key: "in_transit", label: "In Transit", icon: "🚚" },
-    { key: "out_for_delivery", label: "Out for Delivery", icon: "📍" },
-    { key: "delivered", label: "Delivered", icon: "✅" },
+    { key: "placed", label: "Order placed", icon: ClipboardList },
+    { key: "picked_up", label: "Picked up", icon: Package },
+    { key: "in_transit", label: "In transit", icon: Truck },
+    { key: "out_for_delivery", label: "Out for delivery", icon: MapPin },
+    { key: "delivered", label: "Delivered", icon: PackageCheck },
 ];
 
 /** Terminal / negative statuses that break out of the normal flow */
 const NEGATIVE_STAGES = {
-    cancelled: { label: "Cancelled", icon: "❌" },
-    rto: { label: "Returned (RTO)", icon: "↩️" },
+    cancelled: { label: "Cancelled", icon: X },
+    rto: { label: "Returned (RTO)", icon: Undo2 },
 };
 
 /**
@@ -193,13 +194,9 @@ export default function ShipmentTracker({ waybill, trackingUrl, orderId, onStatu
                 onClick={() => setExpanded((prev) => !prev)}
                 className="inline-flex items-center gap-2 text-sm font-medium text-[#1e3a5f] hover:text-[#1e3a5f]/80 transition-colors"
             >
-                <svg className="h-4 w-4" viewBox="0 0 20 20" fill="currentColor">
-                    <path fillRule="evenodd" d="M5.05 4.05a7 7 0 119.9 9.9L10 18.9l-4.95-4.95a7 7 0 010-9.9zM10 11a2 2 0 100-4 2 2 0 000 4z" clipRule="evenodd" />
-                </svg>
-                {expanded ? "Hide Tracking" : "Track Order"}
-                <svg className={`h-3.5 w-3.5 transition-transform duration-200 ${expanded ? "rotate-180" : ""}`} viewBox="0 0 20 20" fill="currentColor">
-                    <path fillRule="evenodd" d="M5.293 7.293a1 1 0 011.414 0L10 10.586l3.293-3.293a1 1 0 111.414 1.414l-4 4a1 1 0 01-1.414 0l-4-4a1 1 0 010-1.414z" clipRule="evenodd" />
-                </svg>
+                <MapPin className="h-4 w-4" strokeWidth={1.75} aria-hidden="true" />
+                {expanded ? "Hide tracking" : "Track order"}
+                <ChevronDown className={`h-3.5 w-3.5 transition-transform duration-200 ${expanded ? "rotate-180" : ""}`} strokeWidth={2} aria-hidden="true" />
             </button>
 
             {/* Tracking panel — rendered rather than height-clipped, so a long
@@ -221,7 +218,7 @@ export default function ShipmentTracker({ waybill, trackingUrl, orderId, onStatu
                     )}
 
                     {tracking && !loading && (
-                        <div className="rounded-2xl border border-[#E8E4DE] bg-white p-5 space-y-5">
+                        <div className="space-y-5 rounded-2xl border border-line bg-bone/50 p-5">
                             {/* Header info */}
                             <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
                                 <div>
@@ -245,8 +242,9 @@ export default function ShipmentTracker({ waybill, trackingUrl, orderId, onStatu
                             {/* Cancelled / RTO banner */}
                             {isNegative && (
                                 <div className={`rounded-xl p-3 ${currentStage === "cancelled" ? "bg-red-50 border border-red-200" : "bg-orange-50 border border-orange-200"}`}>
-                                    <p className={`text-sm font-semibold ${currentStage === "cancelled" ? "text-red-700" : "text-orange-700"}`}>
-                                        {NEGATIVE_STAGES[currentStage].icon} {NEGATIVE_STAGES[currentStage].label}
+                                    <p className={`flex items-center gap-1.5 text-sm font-semibold ${currentStage === "cancelled" ? "text-red-700" : "text-orange-700"}`}>
+                                        {(() => { const Icon = NEGATIVE_STAGES[currentStage].icon; return <Icon className="h-4 w-4" strokeWidth={2} aria-hidden="true" />; })()}
+                                        {NEGATIVE_STAGES[currentStage].label}
                                     </p>
                                     <p className={`text-xs mt-0.5 ${currentStage === "cancelled" ? "text-red-600" : "text-orange-600"}`}>
                                         {tracking.status}
@@ -272,13 +270,15 @@ export default function ShipmentTracker({ waybill, trackingUrl, orderId, onStatu
                                                         h-6 w-6 sm:h-8 sm:w-8 rounded-full flex items-center justify-center text-xs sm:text-sm shrink-0
                                                         transition-all duration-300
                                                         ${isCurrent
-                                                            ? "bg-[#1e3a5f] text-white ring-2 sm:ring-4 ring-[#1e3a5f]/15 scale-110"
+                                                            ? "bg-brand text-white ring-4 ring-brand/15"
                                                             : isComplete
-                                                                ? "bg-emerald-500 text-white"
-                                                                : "bg-stone-100 text-stone-400"
+                                                                ? "bg-emerald-600 text-white"
+                                                                : "border border-line-strong bg-white text-stone-300"
                                                         }
                                                     `}>
-                                                        {isComplete && !isCurrent ? "✓" : stage.icon}
+                                                        {isComplete && !isCurrent
+                                                            ? <Check className="h-3 w-3 sm:h-4 sm:w-4" strokeWidth={3} aria-hidden="true" />
+                                                            : <stage.icon className="h-3 w-3 sm:h-4 sm:w-4" strokeWidth={1.75} aria-hidden="true" />}
                                                     </div>
                                                     <span className={`mt-1 sm:mt-1.5 text-[8px] sm:text-[10px] font-medium text-center leading-tight max-w-[48px] sm:max-w-none ${isCurrent ? "text-[#1e3a5f] font-semibold" : isComplete ? "text-emerald-600" : "text-stone-400"}`}>
                                                         {stage.label}
@@ -288,9 +288,9 @@ export default function ShipmentTracker({ waybill, trackingUrl, orderId, onStatu
                                         })}
                                     </div>
                                     {/* Progress line */}
-                                    <div className="absolute top-3 sm:top-4 left-[10%] right-[10%] h-0.5 bg-stone-100 -z-10">
+                                    <div className="absolute left-[10%] right-[10%] top-3 -z-10 h-px bg-line-strong sm:top-4">
                                         <div
-                                            className="h-full bg-gradient-to-r from-emerald-400 to-[#1e3a5f] transition-all duration-500"
+                                            className="h-full bg-emerald-500 transition-[width] duration-500"
                                             style={{ width: `${(currentStageIndex / (STAGES.length - 1)) * 100}%` }}
                                         />
                                     </div>
@@ -299,12 +299,12 @@ export default function ShipmentTracker({ waybill, trackingUrl, orderId, onStatu
 
                             {/* Current status (for non-negative) */}
                             {!isNegative && (
-                                <div className="rounded-xl bg-[#1e3a5f]/5 p-3">
-                                    <p className="text-sm font-semibold text-[#1e3a5f]">
+                                <div className="rounded-xl bg-brand-soft p-3">
+                                    <p className="text-sm font-semibold text-brand">
                                         {tracking.status}
                                     </p>
                                     {tracking.status_location && (
-                                        <p className="text-xs text-stone-500 mt-0.5">📍 {tracking.status_location}</p>
+                                        <p className="mt-0.5 text-xs text-stone-500">{tracking.status_location}</p>
                                     )}
                                     {tracking.status_datetime && (
                                         <p className="text-xs text-stone-400 mt-0.5">
@@ -326,7 +326,7 @@ export default function ShipmentTracker({ waybill, trackingUrl, orderId, onStatu
                                                 {/* Dot on the line */}
                                                 <div className={`absolute -left-[21px] top-1 h-2.5 w-2.5 rounded-full ${i === tracking.scans.length - 1 ? "bg-[#1e3a5f] ring-2 ring-[#1e3a5f]/20" : "bg-stone-300"}`} />
                                                 <p className="text-xs font-medium text-stone-800">{scan.status}</p>
-                                                {scan.location && <p className="text-[11px] text-stone-500">📍 {scan.location}</p>}
+                                                {scan.location && <p className="text-[11px] text-stone-500">{scan.location}</p>}
                                                 {scan.instructions && <p className="text-[11px] text-stone-400">{scan.instructions}</p>}
                                                 <p className="text-[10px] text-stone-400 mt-0.5">
                                                     {scan.timestamp ? new Date(scan.timestamp).toLocaleString("en-IN", { day: "numeric", month: "short", hour: "2-digit", minute: "2-digit" }) : ""}
@@ -340,7 +340,7 @@ export default function ShipmentTracker({ waybill, trackingUrl, orderId, onStatu
                             {/* Refresh + External tracking link */}
                             <div className="flex items-center gap-4">
                                 <button onClick={fetchTracking} className="inline-flex items-center gap-1.5 text-xs font-medium text-stone-500 hover:text-[#1e3a5f] transition-colors">
-                                    <svg className="h-3.5 w-3.5" viewBox="0 0 20 20" fill="currentColor"><path fillRule="evenodd" d="M4 2a1 1 0 011 1v2.101a7.002 7.002 0 0111.601 2.566 1 1 0 11-1.885.666A5.002 5.002 0 005.999 7H9a1 1 0 010 2H4a1 1 0 01-1-1V3a1 1 0 011-1zm.008 9.057a1 1 0 011.276.61A5.002 5.002 0 0014.001 13H11a1 1 0 110-2h5a1 1 0 011 1v5a1 1 0 11-2 0v-2.101a7.002 7.002 0 01-11.601-2.566 1 1 0 01.61-1.276z" clipRule="evenodd" /></svg>
+                                    <RefreshCw className="h-3.5 w-3.5" strokeWidth={1.75} aria-hidden="true" />
                                     Refresh
                                 </button>
                                 {trackingUrl && (
@@ -351,7 +351,7 @@ export default function ShipmentTracker({ waybill, trackingUrl, orderId, onStatu
                                         className="inline-flex items-center gap-1.5 text-xs font-medium text-[#1e3a5f] hover:underline"
                                     >
                                         Track on Delhivery website
-                                        <svg className="h-3 w-3" viewBox="0 0 20 20" fill="currentColor"><path d="M11 3a1 1 0 100 2h2.586l-6.293 6.293a1 1 0 101.414 1.414L15 6.414V9a1 1 0 102 0V4a1 1 0 00-1-1h-5z" /><path d="M5 5a2 2 0 00-2 2v8a2 2 0 002 2h8a2 2 0 002-2v-3a1 1 0 10-2 0v3H5V7h3a1 1 0 000-2H5z" /></svg>
+                                        <ArrowUpRight className="h-3.5 w-3.5" strokeWidth={1.75} aria-hidden="true" />
                                     </a>
                                 )}
                             </div>

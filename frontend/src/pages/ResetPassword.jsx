@@ -15,6 +15,9 @@ import { useEffect, useRef, useState } from "react";
 import { Link, useNavigate } from "react-router-dom";
 import { supabase } from "../services/supabase/client";
 import SEO from "../components/SEO";
+import AuthShell from "../components/AuthShell";
+import { useSiteContent } from "../services/siteContent";
+import { ArrowLeft, TriangleAlert } from "lucide-react";
 
 const MIN_PASSWORD_LENGTH = 6;
 /** How long to wait for the recovery session before calling the link dead. */
@@ -54,6 +57,7 @@ function isRecoverySession(session) {
 }
 
 export default function ResetPassword() {
+    const account = useSiteContent("page_account");
     const navigate = useNavigate();
     const [password, setPassword] = useState("");
     const [confirm, setConfirm] = useState("");
@@ -114,7 +118,7 @@ export default function ResetPassword() {
             if (error) throw error;
             // Sign out the recovery session so user starts fresh at login
             await supabase.auth.signOut();
-            setMessage({ text: "Password updated successfully! Redirecting to login…", type: "success" });
+            setMessage({ text: "Password updated. Taking you to login…", type: "success" });
             redirectTimerRef.current = setTimeout(() => navigate("/login", { replace: true }), 2000);
         } catch (err) {
             setMessage({ text: err.message || "Something went wrong.", type: "error" });
@@ -124,74 +128,63 @@ export default function ResetPassword() {
     };
 
     return (
-        <div className="min-h-[80vh] flex items-center justify-center py-12">
+        <>
             <SEO title="Reset Password | Core Atoms" description="Choose a new password for your account." />
-            <div className="w-full max-w-md">
-
-                {/* Header */}
-                <div className="text-center mb-8">
-                    <div className="inline-flex h-14 w-14 items-center justify-center rounded-2xl bg-[#1e3a5f] shadow-sm mx-auto mb-5">
-                        <span className="text-lg font-bold text-white tracking-wider">CA</span>
+            <AuthShell title={account.resetTitle} subtitle={account.resetSubtitle}>
+                {status === "verifying" && (
+                    <div className="space-y-3 py-6 text-center" role="status" aria-live="polite">
+                        <div className="inline-block h-6 w-6 animate-spin rounded-full border-2 border-line-strong border-t-brand" />
+                        <p className="text-sm text-stone-500">Verifying your reset link…</p>
                     </div>
-                    <h1 className="text-2xl font-semibold text-stone-900 tracking-tight">Set new password</h1>
-                    <p className="mt-2 text-sm text-stone-500">Choose a strong password for your account.</p>
-                </div>
+                )}
 
-                <div className="card p-8">
-                    {status === "verifying" && (
-                        <div className="text-center py-6 space-y-3" role="status" aria-live="polite">
-                            <div className="animate-spin inline-block h-6 w-6 border-2 border-stone-300 border-t-[#1e3a5f] rounded-full" />
-                            <p className="text-sm text-stone-500">Verifying your reset link…</p>
-                        </div>
-                    )}
-
-                    {status === "invalid" && (
-                        <div className="text-center py-4 space-y-4">
-                            <div className="inline-flex h-12 w-12 items-center justify-center rounded-2xl bg-amber-50 border border-amber-200">
-                                <svg className="h-6 w-6 text-amber-500" viewBox="0 0 20 20" fill="currentColor">
-                                    <path fillRule="evenodd" d="M8.257 3.099c.765-1.36 2.722-1.36 3.486 0l5.58 9.92c.75 1.334-.213 2.98-1.742 2.98H4.42c-1.53 0-2.493-1.646-1.743-2.98l5.58-9.92zM11 13a1 1 0 11-2 0 1 1 0 012 0zm-1-8a1 1 0 00-1 1v3a1 1 0 002 0V6a1 1 0 00-1-1z" clipRule="evenodd" />
-                                </svg>
-                            </div>
+                {status === "invalid" && (
+                    <div className="space-y-5">
+                        <div className="flex items-start gap-3 rounded-xl border border-amber-200 bg-amber-soft px-4 py-3">
+                            <TriangleAlert className="mt-0.5 h-4 w-4 shrink-0 text-amber-deep" strokeWidth={1.75} aria-hidden="true" />
                             <div>
-                                <p className="text-sm font-semibold text-stone-900">This reset link isn't valid</p>
-                                <p className="mt-1 text-sm text-stone-500 leading-relaxed">
+                                <p className="text-sm font-semibold text-ink">This reset link isn't valid</p>
+                                <p className="mt-1 text-sm leading-relaxed text-stone-600">
                                     Reset links expire after 1 hour and can only be used once. Request a fresh one and open it from your email.
                                 </p>
                             </div>
-                            <Link to="/forgot-password" className="btn-primary inline-block px-5 py-2.5">Request a new link</Link>
-                            <p className="text-sm text-stone-500">
-                                <Link to="/login" className="font-semibold text-[#1e3a5f] hover:underline">← Back to login</Link>
-                            </p>
                         </div>
-                    )}
+                        <Link to="/forgot-password" className="btn-primary btn-lg w-full">Request a new link</Link>
+                        <p className="text-center text-sm">
+                            <Link to="/login" className="inline-flex items-center gap-1.5 font-semibold text-brand hover:underline underline-offset-4">
+                                <ArrowLeft className="h-4 w-4" strokeWidth={1.75} aria-hidden="true" />
+                                Back to login
+                            </Link>
+                        </p>
+                    </div>
+                )}
 
-                    {status === "ready" && (
-                        <form onSubmit={handleSubmit} className="space-y-4">
-                            <div>
-                                <label htmlFor="reset-password" className="block text-xs font-semibold text-stone-600 mb-1.5">New password</label>
-                                <input id="reset-password" name="new-password" type="password" autoComplete="new-password" value={password} onChange={(e) => setPassword(e.target.value)} required placeholder="••••••••" className="input" autoFocus minLength={MIN_PASSWORD_LENGTH} />
+                {status === "ready" && (
+                    <form onSubmit={handleSubmit} className="space-y-4">
+                        <div>
+                            <label htmlFor="reset-password" className="mb-1.5 block text-[13px] font-semibold text-ink">New password</label>
+                            <input id="reset-password" name="new-password" type="password" autoComplete="new-password" value={password} onChange={(e) => setPassword(e.target.value)} required placeholder={`At least ${MIN_PASSWORD_LENGTH} characters`} className="input" autoFocus minLength={MIN_PASSWORD_LENGTH} />
+                        </div>
+                        <div>
+                            <label htmlFor="reset-confirm" className="mb-1.5 block text-[13px] font-semibold text-ink">Confirm password</label>
+                            <input id="reset-confirm" name="confirm-password" type="password" autoComplete="new-password" value={confirm} onChange={(e) => setConfirm(e.target.value)} required placeholder="Repeat your password" className="input" minLength={MIN_PASSWORD_LENGTH} />
+                        </div>
+
+                        {message.text && (
+                            <div role="alert" className={`rounded-xl px-4 py-3 text-sm ${message.type === "success"
+                                ? "border border-emerald-200 bg-emerald-50 text-emerald-800"
+                                : "border border-red-200 bg-red-50 text-red-700"
+                                }`}>
+                                {message.text}
                             </div>
-                            <div>
-                                <label htmlFor="reset-confirm" className="block text-xs font-semibold text-stone-600 mb-1.5">Confirm password</label>
-                                <input id="reset-confirm" name="confirm-password" type="password" autoComplete="new-password" value={confirm} onChange={(e) => setConfirm(e.target.value)} required placeholder="••••••••" className="input" minLength={MIN_PASSWORD_LENGTH} />
-                            </div>
+                        )}
 
-                            {message.text && (
-                                <div className={`rounded-xl px-4 py-3 text-sm ${message.type === "success"
-                                    ? "bg-emerald-50 border border-emerald-200 text-emerald-700"
-                                    : "bg-red-50 border border-red-200 text-red-600"
-                                    }`}>
-                                    {message.text}
-                                </div>
-                            )}
-
-                            <button type="submit" disabled={loading} className="btn-primary w-full py-3">
-                                {loading ? "Updating…" : "Update password"}
-                            </button>
-                        </form>
-                    )}
-                </div>
-            </div>
-        </div>
+                        <button type="submit" disabled={loading} className="btn-primary btn-lg w-full disabled:opacity-60">
+                            {loading ? "Updating…" : "Update password"}
+                        </button>
+                    </form>
+                )}
+            </AuthShell>
+        </>
     );
 }

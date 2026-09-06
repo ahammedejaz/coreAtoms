@@ -8,10 +8,14 @@
  */
 import { useState } from "react";
 import { Link } from "react-router-dom";
+import { ArrowLeft } from "lucide-react";
 import { supabase } from "../services/supabase/client";
 import SEO from "../components/SEO";
+import AuthShell from "../components/AuthShell";
+import { useSiteContent } from "../services/siteContent";
 
 export default function ForgotPassword() {
+    const account = useSiteContent("page_account");
     const [email, setEmail] = useState("");
     const [loading, setLoading] = useState(false);
     const [sent, setSent] = useState(false);
@@ -37,67 +41,54 @@ export default function ForgotPassword() {
     };
 
     return (
-        <div className="min-h-[80vh] flex items-center justify-center py-12">
+        <>
             <SEO title="Forgot Password | Core Atoms" description="Reset your password to regain access to your account." />
-            <div className="w-full max-w-md">
-
-                {/* Header */}
-                <div className="text-center mb-8">
-                    <div className="inline-flex h-14 w-14 items-center justify-center rounded-2xl bg-[#1e3a5f] shadow-sm mx-auto mb-5">
-                        <span className="text-lg font-bold text-white tracking-wider">CA</span>
-                    </div>
-                    <h1 className="text-2xl font-semibold text-stone-900 tracking-tight">
-                        {sent ? "Check your email" : "Forgot password?"}
-                    </h1>
-                    <p className="mt-2 text-sm text-stone-500">
-                        {sent
-                            ? "We've sent a password reset link to your email."
-                            : "Enter your email and we'll send you a link to reset your password."}
-                    </p>
-                </div>
-
-                <div className="card p-8 space-y-5">
-                    {sent ? (
-                        <>
-                            {/* Success state */}
-                            <div className="rounded-xl bg-emerald-50 border border-emerald-200 px-4 py-3 text-sm text-emerald-700">
-                                <strong>Email sent!</strong> Check your inbox (and spam folder) for a reset link. The link will expire in 1 hour.
-                            </div>
-                            <p className="text-xs text-stone-400 text-center">
-                                Didn't receive it?{" "}
-                                <button onClick={() => { setSent(false); setError(""); }} className="font-semibold text-[#1e3a5f] hover:underline">
-                                    Try again
-                                </button>
-                            </p>
-                        </>
-                    ) : (
-                        <form onSubmit={handleSubmit} className="space-y-4">
-                            <div>
-                                <label htmlFor="forgot-email" className="block text-xs font-semibold text-stone-600 mb-1.5">Email address</label>
-                                <input id="forgot-email" name="email" type="email" autoComplete="email" value={email} onChange={(e) => setEmail(e.target.value)} required placeholder="you@example.com" className="input" autoFocus />
-                            </div>
-
-                            {error && (
-                                <div className="rounded-xl bg-red-50 border border-red-200 px-4 py-3 text-sm text-red-600">
-                                    {error}
-                                </div>
-                            )}
-
-                            <button type="submit" disabled={loading} className="btn-primary w-full py-3">
-                                {loading ? "Sending…" : "Send reset link"}
+            <AuthShell
+                title={sent ? account.forgotSentTitle : account.forgotTitle}
+                subtitle={sent ? account.forgotSentSubtitle : account.forgotSubtitle}
+            >
+                {sent ? (
+                    <div className="space-y-5">
+                        <div className="rounded-xl border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm text-emerald-800" role="status">
+                            Check your inbox and spam folder for a reset link. It expires in one hour.
+                        </div>
+                        <p className="text-center text-sm text-stone-500">
+                            Didn't receive it?{" "}
+                            <button onClick={() => { setSent(false); setError(""); }} className="font-semibold text-brand hover:underline underline-offset-4">
+                                Send it again
                             </button>
+                        </p>
+                    </div>
+                ) : (
+                    <form onSubmit={handleSubmit} className="space-y-4">
+                        <div>
+                            <label htmlFor="forgot-email" className="mb-1.5 block text-[13px] font-semibold text-ink">Email address</label>
+                            <input id="forgot-email" name="email" type="email" autoComplete="email" value={email} onChange={(e) => setEmail(e.target.value)} required placeholder="you@example.com" className="input" autoFocus />
+                        </div>
 
-                            <div className="rounded-xl bg-amber-50 border border-amber-200 px-4 py-3 text-xs text-amber-700">
-                                <strong>Note:</strong> If you signed up with Google, password reset won't work. Please use <strong>"Continue with Google"</strong> on the login page instead.
+                        {error && (
+                            <div role="alert" className="rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">
+                                {error}
                             </div>
-                        </form>
-                    )}
+                        )}
 
-                    <p className="text-center text-sm text-stone-500">
-                        <Link to="/login" className="font-semibold text-[#1e3a5f] hover:underline">← Back to login</Link>
-                    </p>
-                </div>
-            </div>
-        </div>
+                        <button type="submit" disabled={loading} className="btn-primary btn-lg w-full disabled:opacity-60">
+                            {loading ? "Sending…" : "Send reset link"}
+                        </button>
+
+                        <p className="text-xs leading-relaxed text-stone-500">
+                            Signed up with Google? Password reset won't apply. Use <span className="font-semibold text-ink">Continue with Google</span> on the login page instead.
+                        </p>
+                    </form>
+                )}
+
+                <p className="mt-6 text-center text-sm">
+                    <Link to="/login" className="inline-flex items-center gap-1.5 font-semibold text-brand hover:underline underline-offset-4">
+                        <ArrowLeft className="h-4 w-4" strokeWidth={1.75} aria-hidden="true" />
+                        Back to login
+                    </Link>
+                </p>
+            </AuthShell>
+        </>
     );
 }

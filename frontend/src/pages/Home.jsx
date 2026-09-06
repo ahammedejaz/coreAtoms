@@ -1,34 +1,67 @@
 /**
- * Home.jsx — Admin-customisable marketing landing page.
+ * Home.jsx — Admin-customisable brand landing page.
+ *
+ * Rendered full-bleed (see `handle.fullBleed` on the index route and
+ * `layouts/MainLayout.jsx`), unlike every other page which sits in a centred
+ * `max-w-6xl` container.
  *
  * Fetches the following from `app_settings` on mount (parallel requests):
  *   homepage_hero_images, homepage_hero_copy, homepage_pillars,
  *   homepage_categories, homepage_philosophy, homepage_featured_products,
- *   gst_percentage (to conditionally show 'Excl. GST & Shipping' on cards)
+ *   homepage_why_us, homepage_standards, homepage_education, gst_percentage.
+ * Testimonials are read separately from `product_reviews` via
+ * `services/homepage.fetchHomepageReviews()`.
  *
- * All visible text, images, and links are admin-controlled via AdminHomepage.
- * The hero carousel auto-advances every 3.5 s; when no hero images are
- * configured (or every configured URL is dead) it falls back to a branded
- * gradient panel rather than a permanent shimmer.
- * Featured products strip reuses the shared `ProductCard` component.
+ * Three sections are derived from the live catalogue rather than settings:
+ * the "Shop by goal" chips (every product's `best_for`), the daily schedule
+ * in "When to take what" (every product's `recommended_stack`) and "What's inside"
+ * (product names against the ingredient index). See services/homepage.js.
+ *
+ * This file only loads data and orders the sections; each section lives in
+ * `components/home/`. Section order: hero, pillars panel, category tiles and
+ * goals, best sellers, daily schedule, a full-bleed photo break, the
+ * Formulary standard (pinned on desktop), ingredient index, proof band
+ * (navy), testimonials, a second photo break, education, FAQ preview,
+ * recently viewed, manifesto. The photo breaks reuse the hero slides the
+ * admin uploaded (the second and third), so they appear only when those exist.
  *
  * @module pages/Home
  */
 import { Link } from "react-router-dom";
 import { useCart } from "../context/CartContext";
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { Fragment, useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { ArrowRight, ChevronLeft, ChevronRight } from "lucide-react";
 import { fetchProducts } from "../services/products";
 import { supabase } from "../services/supabase/client";
 import ProductCard from "../components/ProductCard";
 import SEO from "../components/SEO";
-import { SkeletonGrid } from "../components/Skeleton";
-import { useToast } from "../context/ToastContext";
-import ScrollReveal from "../components/ScrollReveal";
+import { SkeletonCard } from "../components/Skeleton";
+import ScrollReveal, { ScrollRevealGroup } from "../components/ScrollReveal";
+import RevealText from "../components/fx/RevealText";
 import PromoBanner from "../components/PromoBanner";
-
-// ── Defaults (shown if admin hasn't saved yet) ────────────────────────────────
-/** Hero auto-advance interval, ms. */
-const HERO_INTERVAL_MS = 3500;
+import Testimonials from "../components/Testimonials";
+import RecentlyViewed from "../components/RecentlyViewed";
+import Hero from "../components/home/Hero";
+import Pillars from "../components/home/Pillars";
+import CategoryIndex from "../components/home/CategoryIndex";
+import Standard from "../components/home/Standard";
+import IngredientIndex from "../components/home/IngredientIndex";
+import ProofBand from "../components/home/ProofBand";
+import Education from "../components/home/Education";
+import FaqPreview from "../components/home/FaqPreview";
+import Manifesto from "../components/home/Manifesto";
+import PhotoBreak from "../components/home/PhotoBreak";
+import {
+  DEFAULT_HOME_CATEGORIES,
+  DEFAULT_WHY_US,
+  DEFAULT_STANDARDS,
+  DEFAULT_EDUCATION,
+  fetchHomepageReviews,
+  deriveGoals,
+  buildIngredientIndex,
+} from "../services/homepage";
+import { useSiteContent } from "../services/siteContent";
+import { DEFAULTS, HOME_SECTIONS } from "../content/siteContent";
 
 /** Generic load failure copy — the raw Supabase message stays in the console. */
 const LOAD_ERROR_MESSAGE = "We couldn't load products just now. Please try again.";
@@ -53,15 +86,6 @@ const DEFAULT_PILLARS = [
   { icon: "⌖", title: "Fast Fulfilment", desc: "Orders dispatched within 24 hours from our facility." },
 ];
 
-const DEFAULT_CATEGORIES = [
-  { label: "Multivitamins", emoji: "💊", category: "General Wellness" },
-  { label: "Joint Support", emoji: "🦴", category: "Joint Support" },
-  { label: "Bone Health", emoji: "🧬", category: "Bone Health" },
-  { label: "Hair & Skin", emoji: "✨", category: "HSN" },
-  { label: "Gut Health", emoji: "🌿", category: "Gut Health" },
-  { label: "Collagen", emoji: "🔬", category: "Collagen" },
-];
-
 const DEFAULT_PHILOSOPHY = {
   label: "Our Philosophy",
   heading: "Built like a system,\nnot a trend.",
@@ -69,29 +93,96 @@ const DEFAULT_PHILOSOPHY = {
   cta: "Explore the range",
 };
 
+/** Centres and pads section content to match the rest of the site's container width. */
+function Container({ children, className = "" }) {
+  return <div className={`mx-auto max-w-6xl px-5 sm:px-6 ${className}`}>{children}</div>;
+}
+
+/** Horizontal strip of the pinned best sellers with arrow controls. */
+function BestSellers({ products, loading, error, onRetry, onAdd, justAddedId, gstPercent, title = "Best sellers", sub = "The formulas customers come back for." }) {
+  const scrollerRef = useRef(null);
+  const nudge = (dir) => {
+    const el = scrollerRef.current;
+    if (!el) return;
+    el.scrollBy({ left: dir * el.clientWidth * 0.8, behavior: "smooth" });
+  };
+
+  return (
+    <section id="best-sellers" className="scroll-mt-24 border-y border-line bg-white py-14 lg:py-20" aria-labelledby="best-sellers-heading">
+      <Container>
+        <ScrollReveal>
+          <div className="flex items-end justify-between gap-6">
+            <div>
+              <RevealText id="best-sellers-heading" text={title} className="font-display text-4xl font-semibold tracking-[-0.03em] text-ink sm:text-5xl" />
+              <p className="mt-2 text-[15px] text-stone-500">{sub}</p>
+            </div>
+            <div className="flex shrink-0 items-center gap-2">
+              <Link to="/shop" className="btn-secondary mr-2 hidden sm:inline-flex">
+                View all
+                <ArrowRight className="h-4 w-4" strokeWidth={1.75} aria-hidden="true" />
+              </Link>
+              <button type="button" onClick={() => nudge(-1)} className="btn-icon h-11 w-11" aria-label="Scroll best sellers left">
+                <ChevronLeft className="h-4 w-4" strokeWidth={1.75} aria-hidden="true" />
+              </button>
+              <button type="button" onClick={() => nudge(1)} className="btn-icon h-11 w-11" aria-label="Scroll best sellers right">
+                <ChevronRight className="h-4 w-4" strokeWidth={1.75} aria-hidden="true" />
+              </button>
+            </div>
+          </div>
+        </ScrollReveal>
+
+        {loading ? (
+          <div className="mt-8 grid grid-cols-2 gap-x-4 lg:grid-cols-4 lg:gap-x-6">
+            {Array.from({ length: 4 }).map((_, i) => <SkeletonCard key={i} />)}
+          </div>
+        ) : error ? (
+          <div className="mt-8 border-t border-line py-16 text-center">
+            <p className="font-display text-xl font-semibold text-ink">Unable to load products</p>
+            <p className="mt-1 text-sm text-stone-500">{error}</p>
+            <button type="button" onClick={onRetry} className="btn-primary mt-5">Try again</button>
+          </div>
+        ) : (
+          <div
+            ref={scrollerRef}
+            className="no-scrollbar -mx-5 mt-8 flex snap-x snap-mandatory gap-4 overflow-x-auto px-5 pb-2 scroll-px-5 sm:-mx-6 sm:px-6 sm:scroll-px-6 lg:gap-6"
+          >
+            <ScrollRevealGroup stagger={70} className="w-[68vw] shrink-0 snap-start sm:w-[42vw] lg:w-[calc((100%-4.5rem)/4)]">
+              {products.map((p) => (
+                <ProductCard key={p.id} p={p} onAdd={onAdd} justAdded={justAddedId === p.id} gstPercent={gstPercent} />
+              ))}
+            </ScrollRevealGroup>
+          </div>
+        )}
+        <Link to="/shop" className="btn-secondary mt-6 w-full sm:hidden">
+          View all products
+          <ArrowRight className="h-4 w-4" strokeWidth={1.75} aria-hidden="true" />
+        </Link>
+      </Container>
+    </section>
+  );
+}
+
 export default function Home() {
   const { addItem } = useCart();
-  const { showToast } = useToast();
 
+  const [allProducts, setAllProducts] = useState([]);
   const [products, setProducts] = useState([]);
   const [loadingProducts, setLoadingProducts] = useState(true);
   const [fetchError, setFetchError] = useState("");
   const [justAddedId, setJustAddedId] = useState(null);
 
-  // Settings state
-  const [heroReady, setHeroReady] = useState(false);
-  /** `null` until `app_settings` resolves, so the shimmer isn't replaced by the
-   *  branded fallback for a frame before real hero images arrive. */
+  // Settings state. `heroImages` is `null` until `app_settings` resolves so
+  // the hero never shows the product fallback for a frame before real
+  // photographs arrive.
   const [heroImages, setHeroImages] = useState(null);
-  /** URLs the browser could not load — hidden so a 404 never sits in the deck. */
-  const [brokenSlides, setBrokenSlides] = useState({});
-  const [heroIndex, setHeroIndex] = useState(0);
-  /** Bumped on manual navigation to restart the auto-advance interval. */
-  const [heroTick, setHeroTick] = useState(0);
   const [heroCopy, setHeroCopy] = useState(DEFAULT_HERO_COPY);
   const [pillars, setPillars] = useState(DEFAULT_PILLARS);
-  const [categories, setCategories] = useState(DEFAULT_CATEGORIES);
+  const [categories, setCategories] = useState(DEFAULT_HOME_CATEGORIES);
   const [philosophy, setPhilosophy] = useState(DEFAULT_PHILOSOPHY);
+  const [whyUs, setWhyUs] = useState(DEFAULT_WHY_US);
+  const [standards, setStandards] = useState(DEFAULT_STANDARDS);
+  const [education, setEducation] = useState(DEFAULT_EDUCATION);
+  const [reviews, setReviews] = useState([]);
   const [gstPercent, setGstPercent] = useState(0);
 
   // ── Load all settings + products in parallel ─────────────────────────────
@@ -99,7 +190,7 @@ export default function Home() {
     setLoadingProducts(true);
     setFetchError("");
     try {
-      const [settingsRes, productList] = await Promise.all([
+      const [settingsRes, productList, reviewList] = await Promise.all([
         supabase
           .from("app_settings")
           .select("key,value")
@@ -110,17 +201,20 @@ export default function Home() {
             "homepage_pillars",
             "homepage_categories",
             "homepage_philosophy",
+            "homepage_why_us",
+            "homepage_standards",
+            "homepage_education",
             "gst_percentage",
           ]),
         fetchProducts(),
+        // Testimonials must never fail the page.
+        fetchHomepageReviews().catch(() => []),
       ]);
 
       const map = {};
       (settingsRes.data || []).forEach((row) => { map[row.key] = row.value; });
 
       // Hero images — support old string[] and new {url,position}[].
-      // No default list: there are no bundled hero assets to point at, so an
-      // unconfigured hero renders the branded gradient instead of 404s.
       const rawImgs = Array.isArray(map.homepage_hero_images) ? map.homepage_hero_images : [];
       setHeroImages(rawImgs.map((item) =>
         typeof item === "string"
@@ -128,30 +222,36 @@ export default function Home() {
           : { url: item?.url || "", position: item?.position || "50% 50%" }
       ));
 
-      // Hero copy
       if (map.homepage_hero_copy && typeof map.homepage_hero_copy === "object") {
         setHeroCopy({ ...DEFAULT_HERO_COPY, ...map.homepage_hero_copy });
       }
-
-      // Pillars
       if (Array.isArray(map.homepage_pillars) && map.homepage_pillars.length > 0) {
         setPillars(map.homepage_pillars);
       }
-
-      // Categories
       if (Array.isArray(map.homepage_categories) && map.homepage_categories.length > 0) {
         setCategories(map.homepage_categories);
       }
-
-      // Philosophy
       if (map.homepage_philosophy && typeof map.homepage_philosophy === "object") {
         setPhilosophy({ ...DEFAULT_PHILOSOPHY, ...map.homepage_philosophy });
       }
-
-      // GST
+      if (map.homepage_why_us && typeof map.homepage_why_us === "object") {
+        setWhyUs({
+          ...DEFAULT_WHY_US,
+          ...map.homepage_why_us,
+          stats: Array.isArray(map.homepage_why_us.stats) && map.homepage_why_us.stats.length > 0
+            ? map.homepage_why_us.stats
+            : DEFAULT_WHY_US.stats,
+        });
+      }
+      if (Array.isArray(map.homepage_standards) && map.homepage_standards.length > 0) {
+        setStandards(map.homepage_standards);
+      }
+      if (Array.isArray(map.homepage_education) && map.homepage_education.length > 0) {
+        setEducation(map.homepage_education);
+      }
       setGstPercent(Number(map.gst_percentage?.percentage ?? 0));
 
-      // Featured products
+      setAllProducts(productList);
       const featuredIds = Array.isArray(map.homepage_featured_products)
         ? map.homepage_featured_products : [];
       if (featuredIds.length > 0) {
@@ -160,6 +260,8 @@ export default function Home() {
       } else {
         setProducts(productList.slice(0, 6));
       }
+
+      setReviews(reviewList);
     } catch (e) {
       console.error("Home load error:", e);
       setHeroImages((prev) => prev ?? []);
@@ -198,300 +300,139 @@ export default function Home() {
     };
   }, [loadData]);
 
-  // Slides actually worth rendering. Every slide is already in the DOM with
-  // loading="eager", so no separate `new Image()` preload pass is needed.
-  const slides = useMemo(
-    () => (heroImages || []).filter((s) => s.url && !brokenSlides[s.url]),
-    [heroImages, brokenSlides]
-  );
-  /** Settings haven't resolved yet — keep the shimmer, don't flash the fallback. */
-  const heroPending = heroImages === null;
-
-  // Carousel auto-advance. `heroTick` is in the deps so a dot/arrow click
-  // restarts the countdown instead of being overridden a moment later.
-  useEffect(() => {
-    if (slides.length <= 1) return;
-    const t = setInterval(() => setHeroIndex((i) => (i + 1) % slides.length), HERO_INTERVAL_MS);
-    return () => clearInterval(t);
-  }, [slides.length, heroTick]);
-
-  // Reset carousel index when images change; clamp to valid range if images shrink
-  useEffect(() => {
-    if (slides.length === 0) return;
-    setHeroIndex((i) => (i >= slides.length ? 0 : i));
-  }, [slides.length]);
-
-  /** Manual dot/arrow navigation — also restarts the auto-advance timer. */
-  const goToSlide = useCallback((i) => {
-    setHeroIndex(i);
-    setHeroTick((t) => t + 1);
-  }, []);
-
-  /** A slide 404'd: drop it from the deck and release the shimmer regardless. */
-  const handleSlideError = useCallback((url) => {
-    setBrokenSlides((prev) => ({ ...prev, [url]: true }));
-    setHeroReady(true);
-  }, []);
-
-  /** Ref for button feedback timer (avoid polluting `window`). */
   const btnTimerRef = useRef(null);
+  useEffect(() => () => clearTimeout(btnTimerRef.current), []);
 
-  /** Cleanup timer on unmount. */
-  useEffect(() => {
-    return () => clearTimeout(btnTimerRef.current);
-  }, []);
-
-  /** Handles adding a product to cart with toast + button feedback.
-   *  Memoised so `ProductCard`'s React.memo isn't defeated by a fresh
-   *  callback identity on every render. */
+  /** Adds to cart with button feedback; the cart drawer is the confirmation. */
   const handleAdd = useCallback((p) => {
     addItem(p, 1);
     setJustAddedId(p.id);
-    showToast(`${p.name} added to cart`, "success");
     clearTimeout(btnTimerRef.current);
     btnTimerRef.current = setTimeout(() => setJustAddedId(null), 900);
-  }, [addItem, showToast]);
+  }, [addItem]);
 
   const trust = heroCopy.trustIcons || DEFAULT_HERO_COPY.trustIcons;
 
+  /** Every heading, line and the section order, from Admin → Site content. */
+  const home = useSiteContent("page_home");
+  const faqContent = useSiteContent("page_faq");
+
+  // The standard and the education panels can be saved in two places: the
+  // newer Site content editor wins when it has them, then the older Home
+  // settings, then the defaults.
+  const standardRows = home.standards !== DEFAULTS.page_home.standards
+    ? home.standards
+    : (standards !== DEFAULT_STANDARDS ? standards : home.standards);
+  const educationCards = home.education.cards !== DEFAULTS.page_home.education.cards
+    ? home.education.cards
+    : (education !== DEFAULT_EDUCATION ? education : home.education.cards);
+
+  /** The home page's FAQ picks, resolved against the FAQ page's questions. */
+  const homeFaqs = useMemo(() => {
+    const all = (faqContent.groups || []).flatMap((g) => g?.items || []).filter((f) => f?.q && f?.a);
+    const norm = (v) => String(v || "").trim().toLowerCase();
+    const picks = (home.faq?.picks || []).map((q) => all.find((f) => norm(f.q) === norm(q))).filter(Boolean);
+    return picks.length > 0 ? picks : all.slice(0, 5);
+  }, [faqContent, home.faq?.picks]);
+
+  /** Saved order and visibility, with any section the save predates appended. */
+  const sectionOrder = useMemo(() => {
+    const known = HOME_SECTIONS.map((x) => x.key);
+    const seen = new Set();
+    const list = [];
+    (Array.isArray(home.sections) ? home.sections : []).forEach((x) => {
+      if (x?.key && known.includes(x.key) && !seen.has(x.key)) { seen.add(x.key); list.push({ key: x.key, visible: x.visible !== false }); }
+    });
+    known.forEach((k) => { if (!seen.has(k)) list.push({ key: k, visible: true }); });
+    return list;
+  }, [home.sections]);
+
+  /** Shown on the hero only when no photographs are saved. */
+
+  /** Each photo break shows its own photograph (Site content → Home), else the second and third hero slides. */
+  const breakImages = useMemo(() => {
+    const list = (heroImages || []).filter((s) => s?.url);
+    const saved = Array.isArray(home.breaks) ? home.breaks : [];
+    return [1, 2].map((n, i) => (saved[i]?.image ? { url: saved[i].image, position: "50% 50%" } : list[n] || null));
+  }, [heroImages, home.breaks]);
+
+  /** Catalogue-derived sections. */
+  const goals = useMemo(() => deriveGoals(allProducts), [allProducts]);
+  const ingredients = useMemo(() => buildIngredientIndex(allProducts), [allProducts]);
+  const activeCount = useMemo(() => allProducts.filter((p) => p.isActive !== false).length, [allProducts]);
+
+  /** Store-wide rating, weighted by each product's review count. */
+  const reviewSummary = useMemo(() => {
+    let count = 0;
+    let sum = 0;
+    allProducts.forEach((p) => {
+      if (p.reviewCount > 0 && p.avgRating != null) {
+        count += p.reviewCount;
+        sum += p.avgRating * p.reviewCount;
+      }
+    });
+    return count > 0 ? { count, average: sum / count } : null;
+  }, [allProducts]);
+
+  const breaks = Array.isArray(home.breaks) ? home.breaks : [];
+  const sections = {
+    pillars: <Pillars pillars={pillars} />,
+    categories: (
+      <CategoryIndex
+        categories={categories}
+        products={allProducts}
+        goals={goals}
+        heading={home.categories.title}
+        intro={home.categories.sub}
+        goalsLabel={home.categories.goalsLabel}
+      />
+    ),
+    bestSellers: (
+      <BestSellers
+        products={products}
+        loading={loadingProducts}
+        error={fetchError}
+        onRetry={loadData}
+        onAdd={handleAdd}
+        justAddedId={justAddedId}
+        gstPercent={gstPercent}
+        title={home.bestSellers.title}
+        sub={home.bestSellers.sub}
+      />
+    ),
+    break1: breakImages[0] && breaks[0]?.text ? <PhotoBreak image={breakImages[0]} text={breaks[0].text} sub={breaks[0].sub} /> : null,
+    standard: <Standard items={standardRows} heading={home.standard.title} intro={home.standard.intro} />,
+    ingredients: <IngredientIndex items={ingredients} total={activeCount} heading={home.ingredients.title} intro={home.ingredients.sub} />,
+    proof: <ProofBand whyUs={whyUs} />,
+    testimonials: <Testimonials reviews={reviews} summary={reviewSummary} title={home.testimonials.title} />,
+    break2: breakImages[1] && breaks[1]?.text ? <PhotoBreak image={breakImages[1]} text={breaks[1].text} sub={breaks[1].sub} align="center" /> : null,
+    education: <Education cards={educationCards} heading={home.education.title} intro={home.education.sub} />,
+    faq: <FaqPreview faqs={homeFaqs} title={home.faq.title} sub={home.faq.sub} />,
+    recentlyViewed: (
+      <Container>
+        <RecentlyViewed gstPercent={gstPercent} className="py-12" title={home.recentlyViewed.title} />
+      </Container>
+    ),
+    manifesto: <Manifesto philosophy={philosophy} />,
+  };
+
   return (
-    <div className="space-y-24">
+    <div>
       <SEO
         title="Core Atoms | Nutraceuticals"
         description="Modern nutraceuticals designed for real routines. Clean formulas, structured stacks, COD available across India."
         canonical="/"
       />
 
-      {/* ── PROMO BANNER (admin-controlled) ─────────────────────────────── */}
       <PromoBanner />
 
-      {/* ── HERO ──────────────────────────────────────────────────────────── */}
-      <section className="rounded-3xl bg-white overflow-hidden relative" style={{ boxShadow: '0 4px 20px rgba(0,0,0,0.06), 0 12px 48px rgba(30,58,95,0.08), inset 0 1px 0 rgba(255,255,255,0.9)', border: '1px solid rgba(232,228,222,0.5)' }}>
-        {/* Subtle gradient mesh overlay */}
-        <div className="absolute inset-0 pointer-events-none z-0 opacity-30" style={{ background: 'radial-gradient(ellipse at 80% 20%, rgba(30,58,95,0.06), transparent 50%), radial-gradient(ellipse at 20% 80%, rgba(30,58,95,0.04), transparent 50%)' }} />
-        <div className="grid lg:grid-cols-2 gap-0">
+      <Hero images={heroImages} copy={heroCopy} trust={trust} />
 
-          {/* LEFT — carousel: aspect-ratio on mobile, stretch to full card height on desktop */}
-          <div className="relative overflow-hidden aspect-[4/3] lg:aspect-auto" role="region" aria-roledescription="carousel" aria-label="Featured imagery">
-            {/* Shimmer skeleton — only while there is something still to load.
-                Released by the first onLoad *or* onError, so a dead URL can no
-                longer freeze the hero as a permanent grey block. */}
-            {(heroPending || slides.length > 0) && (
-              <div
-                className={`absolute inset-0 bg-stone-100 transition-opacity duration-500 ${heroReady ? "opacity-0 pointer-events-none" : "opacity-100"
-                  }`}
-                style={{ zIndex: 5 }}
-              >
-                <div
-                  className="absolute inset-0"
-                  style={{
-                    background: "linear-gradient(90deg, transparent 0%, rgba(255,255,255,0.5) 50%, transparent 100%)",
-                    backgroundSize: "200% 100%",
-                    animation: "shimmer 1.5s infinite",
-                  }}
-                />
-              </div>
-            )}
-
-            {slides.length > 0 ? (
-              <div className="absolute inset-0">
-                {slides.map((slide, i) => (
-                  <div
-                    key={`${i}-${slide.url}`}
-                    className="absolute inset-0 transition-opacity duration-700"
-                    style={{ opacity: i === heroIndex ? 1 : 0, zIndex: i === heroIndex ? 1 : 0 }}
-                  >
-                    <img
-                      src={slide.url}
-                      alt={`Hero ${i + 1}`}
-                      className="absolute inset-0 h-full w-full object-cover"
-                      style={{ objectPosition: slide.position || "50% 50%" }}
-                      loading="eager"
-                      fetchPriority={i === 0 ? "high" : "auto"}
-                      sizes="(max-width: 1024px) 100vw, 50vw"
-                      onLoad={i === 0 ? () => setHeroReady(true) : undefined}
-                      onError={() => handleSlideError(slide.url)}
-                    />
-                    <div className="absolute inset-0 bg-gradient-to-r from-white/20 via-transparent to-transparent" />
-                  </div>
-                ))}
-              </div>
-            ) : !heroPending && (
-              /* Branded fallback — no hero images configured, or every URL is
-                 dead. Pure CSS gradient plus the bundled logo, so nothing 404s. */
-              <div
-                className="absolute inset-0 flex items-center justify-center"
-                style={{ background: "linear-gradient(135deg, #1e3a5f 0%, #2f5c8f 55%, #1e3a5f 100%)" }}
-              >
-                <div
-                  className="absolute inset-0"
-                  style={{ background: "radial-gradient(ellipse at 30% 25%, rgba(255,255,255,0.16), transparent 55%)" }}
-                />
-                <img
-                  src="/logo.png"
-                  alt="Core Atoms"
-                  className="relative h-16 w-auto opacity-95 sm:h-20"
-                  loading="eager"
-                  fetchPriority="high"
-                />
-              </div>
-            )}
-
-            {/* Dots */}
-            {slides.length > 1 && (
-              <div className="absolute bottom-5 left-6 flex gap-2" style={{ zIndex: 10 }}>
-                {slides.map((slide, i) => (
-                  <button key={`${i}-${slide.url}`} type="button" onClick={() => goToSlide(i)}
-                    aria-label={`Show slide ${i + 1} of ${slides.length}`}
-                    aria-current={i === heroIndex ? "true" : undefined}
-                    className={`h-2 rounded-full transition-all duration-300 ${i === heroIndex ? "w-6 bg-white shadow" : "w-2 bg-white/50"}`} />
-                ))}
-              </div>
-            )}
-
-            {/* Arrows */}
-            {slides.length > 1 && (
-              <>
-                <button type="button"
-                  onClick={() => goToSlide((heroIndex - 1 + slides.length) % slides.length)}
-                  aria-label="Previous slide"
-                  className="absolute left-4 top-1/2 -translate-y-1/2 h-9 w-9 rounded-full bg-white/80 backdrop-blur-sm border border-white/60 shadow flex items-center justify-center text-stone-700 hover:bg-white transition"
-                  style={{ zIndex: 10 }}>
-                  <svg className="h-4 w-4" viewBox="0 0 20 20" fill="none" stroke="currentColor" strokeWidth="2.5" aria-hidden="true"><path d="M13 16l-6-6 6-6" /></svg>
-                </button>
-                <button type="button"
-                  onClick={() => goToSlide((heroIndex + 1) % slides.length)}
-                  aria-label="Next slide"
-                  className="absolute right-4 top-1/2 -translate-y-1/2 h-9 w-9 rounded-full bg-white/80 backdrop-blur-sm border border-white/60 shadow flex items-center justify-center text-stone-700 hover:bg-white transition"
-                  style={{ zIndex: 10 }}>
-                  <svg className="h-4 w-4" viewBox="0 0 20 20" fill="none" stroke="currentColor" strokeWidth="2.5" aria-hidden="true"><path d="M7 4l6 6-6 6" /></svg>
-                </button>
-              </>
-            )}
-          </div>
-
-          {/* RIGHT — copy */}
-          <div className="flex flex-col justify-center px-10 py-12 lg:px-14 lg:py-16">
-            <div className="section-label mb-4">Core Atoms — Nutraceuticals</div>
-            <h1 className="text-4xl lg:text-5xl font-semibold tracking-tight text-stone-900 leading-[1.12]">
-              {heroCopy.headline}<br />
-              <span className="text-[#1e3a5f]">{heroCopy.headlineAccent}</span>
-            </h1>
-            <p className="mt-6 text-[15px] text-stone-500 leading-relaxed max-w-sm">{heroCopy.body}</p>
-            <div className="mt-8 flex flex-wrap gap-3">
-              <Link to="/shop" className="btn-primary px-6 py-3 text-[14px]">
-                <svg className="h-4 w-4" viewBox="0 0 20 20" fill="currentColor"><path d="M3 3a1 1 0 000 2h1.22l.305 1.222a.997.997 0 00.01.042l1.358 5.43-.893.892C3.74 13.846 4.632 15 6.414 15H15a1 1 0 000-2H6.414l1-1H14a1 1 0 00.894-.553l3-6A1 1 0 0017 5H6.28l-.31-1.243A1 1 0 005 3H3zM16 16.5a1.5 1.5 0 11-3 0 1.5 1.5 0 013 0zM6.5 18a1.5 1.5 0 100-3 1.5 1.5 0 000 3z" /></svg>
-                {heroCopy.primaryCta || "Shop all products"}
-              </Link>
-              <Link to="/shop" className="btn-ghost px-6 py-3 text-[14px]">
-                {heroCopy.secondaryCta || "View best sellers"} →
-              </Link>
-            </div>
-            <div className="mt-10 grid grid-cols-3 gap-3 pt-8" style={{ borderTop: '1px solid rgba(232,228,222,0.5)' }}>
-              {trust.slice(0, 3).map((t) => (
-                <div key={t.label} className="text-center group">
-                  <div className="text-xl mb-1 group-hover:scale-110 transition-transform duration-300">{t.icon}</div>
-                  <div className="text-[11px] font-medium text-stone-500">{t.label}</div>
-                </div>
-              ))}
-            </div>
-          </div>
-        </div>
-      </section>
-
-      {/* ── PILLARS ───────────────────────────────────────────────────────── */}
-      <ScrollReveal>
-        <section>
-          <div className="grid gap-5 sm:grid-cols-2 lg:grid-cols-4">
-            {pillars.map((p, i) => (
-              <div key={i} className="card-shine group rounded-2xl bg-white/80 p-6 relative overflow-hidden transition-all duration-500 hover:-translate-y-1" style={{ border: '1px solid rgba(232,228,222,0.6)', boxShadow: '0 2px 8px rgba(0,0,0,0.03), 0 4px 16px rgba(0,0,0,0.02), inset 0 1px 0 rgba(255,255,255,0.8)', backdropFilter: 'blur(8px)' }}
-                onMouseEnter={(e) => { e.currentTarget.style.boxShadow = '0 8px 24px rgba(0,0,0,0.06), 0 16px 40px rgba(30,58,95,0.06), inset 0 1px 0 rgba(255,255,255,0.9)'; }}
-                onMouseLeave={(e) => { e.currentTarget.style.boxShadow = '0 2px 8px rgba(0,0,0,0.03), 0 4px 16px rgba(0,0,0,0.02), inset 0 1px 0 rgba(255,255,255,0.8)'; }}>
-                <div className="h-10 w-10 rounded-xl bg-gradient-to-br from-[#EFF6FF] to-[#1e3a5f]/10 flex items-center justify-center text-[#1e3a5f] text-xl mb-4 group-hover:scale-110 transition-transform duration-300" style={{ boxShadow: '0 2px 8px rgba(30,58,95,0.1)' }}>{p.icon}</div>
-                <div className="text-sm font-semibold text-stone-900">{p.title}</div>
-                <div className="mt-1.5 text-[13px] text-stone-500 leading-relaxed">{p.desc}</div>
-              </div>
-            ))}
-          </div>
-        </section>
-      </ScrollReveal>
-
-      {/* ── FEATURED PRODUCTS ─────────────────────────────────────────────── */}
-      <ScrollReveal>
-        <section>
-          <div className="flex items-end justify-between mb-8">
-            <div>
-              <p className="section-label">Top Picks</p>
-              <h2 className="mt-1.5 text-2xl font-semibold tracking-tight text-stone-900">Featured Products</h2>
-            </div>
-            <Link to="/shop" className="text-sm font-semibold text-[#1e3a5f] hover:underline underline-offset-2">View all →</Link>
-          </div>
-          {loadingProducts ? (
-            <SkeletonGrid count={6} />
-          ) : fetchError ? (
-            <div className="card p-12 text-center">
-              <div className="mx-auto mb-3 h-12 w-12 rounded-xl bg-red-50 border border-red-200 grid place-items-center">
-                <svg className="h-5 w-5 text-red-400" viewBox="0 0 20 20" fill="currentColor"><path fillRule="evenodd" d="M18 10a8 8 0 11-16 0 8 8 0 0116 0zm-7 4a1 1 0 11-2 0 1 1 0 012 0zm-1-9a1 1 0 00-1 1v4a1 1 0 102 0V6a1 1 0 00-1-1z" clipRule="evenodd" /></svg>
-              </div>
-              <p className="font-semibold text-stone-900">Unable to load products</p>
-              <p className="mt-1 text-sm text-stone-500">{fetchError}</p>
-              <button type="button" onClick={loadData} className="btn-primary mt-5 inline-flex">Try again</button>
-            </div>
-          ) : (
-            <div className="grid gap-5 sm:grid-cols-2 lg:grid-cols-3">
-              {products.map((p) => (
-                <ProductCard key={p.id} p={p} onAdd={handleAdd} justAdded={justAddedId === p.id} gstPercent={gstPercent} />
-              ))}
-            </div>
-          )}
-        </section>
-      </ScrollReveal>
-
-      {/* ── SHOP BY CATEGORY ──────────────────────────────────────────────── */}
-      <ScrollReveal>
-        < section >
-          <div className="text-center mb-10">
-            <p className="section-label">Browse by Goal</p>
-            <h2 className="mt-2 text-2xl font-semibold tracking-tight text-stone-900">Shop by Category</h2>
-          </div>
-          <div className="grid grid-cols-2 gap-4 sm:grid-cols-3 lg:grid-cols-6">
-            {categories.map((cat, i) => (
-              <div key={i} style={{ perspective: '600px' }}>
-                <Link to={`/shop?category=${encodeURIComponent(cat.category)}`}
-                  className="group flex flex-col items-center gap-3 rounded-2xl bg-white/80 p-5 text-center transition-all duration-500"
-                  style={{ border: '1px solid rgba(232,228,222,0.5)', boxShadow: '0 2px 8px rgba(0,0,0,0.03), inset 0 1px 0 rgba(255,255,255,0.8)', backdropFilter: 'blur(8px)', transformStyle: 'preserve-3d' }}
-                  onMouseEnter={(e) => { e.currentTarget.style.transform = 'rotateY(8deg) translateY(-4px)'; e.currentTarget.style.boxShadow = '0 6px 20px rgba(30,58,95,0.08), 0 0 0 1px rgba(30,58,95,0.08)'; e.currentTarget.style.borderColor = 'rgba(30,58,95,0.15)'; }}
-                  onMouseLeave={(e) => { e.currentTarget.style.transform = 'rotateY(0deg) translateY(0px)'; e.currentTarget.style.boxShadow = '0 2px 8px rgba(0,0,0,0.03), inset 0 1px 0 rgba(255,255,255,0.8)'; e.currentTarget.style.borderColor = 'rgba(232,228,222,0.5)'; }}>
-                  <div className="h-12 w-12 rounded-xl bg-gradient-to-br from-[#EFF6FF] to-[#1e3a5f]/8 flex items-center justify-center text-2xl group-hover:scale-110 group-hover:shadow-[0_4px_12px_rgba(30,58,95,0.12)] transition-all duration-300">{cat.emoji}</div>
-                  <span className="text-[12px] font-semibold text-stone-700 group-hover:text-[#1e3a5f] leading-snug transition-colors">{cat.label}</span>
-                </Link>
-              </div>
-            ))}
-          </div>
-        </section >
-      </ScrollReveal>
-
-      {/* ── PHILOSOPHY ────────────────────────────────────────────────────── */}
-      <ScrollReveal variant="scale">
-        < section className="rounded-3xl bg-white p-12 lg:p-16 text-center relative overflow-hidden" style={{ border: '1px solid rgba(232,228,222,0.5)', boxShadow: '0 4px 20px rgba(0,0,0,0.04), 0 12px 48px rgba(30,58,95,0.06), inset 0 1px 0 rgba(255,255,255,0.9)' }}>
-          {/* Mesh background */}
-          <div className="absolute inset-0 pointer-events-none" style={{ background: 'radial-gradient(ellipse at 30% 0%, rgba(30,58,95,0.04), transparent 50%), radial-gradient(ellipse at 70% 100%, rgba(30,58,95,0.03), transparent 50%)' }} />
-          <div className="mx-auto max-w-2xl">
-            <p className="section-label mb-4">{philosophy.label || "Our Philosophy"}</p>
-            <h2 className="text-2xl lg:text-3xl font-semibold tracking-tight text-stone-900 leading-snug whitespace-pre-line">
-              {philosophy.heading || DEFAULT_PHILOSOPHY.heading}
-            </h2>
-            <p className="mt-5 text-[15px] text-stone-500 leading-relaxed">
-              {philosophy.body || DEFAULT_PHILOSOPHY.body}
-            </p>
-            <Link to="/shop" className="btn-primary mt-8 inline-flex px-8 py-3">
-              {philosophy.cta || "Explore the range"}
-            </Link>
-          </div>
-        </section >
-      </ScrollReveal>
-
-
-    </div >
+      {sectionOrder.map((x) => {
+        if (!x.visible) return null;
+        const el = sections[x.key];
+        return el ? <Fragment key={x.key}>{el}</Fragment> : null;
+      })}
+    </div>
   );
 }

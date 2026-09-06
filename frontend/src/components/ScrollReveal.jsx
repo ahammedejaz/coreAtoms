@@ -1,8 +1,9 @@
 /**
  * ScrollReveal.jsx — Scroll-triggered reveal animation wrapper.
  *
- * Uses IntersectionObserver to animate children when they enter the viewport.
- * Supports multiple animation variants and stagger delays.
+ * Uses IntersectionObserver to animate children when they enter the viewport:
+ * a heavy fade-up that resolves from a slight blur, 700ms on a strong
+ * ease-out. Supports multiple variants and stagger delays.
  *
  * Children start at `opacity-0`, so anyone who has asked their OS to reduce
  * motion gets them rendered visible and untransformed straight away — the
@@ -14,12 +15,12 @@
 import { useEffect, useRef, useState, useSyncExternalStore } from "react";
 
 const VARIANTS = {
-    "fade-up": "translate-y-8 opacity-0",
-    "fade-down": "translate-y-[-2rem] opacity-0",
-    "fade-left": "translate-x-8 opacity-0",
-    "fade-right": "translate-x-[-2rem] opacity-0",
-    "fade": "opacity-0",
-    "scale": "scale-95 opacity-0",
+    "fade-up": "translate-y-6 opacity-0 blur-[5px]",
+    "fade-down": "-translate-y-6 opacity-0 blur-[5px]",
+    "fade-left": "translate-x-6 opacity-0 blur-[5px]",
+    "fade-right": "-translate-x-6 opacity-0 blur-[5px]",
+    "fade": "opacity-0 blur-[5px]",
+    "scale": "scale-[0.96] opacity-0 blur-[5px]",
 };
 
 const REDUCED_MOTION_QUERY = "(prefers-reduced-motion: reduce)";
@@ -31,7 +32,7 @@ function subscribeToMotionPreference(onChange) {
 }
 
 /** True when the visitor has asked the OS/browser to reduce motion. */
-function usePrefersReducedMotion() {
+export function usePrefersReducedMotion() {
     return useSyncExternalStore(
         subscribeToMotionPreference,
         () => window.matchMedia(REDUCED_MOTION_QUERY).matches,
@@ -46,6 +47,7 @@ export default function ScrollReveal({
     threshold = 0.15,
     className = "",
     as: Tag = "div",
+    ...rest
 }) {
     const ref = useRef(null);
     const [visible, setVisible] = useState(false);
@@ -74,14 +76,15 @@ export default function ScrollReveal({
 
     // Reduced motion: no transition, no transform, no hidden start state.
     if (reduceMotion) {
-        return <Tag ref={ref} className={className}>{children}</Tag>;
+        return <Tag ref={ref} className={className} {...rest}>{children}</Tag>;
     }
 
     return (
         <Tag
             ref={ref}
-            className={`transition-all duration-700 ease-out ${visible ? "translate-y-0 translate-x-0 opacity-100 scale-100" : hiddenClass} ${className}`}
+            className={`transition-[opacity,translate,scale,filter] duration-700 ease-out-strong ${visible ? "translate-y-0 translate-x-0 opacity-100 scale-100 blur-none" : hiddenClass} ${className}`}
             style={{ transitionDelay: `${delay}ms` }}
+            {...rest}
         >
             {children}
         </Tag>
@@ -97,7 +100,7 @@ export default function ScrollReveal({
 export function ScrollRevealGroup({
     children,
     variant = "fade-up",
-    stagger = 80,
+    stagger = 60,
     threshold = 0.1,
     className = "",
 }) {

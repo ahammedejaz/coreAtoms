@@ -103,8 +103,8 @@ studio backdrop disappears and the bottle looks placed, not pasted.
   count up once when 60% in view (1.6s, 120ms stagger, en-IN grouping);
   testimonials run as two marquee strips (`.marquee`, opposite directions,
   paused on hover and focus); the manifesto brightens one word at a time as
-  it crosses the middle of the viewport. The content sections (routine,
-  standard, ingredient index, education, FAQ) use `ScrollReveal` entrances
+  it crosses the middle of the viewport. The content sections (standard,
+  ingredient index, education, FAQ) use `ScrollReveal` entrances
   only; their job is to be read.
 - Elsewhere: the drawer's 420ms in / 260ms out slide; the cart badge `pop`;
   card hover lift with a crossfade to the second photo; `ScrollReveal`
@@ -164,13 +164,15 @@ studio backdrop disappears and the bottle looks placed, not pasted.
   and what those formulas are taken for, beside a navy stage showing the
   hovered category's jar; plus "Shop by goal" chips derived from every
   product's `best_for`; it replaced the photo-tile strip, which repeated the
-  same two photographs six times), best sellers (in `Home.jsx`), `Routine`
-  ("When to take what": the daily schedule as one `.facts` table, a row per
-  time of day with the rationale and the formulas the labels name, built
-  from every product's `recommended_stack`; text rows with an add button,
-  no thumbnails), `PhotoBreak` (a full-bleed photograph with one line, used
-  twice), `Standard` (the six Formulary rules as a pinned story on desktop
-  and a hairline list elsewhere), `IngredientIndex` (the actives across the range as
+  same two photographs six times), best sellers (in `Home.jsx`), `PhotoBreak` (a full-bleed photograph with one line, used
+  twice), `Standard` (the six Formulary rules as a pinned story on desktop: a
+  navy card holding the current rule's numeral, a six-segment progress line
+  and an index of the rules with the numerals in one aligned column, beside
+  the rules scrolling past; a hairline list elsewhere. It was first drawn as
+  a Supplement Facts label with the numeral bleeding off the corner, which
+  the owner rejected on 2026-09-06 as "a supplement info card"; the
+  "When to take what" daily-schedule section was removed the same day at
+  their request), `IngredientIndex` (the actives across the range as
   a bordered grid with formula counts and a filler cell that closes the last
   row), `ProofBand` (navy field, counting stats), `Testimonials`,
   `Education` (four supplement-literacy panels), `FaqPreview` (five FAQ

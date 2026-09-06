@@ -2,17 +2,20 @@
  * Standard.jsx — "The Formulary standard": the rules every formula is held
  * to (`DEFAULT_STANDARDS`, or the `homepage_standards` setting when saved).
  *
- * On desktop it is a pinned story. A Supplement-Facts panel stays put on
- * the left while the six rules scroll past on the right; as each rule
- * reaches the middle of the screen it comes to full ink and its row on the
- * panel fills in, so by the end the label has assembled itself. On phones
- * and tablets the rules are the plain hairline list.
+ * On desktop it is a pinned story. A navy card stays put on the left while
+ * the six rules scroll past on the right. The card carries the current
+ * rule's numeral, set large and flush with the text column, a progress line
+ * of one segment per rule, and an index of the rules whose numerals sit in
+ * one aligned column; as each rule reaches the middle of the screen it comes
+ * to full ink on the right and ticks off on the card. On phones and tablets
+ * the rules are the plain hairline list.
  *
  * @param {{ items: Array<{icon?:string, title:string, text:string}>, heading?: string, intro?: string }} props
  * @module components/home/Standard
  */
 import { useEffect, useRef, useState } from "react";
 import { Link } from "react-router-dom";
+import { AnimatePresence, motion } from "motion/react";
 import { ArrowRight, BadgeCheck, Check, ClipboardCheck, FlaskConical, Scale, ShieldCheck, Truck } from "lucide-react";
 import ScrollReveal from "../ScrollReveal";
 import HintIcon from "../HintIcon";
@@ -44,35 +47,70 @@ function Story({ rows }) {
     return () => io.disconnect();
   }, [rows.length]);
 
+  const pad = (n) => String(n).padStart(2, "0");
+  const current = rows[active] || rows[0];
+
   return (
     <div className="hidden lg:grid lg:grid-cols-[0.95fr_1.05fr] lg:gap-20">
       <div className="lg:sticky lg:top-32 lg:self-start">
-        <div className="facts relative px-7 pb-2 pt-6">
-          <span className="pointer-events-none absolute -right-3 -top-9 font-display text-[7.5rem] font-semibold leading-none tracking-[-0.06em] text-line-strong" aria-hidden="true">
-            {String(active + 1).padStart(2, "0")}
-          </span>
-          <p className="facts-title">Formulary standard</p>
-          <p className="facts-sub">{rows.length} rules, every formula</p>
-          <ol>
-            {rows.map((it, i) => {
-              const done = i <= active;
-              return (
-                <li
-                  key={`${it.title}-${i}`}
-                  className={`facts-row items-center transition-[opacity,color] duration-500 ease-out-strong ${done ? "opacity-100" : "opacity-30"}`}
-                >
-                  <span className="flex items-center gap-3">
-                    <span className={`grid h-6 w-6 shrink-0 place-items-center rounded-full transition-colors duration-500 ${i === active ? "bg-amber text-ink" : done ? "bg-ink text-white" : "bg-bone text-stone-400"}`}>
+        <div className="field-navy grain relative overflow-hidden rounded-[28px] shadow-frame">
+          <div className="relative z-[1] p-9">
+            <div className="flex items-center justify-between gap-4">
+              <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-white/55">The Formulary standard</p>
+              <p className="font-display text-[15px] font-semibold tabular-nums text-white/45">
+                <span className="text-white">{pad(active + 1)}</span>
+                <span className="mx-1.5">/</span>
+                {pad(rows.length)}
+              </p>
+            </div>
+
+            <div className="mt-8 flex items-end justify-between gap-6">
+              <div className="relative h-[6.5rem] flex-1 overflow-hidden">
+                <AnimatePresence mode="wait" initial={false}>
+                  <motion.p
+                    key={active}
+                    initial={{ opacity: 0, y: 28 }}
+                    animate={{ opacity: 1, y: 0 }}
+                    exit={{ opacity: 0, y: -22 }}
+                    transition={{ duration: 0.4, ease: [0.23, 1, 0.32, 1] }}
+                    className="absolute inset-x-0 bottom-0 font-display text-[6.5rem] font-semibold leading-[0.85] tracking-[-0.06em] text-white tabular-nums"
+                    aria-hidden="true"
+                  >
+                    {pad(active + 1)}
+                  </motion.p>
+                </AnimatePresence>
+              </div>
+              <span className="mb-1 grid h-12 w-12 shrink-0 place-items-center rounded-full border border-white/15 bg-white/10 text-amber">
+                <RuleIcon it={current} className="h-5 w-5" />
+              </span>
+            </div>
+
+            <div className="mt-7 flex gap-1.5" aria-hidden="true">
+              {rows.map((it, i) => (
+                <span key={`${it.title}-${i}`} className={`h-[3px] flex-1 rounded-full transition-colors duration-500 ${i <= active ? "bg-amber" : "bg-white/15"}`} />
+              ))}
+            </div>
+
+            <ol className="mt-8 border-t border-white/10">
+              {rows.map((it, i) => {
+                const now = i === active;
+                const done = i < active;
+                return (
+                  <li
+                    key={`${it.title}-${i}`}
+                    className={`flex items-center gap-4 border-b border-white/10 py-3.5 text-[14.5px] transition-colors duration-500 ${now ? "text-white" : done ? "text-white/70" : "text-white/35"}`}
+                  >
+                    <span className={`w-7 shrink-0 font-display text-[13px] font-semibold tabular-nums ${now ? "text-amber" : ""}`}>{pad(i + 1)}</span>
+                    <span className="min-w-0 flex-1 truncate font-medium">{it.title}</span>
+                    <span className={`grid h-5 w-5 shrink-0 place-items-center rounded-full transition-colors duration-500 ${now ? "bg-amber text-ink" : done ? "bg-white/15 text-white" : "border border-white/15 text-transparent"}`}>
                       <Check className="h-3 w-3" strokeWidth={3} aria-hidden="true" />
                     </span>
-                    <span className="font-semibold text-ink">{it.title}</span>
-                  </span>
-                  <span className="facts-val text-[13px] text-stone-500">{String(i + 1).padStart(2, "0")}</span>
-                </li>
-              );
-            })}
-          </ol>
-          <p className="facts-foot">Written into every label, checked on every batch.</p>
+                  </li>
+                );
+              })}
+            </ol>
+            <p className="mt-5 text-[12.5px] text-white/50">Written into every label, checked on every batch.</p>
+          </div>
         </div>
       </div>
 

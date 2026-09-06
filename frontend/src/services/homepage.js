@@ -152,10 +152,10 @@ export const DEFAULT_EDUCATION = [
     },
     {
         icon: "timing",
-        title: "When to take what",
+        title: "Timing your doses",
         text: "Fat-soluble nutrients such as vitamin D3 and omega-3 absorb best with a meal that contains some fat. Iron is better taken on its own with vitamin C, away from tea, coffee and calcium. Magnesium and ashwagandha suit the evening. Consistency matters more than the exact hour.",
-        href: "#routine",
-        linkText: "See the daily schedule",
+        href: "/faq",
+        linkText: "How to take our formulas",
     },
     {
         icon: "testing",
@@ -206,78 +206,6 @@ export function deriveGoals(products, limit = 10) {
     return [...counts.values()]
         .sort((a, b) => b.count - a.count || a.label.localeCompare(b.label))
         .slice(0, limit);
-}
-
-/** The three times of day on the schedule. `why` is the one-sentence
- *  rationale shown beside each row; it names nutrient classes, not products,
- *  so it stays true as the catalogue changes. */
-const SLOT_DEFS = [
-    {
-        key: "morning", title: "Morning", note: "With breakfast", re: /^(am|morning|breakfast)$/i,
-        why: "Multivitamins, B-complex and vitamin D3 go with the first meal. The fat in food helps the fat-soluble vitamins absorb, and a breakfast habit is the easiest one to keep.",
-    },
-    {
-        key: "midday", title: "Midday", note: "With lunch", re: /^(midday|noon|afternoon|lunch)$/i,
-        why: "Water-soluble nutrients such as vitamin C are not stored for long, so a dose with lunch keeps the day's intake spread out rather than front-loaded.",
-    },
-    {
-        key: "night", title: "Night", note: "After dinner", re: /^(pm|night|evening|bedtime|bed|dinner)$/i,
-        why: "Calcium and magnesium suit the evening, away from the tea and coffee that hinder mineral absorption. Omega-3 goes with dinner, the meal with the most fat, and ashwagandha is traditionally taken before bed.",
-    },
-];
-
-const squash = (s) => String(s || "").toLowerCase().replace(/[^a-z0-9]/g, "");
-
-/** "Vitamin C" → the Vitamin C product; "Calcium" → "Calcium + Magnesium". Prefix matches win over substring matches. */
-function matchByName(token, products) {
-    const t = squash(token);
-    if (t.length < 3) return [];
-    const starts = products.filter((p) => squash(p.name).startsWith(t));
-    if (starts.length) return starts;
-    return products.filter((p) => squash(p.name).includes(t) || t.includes(squash(p.name)));
-}
-
-/**
- * "When to take what" (the daily schedule): reads every product's `recommended_stack`
- * ("AM: Multivitamin • PM: Omega-3", "Midday: Vitamin C") and gathers the
- * formulas named for each time of day, ranked by how often the labels name
- * them. Tokens that match no product are skipped, so admin spelling never
- * breaks the section.
- * @returns {Array<{key:string, title:string, note:string, why:string, products:Array<object>}>}
- */
-export function buildRoutine(products, perSlot = 4) {
-    const active = (products || []).filter((p) => p.isActive !== false);
-    const tallies = SLOT_DEFS.map(() => new Map());
-
-    active.forEach((p) => {
-        let slot = -1;
-        String(p.recommendedStack || "").split(/\s*[•|;]\s*/).forEach((segment) => {
-            let items = segment;
-            const m = segment.match(/^([A-Za-z]+)\s*:\s*(.*)$/);
-            if (m) {
-                slot = SLOT_DEFS.findIndex((s) => s.re.test(m[1]));
-                items = m[2];
-            }
-            if (slot < 0) return;
-            items.split(/\s*(?:\+|,|&|\band\b)\s*/i).forEach((token) => {
-                matchByName(token, active).forEach((hit) => {
-                    const tally = tallies[slot];
-                    tally.set(hit.id, { product: hit, count: (tally.get(hit.id)?.count || 0) + 1 });
-                });
-            });
-        });
-    });
-
-    return SLOT_DEFS.map((def, i) => ({
-        key: def.key,
-        title: def.title,
-        note: def.note,
-        why: def.why,
-        products: [...tallies[i].values()]
-            .sort((a, b) => b.count - a.count || a.product.name.localeCompare(b.product.name))
-            .slice(0, perSlot)
-            .map((x) => x.product),
-    }));
 }
 
 /**

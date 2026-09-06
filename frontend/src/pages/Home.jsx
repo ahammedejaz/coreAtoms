@@ -44,7 +44,6 @@ import RecentlyViewed from "../components/RecentlyViewed";
 import Hero from "../components/home/Hero";
 import Pillars from "../components/home/Pillars";
 import CategoryIndex from "../components/home/CategoryIndex";
-import Routine from "../components/home/Routine";
 import Standard from "../components/home/Standard";
 import IngredientIndex from "../components/home/IngredientIndex";
 import ProofBand from "../components/home/ProofBand";
@@ -59,7 +58,6 @@ import {
   DEFAULT_EDUCATION,
   fetchHomepageReviews,
   deriveGoals,
-  buildRoutine,
   buildIngredientIndex,
 } from "../services/homepage";
 import { useSiteContent } from "../services/siteContent";
@@ -359,7 +357,6 @@ export default function Home() {
 
   /** Catalogue-derived sections. */
   const goals = useMemo(() => deriveGoals(allProducts), [allProducts]);
-  const routine = useMemo(() => buildRoutine(allProducts), [allProducts]);
   const ingredients = useMemo(() => buildIngredientIndex(allProducts), [allProducts]);
   const activeCount = useMemo(() => allProducts.filter((p) => p.isActive !== false).length, [allProducts]);
 
@@ -401,9 +398,6 @@ export default function Home() {
         title={home.bestSellers.title}
         sub={home.bestSellers.sub}
       />
-    ),
-    routine: (
-      <Routine slots={routine} onAdd={handleAdd} justAddedId={justAddedId} heading={home.routine.title} intro={home.routine.sub} footnote={home.routine.footnote} />
     ),
     break1: breakImages[0] && breaks[0]?.text ? <PhotoBreak image={breakImages[0]} text={breaks[0].text} sub={breaks[0].sub} /> : null,
     standard: <Standard items={standardRows} heading={home.standard.title} intro={home.standard.intro} />,

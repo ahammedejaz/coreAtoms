@@ -32,7 +32,6 @@ export const HOME_SECTIONS = [
   { key: "pillars", label: "Promise panel (below the hero)" },
   { key: "categories", label: "Shop by category and goal" },
   { key: "bestSellers", label: "Best sellers" },
-  { key: "routine", label: "When to take what (daily schedule)" },
   { key: "break1", label: "Photo break 1" },
   { key: "standard", label: "The Formulary standard" },
   { key: "ingredients", label: "What's inside (ingredient index)" },
@@ -101,9 +100,6 @@ export const PAGES = [
       f("categories.title", "Categories heading", "text"),
       f("categories.sub", "Categories line", "text"),
       f("categories.goalsLabel", "Goal chips label", "text"),
-      f("routine.title", "Schedule heading", "text"),
-      f("routine.sub", "Schedule line", "textarea"),
-      f("routine.footnote", "Schedule footnote", "textarea"),
       f("standard.title", "Standard heading", "text"),
       f("standard.intro", "Standard line", "textarea"),
       f("standards", "The rules", "list", {
@@ -140,11 +136,6 @@ export const PAGES = [
       sections: HOME_SECTIONS.map((s) => ({ key: s.key, visible: true })),
       bestSellers: { title: "Best sellers", sub: "The formulas customers come back for." },
       categories: { title: "Shop by category", sub: "Start from what you need. Every range is fully disclosed on the label.", goalsLabel: "Shop by goal" },
-      routine: {
-        title: "When to take what",
-        sub: "Every label carries a pairing note: what a formula goes with and when. Read together, they give the range a daily schedule from breakfast to bedtime.",
-        footnote: "Timings are general guidance drawn from each label's pairing notes, not medical advice. Follow the directions on your pack, and ask a doctor first if you are pregnant, nursing or taking medication.",
-      },
       standard: { title: "The Formulary standard", intro: "Six rules every Core Atoms formula is held to, from the form of each nutrient to the words we use to describe it." },
       standards: [
         { icon: "form", title: "Forms that absorb", text: "We choose the form of each nutrient for how well the body takes it up: magnesium as glycinate, calcium as citrate, vitamin D as D3. The form is printed on the label, not hidden behind a generic name." },
@@ -166,7 +157,7 @@ export const PAGES = [
         cards: [
           { icon: "label", title: "How to read a supplement label", text: "Start with the serving size, then the amount of each active per serving and its share of the daily requirement. Ingredients listed as a blend without amounts are a red flag; every Core Atoms label lists them individually.", href: "/faq", linkText: "Where to find ingredient details" },
           { icon: "form", title: "Why the form of a nutrient matters", text: "Magnesium oxide and magnesium glycinate are both \"magnesium\", yet the body absorbs them very differently and one is far gentler on the stomach. The same goes for calcium citrate versus carbonate, and D3 versus D2. Check the form first.", href: "/shop?q=Magnesium", linkText: "See our magnesium" },
-          { icon: "timing", title: "When to take what", text: "Fat-soluble nutrients such as vitamin D3 and omega-3 absorb best with a meal that contains some fat. Iron is better taken on its own with vitamin C, away from tea, coffee and calcium. Magnesium and ashwagandha suit the evening. Consistency matters more than the exact hour.", href: "#routine", linkText: "See the daily schedule" },
+          { icon: "timing", title: "Timing your doses", text: "Fat-soluble nutrients such as vitamin D3 and omega-3 absorb best with a meal that contains some fat. Iron is better taken on its own with vitamin C, away from tea, coffee and calcium. Magnesium and ashwagandha suit the evening. Consistency matters more than the exact hour.", href: "/faq", linkText: "How to take our formulas" },
           { icon: "testing", title: "What third-party testing checks", text: "An independent laboratory verifies that a batch contains what the label claims (identity and potency) and that it is free of heavy metals and microbial contamination (purity). It is the difference between a claim and a certificate.", href: "/faq", linkText: "Are your products safe?" },
         ],
       },

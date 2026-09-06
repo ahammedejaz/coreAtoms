@@ -3,7 +3,7 @@
  * buyer should understand before buying a supplement from anyone
  * (`DEFAULT_EDUCATION`, or the `homepage_education` setting when saved).
  * White panels on the bone field, one lucide icon each, each with a link
- * into the FAQ, the shop or the routine section.
+ * into the FAQ or the shop.
  *
  * @param {{ cards: Array<{icon?:string, title:string, text:string, href?:string, linkText?:string}>, heading?: string, intro?: string }} props
  * @module components/home/Education

@@ -3,7 +3,9 @@
  * cross-sell strips.
  *
  * Image-led: a 4:5 bone tile carries the bottle (multiply-blended so the
- * studio backdrop disappears), the second photo crossfades in on hover, and
+ * studio backdrop disappears, and `object-contain` so a photograph of any
+ * shape sits whole and centred instead of being cropped), the second photo
+ * crossfades in on hover, and
  * the add-to-cart control lives on the tile. With a mouse it slides up from
  * the bottom edge on hover; on touch it is a round button that stays in
  * view. The copy block stays to three lines: name and price, the benefit
@@ -92,7 +94,7 @@ const ProductCard = React.memo(function ProductCard({ p, onAdd, justAdded, gstPe
               <img
                 src={p.image}
                 alt=""
-                className={`product-img absolute inset-0 h-full w-full object-cover transition-[scale,opacity] duration-700 ease-out-strong can-hover:group-hover:scale-[1.06] ${hoverImage ? "can-hover:group-hover:opacity-0" : ""}`}
+                className={`product-img absolute inset-0 h-full w-full object-contain transition-[scale,opacity] duration-700 ease-out-strong can-hover:group-hover:scale-[1.06] ${hoverImage ? "can-hover:group-hover:opacity-0" : ""}`}
                 style={{ objectPosition: p.imagePosition || "50% 50%" }}
                 loading="lazy"
                 sizes="(max-width: 640px) 50vw, (max-width: 1024px) 33vw, 25vw"
@@ -102,7 +104,7 @@ const ProductCard = React.memo(function ProductCard({ p, onAdd, justAdded, gstPe
                 <img
                   src={hoverImage}
                   alt=""
-                  className="product-img absolute inset-0 hidden h-full w-full scale-[1.06] object-cover opacity-0 transition-opacity duration-700 ease-out-strong can-hover:block can-hover:group-hover:opacity-100"
+                  className="product-img absolute inset-0 hidden h-full w-full scale-[1.06] object-contain opacity-0 transition-opacity duration-700 ease-out-strong can-hover:block can-hover:group-hover:opacity-100"
                   loading="lazy"
                   aria-hidden="true"
                 />

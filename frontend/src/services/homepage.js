@@ -22,11 +22,11 @@ const HOMEPAGE_KEYS = [
  *  when `homepage_categories` hasn't been saved yet. */
 export const DEFAULT_HOME_CATEGORIES = [
     { label: "Multivitamins", emoji: "💊", category: "General Wellness" },
-    { label: "Joint Support", emoji: "🦴", category: "Joint Support" },
-    { label: "Bone Health", emoji: "🧬", category: "Bone Health" },
-    { label: "Hair & Skin", emoji: "✨", category: "HSN" },
-    { label: "Gut Health", emoji: "🌿", category: "Gut Health" },
-    { label: "Collagen", emoji: "🔬", category: "Collagen" },
+    { label: "Bone Health", emoji: "🦴", category: "Bone Health" },
+    { label: "Women’s Health", emoji: "🌸", category: "Women’s Health" },
+    { label: "Hair & Skin", emoji: "✨", category: "Hair & Skin" },
+    { label: "Heart Health", emoji: "❤️", category: "Heart Health" },
+    { label: "Liver Health", emoji: "🌿", category: "Liver Health" },
 ];
 
 /**
@@ -175,12 +175,17 @@ export const INGREDIENT_ROLES = [
     { match: /vitamin\s*c\b/i, name: "Vitamin C", q: "Vitamin C", role: "A water-soluble antioxidant that supports immune defence, iron absorption and the body's own collagen production." },
     { match: /omega/i, name: "Omega-3 (EPA and DHA)", q: "Omega-3", role: "Essential fatty acids from fish oil that support heart, brain and joint health and help balance inflammation." },
     { match: /magnesium\s*glycinate/i, name: "Magnesium glycinate", q: "Magnesium", role: "A gentle, well-absorbed form of magnesium for muscle relaxation, sleep quality and hundreds of enzyme reactions." },
-    { match: /calcium/i, name: "Calcium with D3 and K2", q: "Calcium", role: "The mineral backbone of bones and teeth, paired with the cofactors that help the body place it where it belongs." },
+    { match: /calci/i, name: "Calcium with vitamin D3", q: "Calci", role: "The mineral backbone of bones and teeth, paired with the vitamin D3 and magnesium that help the body place it where it belongs." },
     { match: /\bzinc\b/i, name: "Zinc", q: "Zinc", role: "A trace mineral behind immune defence, skin repair and normal taste and smell." },
-    { match: /\biron\b/i, name: "Iron and folic acid", q: "Iron", role: "Two nutrients for healthy red blood cells and everyday energy, especially for women of reproductive age." },
+    { match: /\biron\b|ferrovix|haematinic/i, name: "Iron, folic acid and B12", q: "Ferrovix", role: "The nutrients red blood cells and haemoglobin are made from, for everyday energy, especially for women of reproductive age." },
     { match: /b[\s-]*complex/i, name: "B-complex", q: "B-Complex", role: "The eight B vitamins that turn food into energy and support the nervous system." },
     { match: /biotin/i, name: "Biotin (vitamin B7)", q: "Biotin", role: "A B vitamin the body uses to make keratin, the protein that hair and nails are built from." },
-    { match: /collagen/i, name: "Collagen peptides", q: "Collagen", role: "Hydrolysed protein that supplies the building blocks of skin, hair, nails, cartilage and connective tissue." },
+    { match: /collagen/i, name: "Marine collagen peptides", q: "Collagen", role: "Hydrolysed protein that supplies the building blocks of skin, hair, nails, cartilage and connective tissue." },
+    { match: /glutathione/i, name: "Glutathione", q: "Glutathione", role: "The body's master antioxidant, made in every cell and used up defending them; supports an even skin tone and the liver's detox pathways." },
+    { match: /hair,?\s*skin|keratin/i, name: "Biotin, collagen and keratin", q: "Hair", role: "The vitamin and the two structural proteins that hair, skin and nails are built from, taken together so new growth is stronger." },
+    { match: /liver|milk\s*thistle/i, name: "Milk thistle (silymarin)", q: "Liver", role: "A flavonoid complex with a long history of use for liver support, paired with antioxidants that protect liver cells." },
+    { match: /folic|gestation|nutriwoman/i, name: "Folic acid, zinc and vitamin D", q: "Nutriwoman", role: "The pregnancy essentials: folic acid for new cells, zinc for reproduction and vitamin D for calcium absorption and immunity." },
+    { match: /nutrifort/i, name: "32-nutrient complex", q: "Nutrifort", role: "A complete daily set of vitamins, minerals and supporting nutrients for energy release, immunity, heart, eyes and bones." },
     { match: /probiotic/i, name: "Probiotics", q: "Probiotic", role: "Live cultures that help maintain a balanced gut microbiome, which supports digestion and immune function." },
     { match: /turmeric|curcumin/i, name: "Curcumin", q: "Turmeric", role: "The active compound in turmeric, studied for joint comfort and its role in a healthy inflammatory response." },
     { match: /ashwagandha/i, name: "Ashwagandha", q: "Ashwagandha", role: "An adaptogenic root extract, traditionally used to support the body's response to everyday stress and steady focus." },

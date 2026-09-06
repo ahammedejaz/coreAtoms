@@ -132,8 +132,15 @@ studio backdrop disappears and the bottle looks placed, not pasted.
   category tiles that tilt toward the pointer with a sweeping sheen (`Tilt`),
   and primary buttons that lean toward the pointer (`Magnetic`). A custom
   pointer with "View" labels exists (`Cursor`) but ships off.
-- The real jar. Every product photograph is shot on a flat near-white sweep,
-  so `utils/cutout.js` lifts the jar off it in the browser: a flood fill from
+- The real jar. Every product photograph is delivered as a portrait 4:5
+  canvas (1200×1500) on pure white with the product centred and filling about
+  three-quarters of the height (`frontend/public/products/` holds the current
+  range, built from the 3D pack mockups and the studio jar shots). Product
+  tiles and the product-page gallery use `object-contain`, so a photograph of
+  any shape sits whole and centred rather than being cropped, and the white
+  ground disappears into the bone tile through the multiply blend. Because the
+  ground is a flat near-white sweep, `utils/cutout.js` lifts the jar off it in
+  the browser: a flood fill from
   the border marks the backdrop, the photographed shadow becomes alpha, and
   the crop is centred on the jar with room for that shadow. The result is a
   plain `<img>` (`components/Cutout`) that can stand on navy or bone with its

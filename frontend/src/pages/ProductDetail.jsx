@@ -408,7 +408,7 @@ export default function ProductDetail() {
                 <img
                   src={images[activeImg] || product.image}
                   alt={product.name}
-                  className="product-img h-full w-full object-cover transition-transform duration-300 ease-out-strong"
+                  className="product-img h-full w-full object-contain transition-transform duration-300 ease-out-strong"
                   loading="eager"
                   fetchPriority="high"
                   sizes="(max-width: 1024px) 100vw, 50vw"

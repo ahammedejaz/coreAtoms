@@ -1299,6 +1299,7 @@ export default function AdminProducts({ onProductsChange, isActive = true }) {
                                 <div className="grid gap-3 md:grid-cols-2">
                                     <div>
                                         <div className="text-xs text-stone-400 mb-2">Product image</div>
+                                        <p className="mb-2 text-[11px] leading-snug text-stone-400">Best as a portrait (4:5) photograph on a plain white background with the product centred and filling about three-quarters of the height; the card never crops it.</p>
                                         <label className="inline-flex items-center gap-2 cursor-pointer rounded-xl border border-[#E8E4DE] bg-stone-50 hover:border-[#1e3a5f]/40 hover:bg-[#EFF6FF] px-4 py-2 text-xs font-medium text-stone-700 transition w-fit">
                                             <svg className="h-3.5 w-3.5 text-stone-400" viewBox="0 0 20 20" fill="currentColor"><path fillRule="evenodd" d="M3 17a1 1 0 011-1h12a1 1 0 110 2H4a1 1 0 01-1-1zM6.293 6.707a1 1 0 010-1.414l3-3a1 1 0 011.414 0l3 3a1 1 0 01-1.414 1.414L11 5.414V13a1 1 0 11-2 0V5.414L7.707 6.707a1 1 0 01-1.414 0z" clipRule="evenodd" /></svg>
                                             {pFile ? pFile.name : "Upload image"}

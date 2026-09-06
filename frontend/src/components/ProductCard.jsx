@@ -94,7 +94,7 @@ const ProductCard = React.memo(function ProductCard({ p, onAdd, justAdded, gstPe
               <img
                 src={p.image}
                 alt=""
-                className={`product-img absolute inset-0 h-full w-full object-contain transition-[scale,opacity] duration-700 ease-out-strong can-hover:group-hover:scale-[1.06] ${hoverImage ? "can-hover:group-hover:opacity-0" : ""} ${out ? "opacity-45 saturate-50" : ""}`}
+                className={`product-img absolute inset-0 h-full w-full object-contain transition-[scale,opacity] duration-700 ease-out-strong can-hover:group-hover:scale-[1.06] ${hoverImage ? "can-hover:group-hover:opacity-0" : ""}`}
                 style={{ objectPosition: p.imagePosition || "50% 50%" }}
                 loading="lazy"
                 sizes="(max-width: 640px) 50vw, (max-width: 1024px) 33vw, 25vw"
@@ -117,8 +117,8 @@ const ProductCard = React.memo(function ProductCard({ p, onAdd, justAdded, gstPe
         {(offPct || isNew || out) && (
           <div className="pointer-events-none absolute left-3.5 top-3.5 flex flex-wrap gap-1.5">
             {out ? (
-              <span className="inline-flex items-center gap-1.5 rounded-full bg-red-600 px-2.5 py-1 text-[11px] font-semibold text-white shadow-float">
-                <span className="h-1.5 w-1.5 rounded-full bg-white/90" aria-hidden="true" />
+              <span className="inline-flex items-center gap-1.5 rounded-full border border-red-200 bg-red-50/95 px-2.5 py-1 text-[11px] font-semibold text-red-700">
+                <span className="h-1.5 w-1.5 rounded-full bg-red-500" aria-hidden="true" />
                 Sold out
               </span>
             ) : (

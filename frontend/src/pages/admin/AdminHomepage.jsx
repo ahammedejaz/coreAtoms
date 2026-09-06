@@ -443,11 +443,11 @@ export default function AdminHomepage({ products = [], isActive = true }) {
                     </div>
                     <div>
                         <div className="text-xs text-stone-400 mb-2">Trust icons (3 shown below CTAs)</div>
-                        <div className="grid gap-2 sm:grid-cols-3">
+                        <div className="grid gap-2 sm:grid-cols-2 md:grid-cols-3">
                             {trust.map((t, i) => (
-                                <div key={i} className="flex items-center gap-2 rounded-xl border border-[#E8E4DE] bg-stone-50 px-3 py-2">
+                                <div key={i} className="flex min-w-0 items-center gap-2 rounded-xl border border-[#E8E4DE] bg-stone-50 px-3 py-2">
                                     <input value={t.icon} onChange={(e) => setTrust((p) => p.map((x, j) => j === i ? { ...x, icon: e.target.value } : x))} className="w-10 text-center rounded-lg border border-[#E8E4DE] bg-white px-1 py-1 text-base outline-none" />
-                                    <input value={t.label} onChange={(e) => setTrust((p) => p.map((x, j) => j === i ? { ...x, label: e.target.value } : x))} className="flex-1 rounded-lg border border-[#E8E4DE] bg-white px-2 py-1 text-xs text-stone-900 outline-none" placeholder="Label" />
+                                    <input value={t.label} onChange={(e) => setTrust((p) => p.map((x, j) => j === i ? { ...x, label: e.target.value } : x))} className="min-w-0 flex-1 rounded-lg border border-[#E8E4DE] bg-white px-2 py-1 text-xs text-stone-900 outline-none" placeholder="Label" />
                                 </div>
                             ))}
                         </div>
@@ -471,7 +471,7 @@ export default function AdminHomepage({ products = [], isActive = true }) {
                 <SectionHeader step="4" title="Value Pillars" desc='The 4 cards shown below the hero — "Clean Labels", "Lab Tested", etc.' />
                 <div className="space-y-3">
                     {pillars.map((p, i) => (
-                        <div key={i} className="grid gap-2 grid-cols-1 sm:grid-cols-[48px_1fr_2fr_32px] items-start sm:items-center rounded-xl border border-[#E8E4DE] bg-stone-50 px-3 py-2.5">
+                        <div key={i} className="grid gap-2 grid-cols-1 *:min-w-0 sm:grid-cols-[48px_minmax(0,1fr)_minmax(0,2fr)_32px] items-start sm:items-center rounded-xl border border-[#E8E4DE] bg-stone-50 px-3 py-2.5">
                             <input value={p.icon} onChange={(e) => setPillars((prev) => prev.map((x, j) => j === i ? { ...x, icon: e.target.value } : x))}
                                 className="w-10 text-center rounded-lg border border-[#E8E4DE] bg-white px-1 py-1.5 text-lg outline-none" title="Icon/emoji" />
                             <input value={p.title} onChange={(e) => setPillars((prev) => prev.map((x, j) => j === i ? { ...x, title: e.target.value } : x))}
@@ -543,14 +543,14 @@ export default function AdminHomepage({ products = [], isActive = true }) {
                 <SectionHeader step="6" title="Shop by Category" desc="The category index on the home page, the category row in the header and the shop filters. The photograph is the bottle shown on the home page's category stage when that category is hovered; shoot it on a plain white sweep so it can be lifted off the backdrop. Leave it empty to show the first product photograph in that category." />
                 <div className="space-y-2 mb-3">
                     {categories.map((cat, i) => (
-                        <div key={i} className="grid gap-2 grid-cols-1 sm:grid-cols-[48px_1fr_1fr_auto_32px] items-start sm:items-center rounded-xl border border-[#E8E4DE] bg-stone-50 px-3 py-2.5">
+                        <div key={i} className="grid gap-2 grid-cols-1 *:min-w-0 md:grid-cols-[48px_minmax(0,1fr)_minmax(0,1fr)_auto_32px] items-start md:items-center rounded-xl border border-[#E8E4DE] bg-stone-50 px-3 py-2.5">
                             <input value={cat.emoji} onChange={(e) => setCategories((prev) => prev.map((x, j) => j === i ? { ...x, emoji: e.target.value } : x))}
                                 className="w-10 text-center rounded-lg border border-[#E8E4DE] bg-white px-1 py-1.5 text-lg outline-none" title="Emoji" />
                             <input value={cat.label} onChange={(e) => setCategories((prev) => prev.map((x, j) => j === i ? { ...x, label: e.target.value } : x))}
                                 className="rounded-lg border border-[#E8E4DE] bg-white px-2 py-1.5 text-sm font-semibold text-stone-900 outline-none" placeholder="Display label" />
                             <input value={cat.category} onChange={(e) => setCategories((prev) => prev.map((x, j) => j === i ? { ...x, category: e.target.value } : x))}
                                 className="rounded-lg border border-[#E8E4DE] bg-white px-2 py-1.5 text-xs text-stone-500 outline-none font-mono" placeholder="Product category value" title="Must match the category field in your products" />
-                            <div className="shrink-0 flex items-center gap-2">
+                            <div className="flex min-w-0 flex-wrap items-center gap-2">
                                 {(cat._preview || cat.image) ? (
                                     <img src={cat._preview || cat.image} alt="" className="h-10 w-10 rounded-lg object-cover border border-[#E8E4DE]" />
                                 ) : (
@@ -664,7 +664,7 @@ export default function AdminHomepage({ products = [], isActive = true }) {
                         <div className="text-xs text-stone-400 mb-2">Stats (up to 4, shown as a 2×2 grid)</div>
                         <div className="space-y-2">
                             {whyUs.stats.map((s, i) => (
-                                <div key={i} className="grid gap-2 grid-cols-[112px_1fr_32px] items-center">
+                                <div key={i} className="grid gap-2 grid-cols-[88px_minmax(0,1fr)_32px] items-center *:min-w-0">
                                     <input value={s.value} onChange={(e) => setWhyUs((w) => ({ ...w, stats: w.stats.map((x, j) => j === i ? { ...x, value: e.target.value } : x) }))}
                                         className="rounded-lg border border-[#E8E4DE] bg-stone-50 px-2 py-1.5 text-sm font-semibold text-stone-900 outline-none" placeholder="e.g. 100%" />
                                     <input value={s.label} onChange={(e) => setWhyUs((w) => ({ ...w, stats: w.stats.map((x, j) => j === i ? { ...x, label: e.target.value } : x) }))}

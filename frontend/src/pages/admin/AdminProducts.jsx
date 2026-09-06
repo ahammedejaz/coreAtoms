@@ -820,7 +820,7 @@ export default function AdminProducts({ onProductsChange, isActive = true }) {
                 <div className="text-base font-semibold text-stone-900">Products</div>
 
                 <div className="mt-4">
-                    <div className="flex items-center justify-between gap-3">
+                    <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
                         <div>
                             <div className="text-sm font-semibold text-stone-900">
                                 Products
@@ -831,7 +831,7 @@ export default function AdminProducts({ onProductsChange, isActive = true }) {
                             </div>
                         </div>
 
-                        <div className="flex items-center gap-2">
+                        <div className="flex flex-wrap items-center gap-2">
                             {products.filter(p => p.is_active && Number(p.stock_qty || 0) <= LOW_STOCK_THRESHOLD).length > 0 && (
                                 <span className="inline-flex items-center rounded-full bg-amber-100 px-3 py-1.5 text-xs font-semibold text-amber-700">
                                     {products.filter(p => p.is_active && Number(p.stock_qty || 0) <= LOW_STOCK_THRESHOLD).length} low stock ⚠️
@@ -871,8 +871,8 @@ export default function AdminProducts({ onProductsChange, isActive = true }) {
                                 </button>
                             </div>
 
-                            <div className="mt-4 grid gap-3">
-                                <div className="grid gap-3 md:grid-cols-2">
+                            <div className="mt-4 grid gap-3 *:min-w-0">
+                                <div className="grid gap-3 *:min-w-0 md:grid-cols-2">
                                     <div>
                                         <div className="text-xs text-stone-400">Product name *</div>
                                         <input
@@ -1060,7 +1060,7 @@ export default function AdminProducts({ onProductsChange, isActive = true }) {
                                                 }
                                             }}
                                             placeholder="Type a highlight, press Enter or comma…"
-                                            className="flex-1 rounded-xl border border-[#E8E4DE] bg-white px-3 py-2 text-sm text-stone-900 placeholder:text-stone-400 focus:ring-2 focus:ring-[#1e3a5f]/10 focus:border-[#1e3a5f] outline-none transition"
+                                            className="min-w-0 flex-1 rounded-xl border border-[#E8E4DE] bg-white px-3 py-2 text-sm text-stone-900 placeholder:text-stone-400 focus:ring-2 focus:ring-[#1e3a5f]/10 focus:border-[#1e3a5f] outline-none transition"
                                         />
                                         <button
                                             type="button"
@@ -1107,11 +1107,11 @@ export default function AdminProducts({ onProductsChange, isActive = true }) {
                                     {variants.length > 0 && (
                                         <div className="space-y-2">
                                             {/* Header */}
-                                            <div className="hidden sm:grid grid-cols-[1fr_90px_90px_70px_85px_32px] gap-2 text-[10px] font-semibold uppercase tracking-wide text-stone-400 px-1">
+                                            <div className="hidden md:grid grid-cols-[minmax(0,1fr)_90px_90px_70px_85px_32px] gap-2 text-[10px] font-semibold uppercase tracking-wide text-stone-400 px-1">
                                                 <span>Label</span><span>Price (₹)</span><span>MRP (₹)</span><span>Stock</span><span>SKU</span><span />
                                             </div>
                                             {variants.map((v, i) => (
-                                                <div key={v.id || i} className="grid grid-cols-2 sm:grid-cols-[1fr_90px_90px_70px_85px_32px] gap-2 items-center bg-white rounded-xl border border-[#E8E4DE] px-3 py-2.5">
+                                                <div key={v.id || i} className="grid grid-cols-2 *:min-w-0 md:grid-cols-[minmax(0,1fr)_90px_90px_70px_85px_32px] gap-2 items-center bg-white rounded-xl border border-[#E8E4DE] px-3 py-2.5">
                                                     {/* Label */}
                                                     <input
                                                         value={v.label || ""}
@@ -1362,7 +1362,7 @@ export default function AdminProducts({ onProductsChange, isActive = true }) {
                                         )}
                                     </div>
 
-                                    <div className="flex items-end gap-2">
+                                    <div className="flex min-w-0 items-end gap-2">
                                         <button
                                             type="button"
                                             onClick={requestSave}

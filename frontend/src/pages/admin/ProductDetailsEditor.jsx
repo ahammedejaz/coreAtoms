@@ -220,27 +220,27 @@ export default function ProductDetailsEditor({ value, onChange }) {
             >
                 {d.benefits.length === 0 && <div className="text-[11px] text-stone-400">No benefits yet.</div>}
                 {d.benefits.map((b, i) => (
-                    <div key={i} className="flex flex-col gap-2 rounded-lg border border-[#E8E4DE] bg-stone-50 p-2.5 sm:flex-row sm:items-start">
-                        <div className="flex items-center gap-2">
+                    <div key={i} className="flex min-w-0 flex-col gap-2 rounded-lg border border-[#E8E4DE] bg-stone-50 p-2.5 md:flex-row md:items-start">
+                        <div className="flex min-w-0 items-center gap-2">
                             <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-[#1e3a5f]/[0.07] text-[#1e3a5f]">
                                 <BenefitIcon name={b.icon} className="h-4 w-4" />
                             </span>
                             <select
                                 value={b.icon}
                                 onChange={(e) => patchRow("benefits", i, "icon", e.target.value)}
-                                className="rounded-lg border border-[#E8E4DE] bg-white px-2 py-1.5 text-xs text-stone-700 outline-none sm:w-36"
+                                className="min-w-0 flex-1 rounded-lg border border-[#E8E4DE] bg-white px-2 py-1.5 text-xs text-stone-700 outline-none md:w-36 md:flex-none"
                             >
                                 {ICON_OPTIONS.map((o) => (
                                     <option key={o.value} value={o.value}>{o.label}</option>
                                 ))}
                             </select>
                         </div>
-                        <div className="flex flex-1 flex-col gap-2 sm:flex-row sm:items-start">
+                        <div className="flex min-w-0 flex-1 flex-col gap-2 md:flex-row md:items-start">
                             <input
                                 value={b.title}
                                 onChange={(e) => patchRow("benefits", i, "title", e.target.value)}
                                 placeholder="Benefit title, e.g. Stronger bones"
-                                className={`${inputCls} sm:w-52`}
+                                className={`${inputCls} min-w-0 md:w-52`}
                             />
                             <input
                                 value={b.text}
@@ -264,8 +264,8 @@ export default function ProductDetailsEditor({ value, onChange }) {
             >
                 {d.ingredients.length === 0 && <div className="text-[11px] text-stone-400">No ingredients yet.</div>}
                 {d.ingredients.map((r, i) => (
-                    <div key={i} className="flex flex-col gap-2 rounded-lg border border-[#E8E4DE] bg-stone-50 p-2.5 sm:flex-row sm:items-start">
-                        <div className="grid flex-1 gap-2 sm:grid-cols-[200px_110px_1fr]">
+                    <div key={i} className="flex min-w-0 flex-col gap-2 rounded-lg border border-[#E8E4DE] bg-stone-50 p-2.5 md:flex-row md:items-start">
+                        <div className="grid min-w-0 flex-1 gap-2 *:min-w-0 md:grid-cols-[minmax(0,200px)_minmax(0,110px)_minmax(0,1fr)]">
                             <input
                                 value={r.name}
                                 onChange={(e) => patchRow("ingredients", i, "name", e.target.value)}
@@ -316,8 +316,8 @@ export default function ProductDetailsEditor({ value, onChange }) {
             >
                 {d.faqs.length === 0 && <div className="text-[11px] text-stone-400">No FAQs yet.</div>}
                 {d.faqs.map((f, i) => (
-                    <div key={i} className="flex gap-2 rounded-lg border border-[#E8E4DE] bg-stone-50 p-2.5">
-                        <div className="flex flex-1 flex-col gap-2">
+                    <div key={i} className="flex min-w-0 gap-2 rounded-lg border border-[#E8E4DE] bg-stone-50 p-2.5">
+                        <div className="flex min-w-0 flex-1 flex-col gap-2">
                             <input
                                 value={f.q}
                                 onChange={(e) => patchRow("faqs", i, "q", e.target.value)}

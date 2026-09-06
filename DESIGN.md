@@ -140,9 +140,12 @@ studio backdrop disappears and the bottle looks placed, not pasted.
   any shape sits whole and centred rather than being cropped, and the white
   ground disappears into the bone tile through the multiply blend. Because the
   ground is a flat near-white sweep, `utils/cutout.js` lifts the jar off it in
-  the browser: a flood fill from
-  the border marks the backdrop, the photographed shadow becomes alpha, and
-  the crop is centred on the jar with room for that shadow. The result is a
+  the browser: a fill from the border marks the backdrop and the shadow by
+  walking only along paths that keep moving away from the backdrop colour
+  (so it never pours into a nearly white pack panel or follows a bright edge
+  line into an enclosed white patch), the photographed shadow becomes alpha,
+  the anti-aliased rim is matted so no pale fringe is left around a dark jar,
+  and the crop is centred on the jar with room for that shadow. The result is a
   plain `<img>` (`components/Cutout`) that can stand on navy or bone with its
   own shadow. It appears on the category index's stage (the hovered
   category's jar, swapped only once the next cutout is ready so the field is

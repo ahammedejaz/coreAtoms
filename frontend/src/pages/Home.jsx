@@ -349,11 +349,12 @@ export default function Home() {
 
   /** Shown on the hero only when no photographs are saved. */
 
-  /** The second and third hero slides double as the photo breaks. */
+  /** Each photo break shows its own photograph (Site content → Home), else the second and third hero slides. */
   const breakImages = useMemo(() => {
     const list = (heroImages || []).filter((s) => s?.url);
-    return [list[1] || null, list[2] || null];
-  }, [heroImages]);
+    const saved = Array.isArray(home.breaks) ? home.breaks : [];
+    return [1, 2].map((n, i) => (saved[i]?.image ? { url: saved[i].image, position: "50% 50%" } : list[n] || null));
+  }, [heroImages, home.breaks]);
 
   /** Catalogue-derived sections. */
   const goals = useMemo(() => deriveGoals(allProducts), [allProducts]);

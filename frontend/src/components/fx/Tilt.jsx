@@ -2,7 +2,9 @@
  * Tilt.jsx — A shallow 3D tilt that follows the pointer across a tile,
  * with a soft light that sweeps across the surface, so product and
  * category tiles read as objects with a face rather than flat rectangles.
- * Only on a fine pointer; touch and reduced motion get the plain child.
+ * Only on a fine pointer; touch and reduced motion get the plain child,
+ * which keeps `position: relative` so the corner controls and badges the
+ * tiles place inside it stay anchored to the tile rather than the card.
  *
  * @param {{ children, max?: number, scale?: number, className?: string, as?: string }} props
  * @module components/fx/Tilt
@@ -59,7 +61,7 @@ export default function Tilt({ children, max = 7, scale = 1.015, className = "",
     };
   }, [tilt, max, scale]);
 
-  if (!tilt) return <Tag className={className}>{children}</Tag>;
+  if (!tilt) return <Tag className={`relative ${className}`}>{children}</Tag>;
   return (
     <Tag ref={ref} className={`tilt ${className}`}>
       {children}

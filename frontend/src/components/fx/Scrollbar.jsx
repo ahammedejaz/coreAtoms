@@ -1,12 +1,14 @@
 /**
  * Scrollbar.jsx — The storefront's own scrollbar and reading-progress line.
  *
- * On desktop with a mouse the native scrollbar is hidden (`html.has-rail`)
- * and replaced by a slim ink rail on the right edge: a thumb sized to the
- * page, draggable, that brightens while the page moves and settles to a
- * quiet hairline when it stops. A two-pixel amber line along the top of the
- * viewport shows how far down the page the visitor is. Both are written to
- * the DOM directly from the scroll event, never through React state.
+ * The native scrollbar is hidden (`html.has-rail`) and replaced by a slim
+ * ink rail on the right edge: a thumb sized to the page, draggable, that
+ * brightens while the page moves and settles to a quiet hairline when it
+ * stops. On touch screens the rail has no track and fades out entirely once
+ * the page is still (`@media (pointer: coarse)` in index.css). A two-pixel
+ * amber line along the top of the viewport shows how far down the page the
+ * visitor is. Both are written to the DOM directly from the scroll event,
+ * never through React state.
  *
  * @module components/fx/Scrollbar
  */

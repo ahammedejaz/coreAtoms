@@ -9,15 +9,15 @@
  */
 import { Link } from "react-router-dom";
 import { ArrowRight } from "lucide-react";
-import useDocumentTitle from "../hooks/useDocumentTitle";
+import SEO from "../components/SEO";
 import { useSiteContent } from "../services/siteContent";
 
 export default function NotFound() {
-  useDocumentTitle("Page Not Found | Core Atoms");
   const copy = useSiteContent("page_errors");
 
   return (
     <div className="flex min-h-[60vh] flex-col items-center justify-center py-12 text-center">
+      <SEO title="Page Not Found" description="That page is not on the site." noIndex />
       <p className="font-display text-[6rem] font-semibold leading-none tracking-[-0.06em] text-ink sm:text-[8.5rem]" aria-hidden="true">404</p>
       <h1 className="mt-4 font-display text-2xl font-semibold tracking-tight text-ink sm:text-3xl">{copy.notFoundTitle}</h1>
       <p className="mt-2 max-w-sm text-sm text-stone-500">{copy.notFoundText}</p>

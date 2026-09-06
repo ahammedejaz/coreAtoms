@@ -80,7 +80,7 @@ export const PAGES = [
     description: "Switch the storefront's effects on or off. Visitors who ask their device for reduced motion never see them regardless.",
     fields: [
       f("smoothScroll", "Smooth, weighted scrolling (desktop)", "toggle"),
-      f("scrollbar", "Custom scrollbar and reading line (desktop)", "toggle"),
+      f("scrollbar", "Custom scrollbar and reading line (every device; on phones the rail shows while the page moves)", "toggle"),
       f("cursor", "Custom pointer with “View” labels (desktop)", "toggle"),
       f("curtain", "Navy curtain between pages", "toggle"),
       f("grain", "Film grain over the page", "toggle"),
@@ -112,8 +112,9 @@ export const PAGES = [
       f("ingredients.title", "Ingredient index heading", "text"),
       f("ingredients.sub", "Ingredient index line", "text"),
       f("testimonials.title", "Reviews heading", "text"),
-      f("breaks", "Photo breaks (use the second and third hero photographs)", "list", {
-        fields: [f("text", "Headline", "text"), f("sub", "Line", "textarea")],
+      f("breaks", "Photo breaks", "list", {
+        hint: "Two full-width photographs between sections. Leave a photograph empty to reuse the second and third hero photographs.",
+        fields: [f("image", "Photograph", "image"), f("text", "Headline", "text"), f("sub", "Line", "textarea")],
         max: 2,
       }),
       f("education.title", "Education heading", "text"),
@@ -148,8 +149,8 @@ export const PAGES = [
       ingredients: { title: "What's inside", sub: "The actives across the range, what each is known for, and how many formulas carry it." },
       testimonials: { title: "What customers say" },
       breaks: [
-        { text: "Made for the days you keep.", sub: "Formulas built around routines, not resolutions. One dose, the same time, every day." },
-        { text: "Checked before it ships.", sub: "Identity, potency and contaminants, verified on every batch by an independent laboratory." },
+        { image: "", text: "Made for the days you keep.", sub: "Formulas built around routines, not resolutions. One dose, the same time, every day." },
+        { image: "", text: "Checked before it ships.", sub: "Identity, potency and contaminants, verified on every batch by an independent laboratory." },
       ],
       education: {
         title: "Know your supplements",

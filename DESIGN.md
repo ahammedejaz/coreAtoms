@@ -123,7 +123,8 @@ studio backdrop disappears and the bottle looks placed, not pasted.
   reduced-motion): Lenis smooth scrolling (`SmoothScroll`, lerp 0.1, with
   `useScrollLock` for the drawer, menu, filter sheet and promo so overlays
   stop the page underneath), a two-pixel amber reading line at the top and a
-  draggable ink rail replacing the native scrollbar on desktop (`Scrollbar`),
+  draggable ink rail replacing the native scrollbar on every device, a
+  three-pixel pill that fades out at rest on touch screens (`Scrollbar`),
   a navy curtain that wipes over route changes carrying the destination's
   name (`RouteCurtain`: 300ms cover, 60ms hold, 560ms reveal), a faint film
   grain over the page (`Grain`, multiply at 0.055), headings that rise word by
@@ -165,7 +166,9 @@ studio backdrop disappears and the bottle looks placed, not pasted.
   and what those formulas are taken for, beside a navy stage showing the
   hovered category's jar; plus "Shop by goal" chips derived from every
   product's `best_for`; it replaced the photo-tile strip, which repeated the
-  same two photographs six times), best sellers (in `Home.jsx`), `PhotoBreak` (a full-bleed photograph with one line, used
+  same two photographs six times), best sellers (in `Home.jsx`), `PhotoBreak` (a full-bleed photograph with one line, its own
+  photograph under Site content → Home or else the second and third hero
+  photographs, used
   twice), `Standard` (the six Formulary rules as a pinned story on desktop: a
   navy card holding the current rule's numeral, a six-segment progress line
   and an index of the rules with the numerals in one aligned column, beside

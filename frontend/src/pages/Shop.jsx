@@ -316,7 +316,7 @@ export default function Shop() {
                   <X className="h-3 w-3 text-stone-400" strokeWidth={2} aria-hidden="true" />
                 </button>
               ))}
-              <button type="button" onClick={clearFilters} className="text-xs font-semibold text-brand hover:underline underline-offset-4">
+              <button type="button" onClick={clearFilters} className="py-1.5 text-xs font-semibold text-brand hover:underline underline-offset-4">
                 Clear all
               </button>
             </div>

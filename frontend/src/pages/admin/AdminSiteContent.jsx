@@ -22,6 +22,16 @@ import { PAGES, pageDef } from "../../content/siteContent";
 import { fetchStoredContent, mergeContent, primeSiteContent } from "../../services/siteContent";
 import { primeMotionSettings } from "../../context/MotionContext";
 
+/** Every photograph on the storefront and the screen that edits it. */
+const PHOTO_GUIDE = [
+  { what: "Logo (header, footer, sign-in panel)", where: "Homepage → 1. Site logo", to: "/admin/homepage" },
+  { what: "Hero photographs (home)", where: "Homepage → 2. Hero carousel", to: "/admin/homepage" },
+  { what: "Category bottles (home category stage)", where: "Homepage → 6. Shop by category", to: "/admin/homepage" },
+  { what: "Photo breaks (home, two full-width photographs)", where: "Site content → Home → Photo breaks", key: "page_home" },
+  { what: "Sign-in panel photograph", where: "Site content → Account pages → Panel photograph", key: "page_account" },
+  { what: "Product photographs", where: "Products → each product", to: "/admin/products" },
+];
+
 /** Where each page can be seen on the storefront. */
 const PREVIEW = {
   site_global: "/", site_motion: "/", page_home: "/", page_shop: "/shop", page_product: "/shop", page_cart: "/cart",
@@ -316,6 +326,23 @@ export default function AdminSiteContent({ isActive = true }) {
             </li>
           ))}
         </ul>
+
+        <div className="mt-4 rounded-2xl border border-[#E8E4DE] bg-white p-4">
+          <div className="text-xs font-semibold text-stone-700">Where the photographs live</div>
+          <ul className="mt-2 space-y-2">
+            {PHOTO_GUIDE.map((g) => (
+              <li key={g.what} className="text-[11.5px] leading-snug text-stone-500">
+                <span className="text-stone-700">{g.what}</span>
+                <br />
+                {g.key ? (
+                  <button type="button" onClick={() => setActiveKey(g.key)} className="font-medium text-[#1e3a5f] hover:underline">{g.where}</button>
+                ) : (
+                  <Link to={g.to} className="font-medium text-[#1e3a5f] hover:underline">{g.where}</Link>
+                )}
+              </li>
+            ))}
+          </ul>
+        </div>
       </nav>
 
       {/* Editor */}

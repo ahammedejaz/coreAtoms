@@ -147,8 +147,10 @@ export default function Hero({ images, copy, trust }) {
                   onClick={() => goTo(i)}
                   aria-label={`Show photograph ${i + 1} of ${slides.length}`}
                   aria-current={i === current ? "true" : undefined}
-                  className={`h-1 rounded-full transition-colors duration-300 ${i === current ? "w-8 bg-amber" : "w-3 bg-white/40 hover:bg-white/75"}`}
-                />
+                  className="group/dot -my-3 py-3"
+                >
+                  <span className={`block h-1 rounded-full transition-colors duration-300 ${i === current ? "w-8 bg-amber" : "w-3 bg-white/40 group-hover/dot:bg-white/75"}`} />
+                </button>
               ))}
             </div>
           )}

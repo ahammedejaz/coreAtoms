@@ -16,6 +16,7 @@ import { useEffect, useState } from "react";
 import { Check } from "lucide-react";
 import { supabase } from "../services/supabase/client";
 import { useSiteContent } from "../services/siteContent";
+import { useSiteLogo } from "../services/siteLogo";
 import MaskWords from "./fx/MaskWords";
 
 let heroCache = null;
@@ -37,6 +38,7 @@ async function fetchFirstHeroImage() {
 
 export default function AuthShell({ title, subtitle, children }) {
   const account = useSiteContent("page_account");
+  const logo = useSiteLogo();
   const points = (account.panelPoints || []).filter(Boolean).slice(0, 3);
   const [fallback, setFallback] = useState(null);
   const [broken, setBroken] = useState(false);
@@ -64,7 +66,7 @@ export default function AuthShell({ title, subtitle, children }) {
         )}
 
         <div className="relative z-[2] flex items-center justify-between gap-4">
-          <img src="/logo.png" alt="Core Atoms" className="h-6 w-auto brightness-0 invert sm:h-7" />
+          <img src={logo} alt="Core Atoms" className="h-6 w-auto brightness-0 invert sm:h-7" />
           {account.panelEyebrow && (
             <span className="rounded-full border border-white/15 bg-white/10 px-3 py-1 text-[11px] font-semibold uppercase tracking-[0.16em] text-white/75 backdrop-blur-sm">
               {account.panelEyebrow}

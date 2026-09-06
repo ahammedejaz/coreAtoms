@@ -38,7 +38,7 @@ import HintIcon from "./HintIcon";
 import { useScrollLock } from "./fx/SmoothScroll";
 
 const navLinkClass = ({ isActive }) =>
-  `text-sm transition-colors duration-150 ${isActive ? "text-ink font-semibold" : "text-stone-600 hover:text-ink"}`;
+  `-mx-1 px-1 py-2 text-sm transition-colors duration-150 ${isActive ? "text-ink font-semibold" : "text-stone-600 hover:text-ink"}`;
 
 const mobileNavLinkActiveClass = "bg-brand-soft text-brand font-semibold";
 const mobileNavLinkInactiveClass = "text-stone-700 hover:bg-bone hover:text-ink";

@@ -12,7 +12,9 @@
  * The outgoing page is kept on screen through `useOutlet()`: the element
  * from the previous render is held in a ref while the field covers it.
  * Without the curtain (reduced motion, admin) the live outlet renders
- * with the short `page-enter` fade.
+ * with the short `page-enter` fade. The held element still renders under
+ * the *new* location, so anything inside it that redirects on render (the
+ * route guards) must check the current path before navigating again.
  *
  * @param {{ children: (content: React.ReactNode, arriving: boolean, curtain: boolean, fullBleed: boolean) => React.ReactNode }} props
  * @module components/fx/RouteCurtain

@@ -540,7 +540,7 @@ export default function AdminHomepage({ products = [], isActive = true }) {
 
             {/* ══ 6 · CATEGORIES ═════════════════════════════════════════════ */}
             <div className="rounded-2xl border border-[#E8E4DE] bg-white p-6">
-                <SectionHeader step="6" title="Shop by Category" desc="The tiles shown on the homepage. Add an image to show a photo instead of the emoji (web only)." />
+                <SectionHeader step="6" title="Shop by Category" desc="The category index on the home page, the category row in the header and the shop filters. The photograph is the bottle shown on the home page's category stage when that category is hovered; shoot it on a plain white sweep so it can be lifted off the backdrop. Leave it empty to show the first product photograph in that category." />
                 <div className="space-y-2 mb-3">
                     {categories.map((cat, i) => (
                         <div key={i} className="grid gap-2 grid-cols-1 sm:grid-cols-[48px_1fr_1fr_auto_32px] items-start sm:items-center rounded-xl border border-[#E8E4DE] bg-stone-50 px-3 py-2.5">
@@ -557,7 +557,7 @@ export default function AdminHomepage({ products = [], isActive = true }) {
                                     <div className="h-10 w-10 rounded-lg bg-white border border-[#E8E4DE] flex items-center justify-center text-lg">{cat.emoji}</div>
                                 )}
                                 <label className="cursor-pointer rounded-lg border border-[#E8E4DE] bg-white hover:border-[#1e3a5f]/40 hover:bg-[#EFF6FF] px-2 py-1.5 text-[11px] font-medium text-stone-700 transition whitespace-nowrap">
-                                    {cat._file ? `✓ ${cat._file.name}` : "Image…"}
+                                    {cat._file ? `✓ ${cat._file.name}` : (cat.image ? "Change bottle photo…" : "Bottle photo…")}
                                     <input type="file" accept="image/*" className="hidden"
                                         onChange={(e) => {
                                             const f = e.target.files?.[0];
@@ -570,7 +570,7 @@ export default function AdminHomepage({ products = [], isActive = true }) {
                                     <button type="button"
                                         onClick={() => setCategories((prev) => prev.map((x, j) => j === i ? { ...x, image: "", _file: null, _preview: "" } : x))}
                                         className="text-xs text-red-500 hover:underline whitespace-nowrap">
-                                        Remove image
+                                        Remove photo
                                     </button>
                                 )}
                             </div>

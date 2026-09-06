@@ -14,6 +14,7 @@ import { Link } from "react-router-dom";
 import { ArrowUpRight } from "lucide-react";
 import { fetchStoreInfo, EMPTY_STORE_INFO } from "../services/storeInfo";
 import { useSiteContent } from "../services/siteContent";
+import { useSiteLogo } from "../services/siteLogo";
 
 const SHOP_LINKS = [
   { label: "All products", to: "/shop" },
@@ -34,13 +35,13 @@ const POLICY_LINKS = [
   { label: "Refunds & replacements", to: "/refund-policy" },
 ];
 
-const linkClass = "text-[14px] text-stone-600 transition-colors hover:text-ink";
+const linkClass = "inline-block py-1 text-[14px] text-stone-600 transition-colors hover:text-ink";
 
 function Column({ title, links }) {
   return (
     <div>
       <p className="font-display text-[15px] font-semibold tracking-tight text-ink">{title}</p>
-      <ul className="mt-4 space-y-2.5">
+      <ul className="mt-3 space-y-1">
         {links.map((l) => (
           <li key={l.label}>
             {l.href ? (
@@ -63,6 +64,7 @@ export default function Footer() {
   const [info, setInfo] = useState(EMPTY_STORE_INFO);
   useEffect(() => { let on = true; fetchStoreInfo().then((i) => { if (on) setInfo(i); }); return () => { on = false; }; }, []);
   const { footer } = useSiteContent("site_global");
+  const logo = useSiteLogo();
   const helpLinks = footer.aboutLabel && footer.aboutUrl ? [...HELP_LINKS, { label: footer.aboutLabel, href: footer.aboutUrl }] : HELP_LINKS;
 
   return (
@@ -72,7 +74,7 @@ export default function Footer() {
 
           {/* Brand */}
           <div>
-            <img src="/logo.png" alt="Core Atoms" className="h-8 w-auto max-w-[150px] object-contain" />
+            <img src={logo} alt="Core Atoms" className="h-8 w-auto max-w-[150px] object-contain" />
             <p className="mt-5 max-w-xs text-[15px] leading-relaxed text-stone-600">{footer.tagline}</p>
 
             {footer.instagramHandle && footer.instagramUrl && (

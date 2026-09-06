@@ -167,7 +167,7 @@ export default function Login() {
             <div className="mb-1.5 flex items-baseline justify-between">
               <label htmlFor="login-password" className="block text-[13px] font-semibold text-ink">Password</label>
               {!isSignup && (
-                <Link to="/forgot-password" className="text-xs font-semibold text-brand hover:underline underline-offset-4">Forgot password?</Link>
+                <Link to="/forgot-password" className="-my-1 py-1 text-xs font-semibold text-brand hover:underline underline-offset-4">Forgot password?</Link>
               )}
             </div>
             <input

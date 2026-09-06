@@ -89,7 +89,7 @@ export function MotionProvider({ children }) {
       finePointer,
       isDesktop,
       smoothScroll: storefront && settings.smoothScroll && finePointer && !reduceMotion,
-      scrollbar: storefront && settings.scrollbar && finePointer && isDesktop,
+      scrollbar: storefront && settings.scrollbar,
       cursor: storefront && settings.cursor && finePointer && !reduceMotion,
       curtain: storefront && settings.curtain && !reduceMotion,
       grain: storefront && settings.grain,
